@@ -4,7 +4,7 @@ using UnityEngine.Rendering;
 
 namespace SphereDescent
 {
-    /// <summary>Turns a <see cref="MazeLayout"/> into GameObjects: shells, walls, hole rings, boost pads, core and exit.</summary>
+    /// <summary>Turns a <see cref="MazeLayout"/> into GameObjects: shells, walls, hole rings, boost pads and the core (the exit).</summary>
     public static class LevelBuilder
     {
         public static LevelInstance Build(MazeLayout layout, LevelSettings s, LevelMaterials mats, int world)
@@ -79,13 +79,12 @@ namespace SphereDescent
                 if (landmarkMats != null) CreateLandmarks(layerRoot, layout, s, zones, shell, landmarkMats);
             }
 
-            // Core.
+            // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
-            var coreMat = level.Own(ZoneMaterial(mats.ground, new Color(0.9f, 0.9f, 0.9f), 1.5f, 0.75f));
+            var coreMat = level.Own(LevelMaterials.MakeEmissive(mats.exit.color, 0.8f));
             var coreMesh = level.Own(MeshBuilders.BuildSphere(IcoSphere.Get(s.coreMeshSubdivisions), s.coreRadius));
-            shellRenderers[layout.ShellCount] = CreateMeshObject(coreRoot, "Core Sphere", coreMesh, coreMat, true, ShadowCastingMode.Off)
+            shellRenderers[layout.ShellCount] = CreateMeshObject(coreRoot, "Core (Exit)", coreMesh, coreMat, true, ShadowCastingMode.Off)
                 .GetComponent<Renderer>();
-            CreateExit(level, coreRoot, layout.ExitDirection, s.coreRadius, mats.exit);
 
             level.RegisterLayers(layerRoots, shellRenderers);
             return level;
@@ -141,27 +140,6 @@ namespace SphereDescent
             pad.ExitTangent = exitTangent;
             pad.LandAngle = (holeRadius + 1.6f) / aboveRadius;
             pad.pulseVisual = ring.transform;
-        }
-
-        static void CreateExit(LevelInstance level, Transform parent, Vector3 dir, float coreRadius, Material mat)
-        {
-            var go = new GameObject("Exit Portal");
-            go.transform.SetParent(parent, false);
-            go.transform.SetPositionAndRotation(dir * coreRadius, Quaternion.FromToRotation(Vector3.up, dir));
-
-            var ring = CreateMeshObject(go.transform, "Ring", level.Own(MeshBuilders.BuildTorus(1.6f, 0.25f)), mat, false, ShadowCastingMode.On);
-            ring.transform.localPosition = new Vector3(0f, 0.1f, 0f);
-
-            var gem = CreateMeshObject(go.transform, "Gem", level.Own(MeshBuilders.BuildSphere(IcoSphere.Get(1), 0.7f)), mat, false, ShadowCastingMode.On);
-            gem.transform.localPosition = new Vector3(0f, 1.8f, 0f);
-
-            var trigger = go.AddComponent<SphereCollider>();
-            trigger.isTrigger = true;
-            trigger.radius = 1.6f;
-            trigger.center = new Vector3(0f, 0.8f, 0f);
-
-            var portal = go.AddComponent<ExitPortal>();
-            portal.spinner = gem.transform;
         }
 
         static GameObject CreateMeshObject(Transform parent, string name, Mesh mesh, Material mat, bool collider, ShadowCastingMode shadows)

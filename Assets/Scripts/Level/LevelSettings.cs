@@ -16,14 +16,16 @@ namespace SphereDescent
         [Tooltip("Distance between neighbouring maze cells (corridor width) in world units, the same on every layer. " +
                  "Smaller inner spheres get fewer cells rather than narrower corridors.")]
         public float cellSpacing = 10.5f;
-        [Tooltip("Number of disconnected regions on each shell. More regions = more travel between layers.")]
-        public int[] regionsPerShell = { 2, 3, 3, 2 };
-        [Tooltip("Holes per 100 maze cells on each shell. Holes in the last shell drop into the core.")]
-        public float holeDensity = 5f;
-        [Tooltip("Require that the core can't be reached by dropping alone, forcing at least one boost-pad climb.")]
-        public bool requireClimb = false;
-        [Range(0f, 1f)] public float twoWayChance = 0.5f;
-        [Range(0f, 1f)] public float loopChance = 0.15f;
+        [Tooltip("Times per world you have to climb back up a layer on a boost pad. Each climb adds two sections.")]
+        public int climbsPerWorld = 3;
+        [Tooltip("Length of each section's main path in maze cells (about Cell Spacing units each). " +
+                 "Every section ends at a hole down or a boost pad up.")]
+        public int sectionLengthMin = 10;
+        public int sectionLengthMax = 18;
+        [Tooltip("How often a cell beside the main path becomes part of a side lane. Higher = wider sections with more alternative routes.")]
+        [Range(0f, 1f)] public float sideLaneChance = 0.5f;
+        [Tooltip("How often a step of the main path is walled off, so the route has to detour through a side lane.")]
+        [Range(0f, 1f)] public float mainPathCutChance = 0.35f;
         public float wallHeight = 4f;
         public float wallThickness = 0.6f;
 
@@ -41,11 +43,6 @@ namespace SphereDescent
         public int coreMeshSubdivisions = 5;
 
         public int ShellCount => shellRadii.Length;
-
-        public int RegionsFor(int shell) =>
-            Mathf.Max(1, regionsPerShell.Length > 0 ? regionsPerShell[Mathf.Min(shell, regionsPerShell.Length - 1)] : 1);
-
-        public int HolesFor(int cellCount) => Mathf.Max(1, Mathf.RoundToInt(cellCount * holeDensity / 100f));
 
         /// <summary>Boost pad radius for a hole of the given radius.</summary>
         public static float PadRadius(float holeRadius) => Mathf.Max(0.9f, holeRadius * 0.85f);

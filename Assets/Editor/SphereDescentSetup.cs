@@ -82,24 +82,59 @@ namespace SphereDescent.EditorTools
             var mats = new LevelMaterials();
             mats.EnsureDefaults();
             int failures = 0;
+            var allRoutes = new System.Collections.Generic.List<int>();
             for (int world = 1; world <= 8; world++)
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 var layout = MazeLayout.Generate(settings, 1337 + world * 7919);
                 long genMs = sw.ElapsedMilliseconds;
-                if (settings.requireClimb && layout.ShortestRouteUps == 0) failures++;
+                if (layout == null) { failures++; Debug.Log($"[Validate] World {world}: FAILED to generate"); continue; }
 
-                int twoWay = 0;
-                var perShell = new int[layout.ShellCount];
-                foreach (var h in layout.Holes) { if (h.TwoWay) twoWay++; perShell[h.Shell]++; }
-                var shellInfo = new System.Text.StringBuilder();
+                var problems = new System.Text.StringBuilder();
+                if (layout.Sections.Count != settings.ShellCount + 2 * settings.climbsPerWorld)
+                    problems.Append($" expected {settings.ShellCount + 2 * settings.climbsPerWorld} sections;");
+
+                // Sections are chained: each starts where the previous one's hole or pad leads.
+                for (int i = 0; i < layout.Sections.Count; i++)
+                {
+                    var sec = layout.Sections[i];
+                    var h = layout.Holes[i];
+                    if (sec.RouteCells < 0) problems.Append($" section {i + 1} exit unreachable;");
+                    bool last = i == layout.Sections.Count - 1;
+                    if (last && (h.LandingCell != -1 || sec.Shell != layout.ShellCount - 1)) problems.Append(" last section doesn't drop into the core;");
+                    if (!last)
+                    {
+                        var next = layout.Sections[i + 1];
+                        bool linked = sec.ExitsUp
+                            ? h.TwoWay && h.Shell == next.Shell && h.Cell == next.EntryCell && h.LandingCell == sec.ExitCell
+                            : !h.TwoWay && h.Shell == sec.Shell && h.Cell == sec.ExitCell && h.LandingCell == next.EntryCell;
+                        if (!linked || Mathf.Abs(next.Shell - sec.Shell) != 1) problems.Append($" section {i + 1} not linked to {i + 2};");
+                    }
+                }
+
+                // No dead ends inside sections, other than possibly the entry and exit cells.
+                int deadEnds = 0;
                 for (int sh = 0; sh < layout.ShellCount; sh++)
-                    shellInfo.Append($" [r{settings.shellRadii[sh]}: {layout.Grids[sh].CellCount} cells, " +
-                                     $"spacing {layout.Grids[sh].CellSpacing * settings.shellRadii[sh]:F1}, {perShell[sh]} holes]");
-                string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, holes {layout.Holes.Count} ({twoWay} two-way), " +
-                             $"route {layout.ShortestRouteMoves} transitions / {layout.ShortestRouteUps} launches, layout {genMs} ms";
+                    for (int c = 0; c < layout.Grids[sh].CellCount; c++)
+                    {
+                        int r = layout.Region[sh][c];
+                        if (r < 0) continue;
+                        var sec = layout.Sections[r];
+                        if (c != sec.EntryCell && c != sec.ExitCell && layout.Openings(sh, c) < 2) deadEnds++;
+                    }
+                if (deadEnds > 0) problems.Append($" {deadEnds} dead ends;");
 
-                if (world == 1) Debug.Log("[Validate] shells:" + shellInfo);
+                var routes = new System.Text.StringBuilder();
+                foreach (var sec in layout.Sections)
+                {
+                    routes.Append($" {sec.Shell}{(sec.ExitsUp ? "^" : "v")}{sec.RouteCells}/{sec.CellCount}");
+                    allRoutes.Add(sec.RouteCells);
+                }
+                if (problems.Length > 0) failures++;
+                string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
+                             $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
+                             (problems.Length > 0 ? " PROBLEMS:" + problems : "");
+
                 if (world <= 2)
                 {
                     sw.Restart();
@@ -112,15 +147,18 @@ namespace SphereDescent.EditorTools
                         verts += mf.sharedMesh.vertexCount;
                     }
                     int pads = level.GetComponentsInChildren<BoostPad>().Length;
-                    int exits = level.GetComponentsInChildren<ExitPortal>().Length;
-                    msg += $", build {sw.ElapsedMilliseconds} ms, {verts} verts, {tris} tris, {pads} pads, {exits} exit";
+                    msg += $", build {sw.ElapsedMilliseconds} ms, {verts} verts, {tris} tris, {pads} pads";
                     Object.DestroyImmediate(level.gameObject);
                 }
                 Debug.Log(msg);
             }
-            Debug.Log(failures == 0 ? "[Validate] OK" : $"[Validate] {failures} worlds have no forced launch");
+            allRoutes.Sort();
+            if (allRoutes.Count > 0)
+                Debug.Log($"[Validate] shortest route per section (cells): min {allRoutes[0]}, median {allRoutes[allRoutes.Count / 2]}, " +
+                          $"max {allRoutes[allRoutes.Count - 1]}; about {settings.cellSpacing:F1} units per cell");
+            Debug.Log(failures == 0 ? "[Validate] OK" : $"[Validate] {failures} worlds have problems");
         }
-    
+
         /// <summary>
         /// Headless physics check of the real BallController: drops onto solid ground, through a hole, and a
         /// boost-pad launch back up. Steps physics manually so it can run in batch mode.
@@ -137,26 +175,25 @@ namespace SphereDescent.EditorTools
             Physics.simulationMode = SimulationMode.Script;
             Physics.SyncTransforms();
 
-            MazeLayout.Hole drop = default, twoWay = default;
-            bool hasDrop = false, hasTwoWay = false;
-            foreach (var h in layout.Holes)
-            {
-                if (h.Shell == 0 && !h.TwoWay && !hasDrop) { drop = h; hasDrop = true; }
-                if (h.Shell == 0 && h.TwoWay && !hasTwoWay) { twoWay = h; hasTwoWay = true; }
-            }
-
-            float r0 = settings.shellRadii[0], r1 = settings.shellRadii[1];
+            float r0 = settings.shellRadii[0];
             Report("solid ground", Simulate(level, grid.CellCenters[layout.StartCell] * (r0 + 3f), 3f, null), r0 + 0.5f);
-            if (hasDrop)
-                Report("drop hole", Simulate(level, drop.Direction * (r0 + 3f), 4f, null), r1 + 0.5f);
-            if (hasTwoWay)
+
+            // Every link between sections: drop through each hole, launch from each boost pad.
+            var pads = level.GetComponentsInChildren<BoostPad>();
+            for (int i = 0; i < layout.Holes.Count; i++)
             {
+                var h = layout.Holes[i];
+                float above = settings.shellRadii[h.Shell], below = settings.SurfaceRadius(h.Shell + 1);
+                Report($"section {i + 1} drop (shell {h.Shell}{(h.LandingCell < 0 ? " into core" : "")})",
+                    Simulate(level, h.Direction * (above + 3f), 4f, null), below + 0.5f);
+                if (!h.TwoWay) continue;
                 BoostPad pad = null;
-                foreach (var p in level.GetComponentsInChildren<BoostPad>())
-                    if (Vector3.Dot(p.Axis, twoWay.Direction) > 0.9999f) pad = p;
+                foreach (var p in pads)
+                    if (Vector3.Dot(p.Axis, h.Direction) > 0.9999f) pad = p;
                 Vector3 end = Simulate(level, pad.transform.position + pad.Axis * 0.5f, 5f, pad);
-                float fromHole = Vector3.Angle(end, pad.Axis) * Mathf.Deg2Rad * r0;
-                Report($"launch ({fromHole:F1} units from hole center, hole radius {settings.HoleRadius(grid, 0):F1})", end, r0 + 0.5f);
+                float fromHole = Vector3.Angle(end, pad.Axis) * Mathf.Deg2Rad * above;
+                Report($"section {i + 1} launch to shell {h.Shell} ({fromHole:F1} units from hole center, hole radius " +
+                       $"{settings.HoleRadius(layout.Grids[h.Shell], h.Shell):F1})", end, above + 0.5f);
             }
 
             Physics.simulationMode = prevMode;
@@ -256,28 +293,176 @@ namespace SphereDescent.EditorTools
             Shot("1_overview", s * (r0 + 0.5f), s * (r0 * 2.6f) + Tangent(s) * 60f);
             Shot("2_surface", s * (r0 + 0.5f), s * (r0 + 4f) - Tangent(s) * 8f);
 
+            // Section 1 from high above, to see its main path and side lanes.
+            Shot("2b_section_topdown", s * (r0 + 0.5f), s * (r0 + 70f) + Tangent(s) * 2f);
+
+            bool shotDrop = false, shotTwoWay = false;
             foreach (var h in layout.Holes)
             {
-                if (h.Shell != 0) continue;
+                if (h.LandingCell < 0 || (h.TwoWay ? shotTwoWay : shotDrop)) continue;
+                float ra = gm.settings.shellRadii[h.Shell], rb = gm.settings.shellRadii[h.Shell + 1];
                 Vector3 d = h.Direction;
                 Vector3 t = Tangent(d);
-                Vector3 nearHole = (d + t * (5f / r0)).normalized;
-                Shot(h.TwoWay ? "3_hole_twoway" : "3_hole_drop", nearHole * (r0 + 0.5f), nearHole * (r0 + 9f) + t * 6f);
+                Vector3 nearHole = (d + t * (5f / ra)).normalized;
+                Shot(h.TwoWay ? "3_hole_twoway" : "3_hole_drop", nearHole * (ra + 0.5f), nearHole * (ra + 9f) + t * 6f);
                 if (h.TwoWay)
                 {
-                    float r1 = gm.settings.shellRadii[1];
-                    Vector3 nearPad = (d + t * (4f / r1)).normalized;
-                    Shot("4_inner_pad", nearPad * (r1 + 0.5f), nearPad * (r1 + 3.5f) + t * 8f);
-                    break;
+                    Vector3 nearPad = (d + t * (4f / rb)).normalized;
+                    Shot("4_inner_pad", nearPad * (rb + 0.5f), nearPad * (rb + 3.5f) + t * 8f);
+                    shotTwoWay = true;
                 }
+                else shotDrop = true;
             }
-            Vector3 e = layout.ExitDirection;
+            Vector3 e = layout.Holes[layout.Holes.Count - 1].Direction;
             Vector3 nearExit = (e + Tangent(e) * (5f / gm.settings.coreRadius)).normalized;
             Shot("5_core_exit", nearExit * (gm.settings.coreRadius + 0.5f), nearExit * (gm.settings.coreRadius + 4f) + Tangent(e) * 7f);
 
             Object.DestroyImmediate(ball);
             Object.DestroyImmediate(level.gameObject);
             Debug.Log("[Preview] done -> " + Path.GetFullPath(outDir));
+        }
+
+        /// <summary>
+        /// Renders the README screenshots of world 1 from the main scene (without modifying it) into
+        /// Docs/screenshots. Batch mode, needs graphics.
+        /// </summary>
+        [MenuItem("Sphere Descent/Render README Screenshots")]
+        public static void RenderReadmeScreenshots()
+        {
+            const string outDir = "Docs/screenshots";
+            const int width = 1600, height = 900;
+            Directory.CreateDirectory(outDir);
+            EditorSceneManager.OpenScene(ScenePath);
+            var gm = Object.FindAnyObjectByType<GameManager>();
+            gm.materials.EnsureDefaults();
+            var settings = gm.settings;
+            var layout = MazeLayout.Generate(settings, gm.baseSeed + 1 * 7919);
+            var level = LevelBuilder.Build(layout, settings, gm.materials, 1);
+            var cam = Camera.main;
+            var sun = gm.sun;
+            var orbit = cam.GetComponent<OrbitCamera>();
+
+            var ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            ball.GetComponent<MeshRenderer>().sharedMaterial = gm.materials.ball;
+            ball.transform.rotation = Quaternion.Euler(30f, 40f, 10f);
+            ball.layer = 2; // ignored by the camera's collision probe, as in game
+            Object.DestroyImmediate(ball.GetComponent<Collider>());
+            Physics.SyncTransforms();
+
+            void Render(string name, Vector3 ballPos, Vector3 camPos, Quaternion camRot, int focusLayer)
+            {
+                level.SetShadowLayer(level.LayerAt(ballPos.magnitude));
+                level.SetVisibleLayers(focusLayer);
+                ball.transform.position = ballPos;
+                Vector3 up = ballPos.normalized;
+                sun.transform.rotation = Quaternion.LookRotation(-(up + Vector3.ProjectOnPlane(new Vector3(0.35f, 0.2f, 1f), up).normalized * 0.55f).normalized);
+                cam.transform.SetPositionAndRotation(camPos, camRot);
+                var rt = new RenderTexture(width, height, 24) { antiAliasing = 8 };
+                cam.targetTexture = rt;
+                cam.Render();
+                RenderTexture.active = rt;
+                var tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+                tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                tex.Apply();
+                File.WriteAllBytes(Path.Combine(outDir, name + ".png"), tex.EncodeToPNG());
+                cam.targetTexture = null;
+                RenderTexture.active = null;
+                Object.DestroyImmediate(rt);
+                Object.DestroyImmediate(tex);
+            }
+
+            // The in-game camera: behind and above the ball, looking along forward, pulled in like the real
+            // camera when a wall is in the way.
+            void GameView(string name, int shell, Vector3 ballDir, Vector3 lookToward, float pitch)
+            {
+                float r = settings.SurfaceRadius(shell);
+                Vector3 up = ballDir.normalized;
+                Vector3 ballPos = up * (r + 0.5f);
+                Vector3 fwd = Vector3.ProjectOnPlane(lookToward.normalized * r - ballPos, up).normalized;
+                Vector3 lookDir = Quaternion.AngleAxis(pitch, Vector3.Cross(up, fwd)) * fwd;
+                Vector3 focus = ballPos + up * orbit.focusHeight;
+                float dist = orbit.distance;
+                if (Physics.SphereCast(focus, orbit.collisionRadius, -lookDir, out RaycastHit hit, dist,
+                        orbit.collisionMask, QueryTriggerInteraction.Ignore))
+                    dist = Mathf.Max(orbit.minDistance, hit.distance - 0.1f);
+                Render(name, ballPos, focus - lookDir * dist, Quaternion.LookRotation(lookDir, up), shell);
+            }
+
+            // The route through a section, entry to exit.
+            System.Collections.Generic.List<int> Route(int index)
+            {
+                var sec = layout.Sections[index];
+                var grid = layout.Grids[sec.Shell];
+                var prev = new System.Collections.Generic.Dictionary<int, int> { [sec.EntryCell] = -1 };
+                var queue = new System.Collections.Generic.Queue<int>();
+                queue.Enqueue(sec.EntryCell);
+                while (queue.Count > 0)
+                {
+                    int cur = queue.Dequeue();
+                    foreach (int nb in grid.Neighbors[cur])
+                    {
+                        if (prev.ContainsKey(nb) || layout.Region[sec.Shell][nb] != index) continue;
+                        if (!layout.Open[sec.Shell][grid.EdgeBetween(cur, nb)]) continue;
+                        prev[nb] = cur;
+                        queue.Enqueue(nb);
+                    }
+                }
+                var route = new System.Collections.Generic.List<int>();
+                for (int c = sec.ExitCell; c != -1; c = prev[c]) route.Insert(0, c);
+                return route;
+            }
+
+            float r0 = settings.shellRadii[0];
+            var g0 = layout.Grids[0];
+            Vector3 start = g0.CellCenters[layout.StartCell];
+
+            // Whole planet, from space.
+            Vector3 side = Vector3.ProjectOnPlane(new Vector3(0.3f, 0.6f, 1f), start).normalized;
+            Vector3 eye = (start * 1.0f + side * 0.45f).normalized * (r0 * 2.7f);
+            Render("planet", start * (r0 + 0.5f), eye, Quaternion.LookRotation(-eye, side), 0);
+
+            // Rolling through the first section, at a spot where the corridor runs straight on behind the
+            // ball, so the camera sits over open floor rather than looking over a wall.
+            var route0 = Route(0);
+            int at = 1;
+            for (int k = 1; k + 1 < route0.Count; k++)
+            {
+                Vector3 c = g0.CellCenters[route0[k]];
+                Vector3 ahead = Vector3.ProjectOnPlane(g0.CellCenters[route0[k + 1]] - c, c).normalized;
+                Vector3 behind = Vector3.ProjectOnPlane(g0.CellCenters[route0[k - 1]] - c, c).normalized;
+                if (Vector3.Dot(ahead, -behind) > 0.9f) { at = k; break; }
+            }
+            GameView("gameplay", 0, g0.CellCenters[route0[at]], g0.CellCenters[route0[at + 1]], orbit.pitch);
+
+            // Approaching the hole at the end of the first section.
+            var drop = layout.Holes[0];
+            int n = route0.Count;
+            Vector3 approach = Vector3.Slerp(g0.CellCenters[route0[n - 2]], drop.Direction, 0.35f);
+            GameView("drop_hole", 0, approach, drop.Direction, orbit.pitch + 6f);
+
+            // A boost pad at the end of a section that climbs back up.
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                var sec = layout.Sections[i];
+                if (!sec.ExitsUp) continue;
+                var grid = layout.Grids[sec.Shell];
+                var route = Route(i);
+                Vector3 padDir = layout.Holes[i].Direction;
+                Vector3 near = Vector3.Slerp(grid.CellCenters[route[route.Count - 2]], padDir, 0.3f);
+                GameView("boost_pad", sec.Shell, near, padDir, 14f);
+                break;
+            }
+
+            // Touching down on the core.
+            Vector3 coreDir = layout.Holes[layout.Holes.Count - 1].Direction;
+            Vector3 coreSide = Vector3.ProjectOnPlane(new Vector3(0.3f, 0.1f, 1f), coreDir).normalized;
+            Vector3 corePos = coreDir * (settings.coreRadius + 0.5f);
+            Vector3 coreEye = coreDir * (settings.coreRadius + 4f) - coreSide * 7f;
+            Render("core", corePos, coreEye, Quaternion.LookRotation(corePos + coreDir * 0.6f - coreEye, coreDir), layout.ShellCount);
+
+            Object.DestroyImmediate(ball);
+            Object.DestroyImmediate(level.gameObject);
+            Debug.Log("[Readme] screenshots -> " + Path.GetFullPath(outDir));
         }
     }
 }

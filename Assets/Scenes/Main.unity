@@ -156,12 +156,12 @@ MonoBehaviour:
     - 38
     coreRadius: 22
     shellThickness: 1
-    mazeSubdivisions: 3
-    regionsPerShell: 02000000030000000300000002000000i
-    holesPerShell: 1e0000001e0000001e0000000c000000i
-    requireClimb: 0
-    twoWayChance: 0.5
-    loopChance: 0.15
+    cellSpacing: 10.5
+    climbsPerWorld: 3
+    sectionLengthMin: 10
+    sectionLengthMax: 18
+    sideLaneChance: 0.5
+    mainPathCutChance: 0.35
     wallHeight: 4
     wallThickness: 0.6
     holeRadiusFactor: 0.2

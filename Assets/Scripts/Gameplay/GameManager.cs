@@ -28,6 +28,7 @@ namespace SphereDescent
         string message;
         float messageUntil;
         GUIStyle hudStyle, bannerStyle;
+        int section;
 
         public int World => world;
 
@@ -89,8 +90,9 @@ namespace SphereDescent
             var layout = MazeLayout.Generate(settings, baseSeed + world * 7919);
             level = LevelBuilder.Build(layout, settings, materials, world);
             Debug.Log($"World {world}: seed {layout.Seed}, layout found after {layout.AttemptsUsed} attempts, " +
-                      $"shortest route {layout.ShortestRouteMoves} transitions ({layout.ShortestRouteUps} launches), " +
+                      $"{layout.Sections.Count} sections ({layout.Climbs} climbs), " +
                       $"built in {(Time.realtimeSinceStartup - t0) * 1000f:F0} ms");
+            section = 0;
 
             ball.level = level;
             ball.Teleport(level.SpawnPosition);
@@ -130,6 +132,11 @@ namespace SphereDescent
             if (GameInput.SkipWorldPressed()) OnExitReached();
             if (level != null && ball != null)
             {
+                // Landing anywhere on the core completes the world.
+                if (ball.IsGrounded && ball.CurrentLayer >= level.LayerCount - 1) OnExitReached();
+                int s = level.Layout.SectionAt(ball.CurrentLayer, ball.transform.position);
+                if (s >= 0) section = s;
+
                 level.SetShadowLayer(ball.CurrentLayer);
                 // Use the outermost of the ball's and camera's layers, so nothing vanishes while the camera is
                 // still following the ball down through a hole.
@@ -166,11 +173,14 @@ namespace SphereDescent
 
             int layer = Mathf.Clamp(ball.CurrentLayer, 0, level.LayerCount - 1);
             string zone = level.Zones.Names[level.Zones.ZoneAt(ball.transform.position)];
-            string status = $"World {world}   ·   {level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone";
+            string status = $"World {world}   ·   Section {section + 1}/{level.Layout.Sections.Count}   ·   " +
+                            $"{level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone";
             if (ball.OnPad) status += "   ·   Boost pad: press Jump!";
             Shadowed(new Rect(16, 12, 900, 30), status, hudStyle);
 
-            string help = Cursor.lockState == CursorLockMode.Locked
+            string help = GameInput.GamepadConnected
+                ? "Left stick / D-pad move · A jump · Right stick camera · Select respawn"
+                : Cursor.lockState == CursorLockMode.Locked
                 ? "WASD move · Space jump · Mouse/Q/E camera · R respawn · Esc free cursor"
                 : "Click to capture mouse · WASD move · Space jump · Q/E camera · R respawn · N skip world";
             Shadowed(new Rect(16, Screen.height - 36, 1000, 30), help, hudStyle);

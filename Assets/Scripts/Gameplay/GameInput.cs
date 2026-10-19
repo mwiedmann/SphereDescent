@@ -7,7 +7,8 @@ namespace SphereDescent
 {
     /// <summary>
     /// Thin input layer so gameplay code works with either the legacy Input Manager or the Input System package.
-    /// Keyboard + mouse and gamepad are both supported.
+    /// The project uses the Input System, which gives full keyboard + mouse and gamepad support. The legacy
+    /// fallback only handles keyboard + mouse (plus left-stick movement and jump on a gamepad).
     /// </summary>
     public static class GameInput
     {
@@ -23,9 +24,11 @@ namespace SphereDescent
                 if (k.dKey.isPressed || k.rightArrowKey.isPressed) v.x += 1f;
                 if (k.aKey.isPressed || k.leftArrowKey.isPressed) v.x -= 1f;
             }
-            if (Gamepad.current != null) v += Gamepad.current.leftStick.ReadValue();
+            if (Gamepad.current != null) v += Gamepad.current.leftStick.ReadValue() + Gamepad.current.dpad.ReadValue();
             return Vector2.ClampMagnitude(v, 1f);
         }
+
+        public static bool GamepadConnected => Gamepad.current != null;
 
         /// <summary>Camera orbit input in degrees for this frame (x = yaw, y = pitch).</summary>
         public static Vector2 Look(bool mouseActive, float mouseSensitivity, float keySpeed)
@@ -56,6 +59,8 @@ namespace SphereDescent
 #else
         public static Vector2 Move() =>
             Vector2.ClampMagnitude(new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")), 1f);
+
+        public static bool GamepadConnected => false;
 
         /// <summary>Camera orbit input in degrees for this frame (x = yaw, y = pitch).</summary>
         public static Vector2 Look(bool mouseActive, float mouseSensitivity, float keySpeed)

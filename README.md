@@ -1,0 +1,84 @@
+# Sphere Descent
+
+A 3D rolling-ball maze game made in Unity. You steer a small ball across the outside of a planet covered in maze walls. You drop through holes onto smaller spheres nested inside, and sometimes climb back up, until you reach the glowing core at the center.
+
+![Rolling through a maze corridor](Docs/screenshots/gameplay.png)
+
+> **Status:** early prototype. The core loop works, but tuning, traps and obstacles, sound and menus are still to come.
+
+## How it plays
+
+Each world is a set of nested spheres: a surface shell, three smaller shells inside it, and a solid core. Gravity always pulls toward the center, so you roll on the outside of whichever shell you're on.
+
+![A whole world seen from space](Docs/screenshots/planet.png)
+
+- **Sections.** A world is a chain of short maze sections, each taking around a minute. A section has a main path with side lanes that branch off and rejoin it. There are several routes but no dead ends, and every route leads to the same spot.
+- **Dropping down.** Most sections end at a hole marked with a glowing ring. Roll into it to fall to the next section on the shell below.
+- **Climbing up.** Some sections end at a cyan boost pad. Jump while on it to launch up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
+- **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
+
+| Section end: a hole to drop through | Section end: a boost pad to climb |
+|---|---|
+| ![A hole at the end of a section](Docs/screenshots/drop_hole.png) | ![A boost pad under a hole in the shell above](Docs/screenshots/boost_pad.png) |
+
+![Landing on the gold core completes the world](Docs/screenshots/core.png)
+
+To help you find your way, each sphere is split into 12 colored zones, each with its own pattern. Glowing landmark pillars mark the zones, and the zones line up through every layer. The HUD shows the world, section, layer and zone you're in.
+
+## Controls
+
+| Action | Keyboard / mouse | Gamepad |
+|---|---|---|
+| Roll (relative to the camera) | W A S D | Left stick or D-pad |
+| Jump / launch from a boost pad | Space | A / South button |
+| Turn the camera | Mouse (click to capture), or Q / E | Right stick |
+| Respawn on the current layer | R | Select / View |
+| Release the mouse | Esc | |
+| Skip to the next world (testing) | N | |
+
+## Running it
+
+1. Install **Unity 6000.6.6f1** with Unity Hub.
+2. Add this folder as a project in Unity Hub and open it.
+3. Open `Assets/Scenes/Main.unity` and press **Play**.
+
+The project uses the built-in render pipeline and the Input System package (included with Unity) for keyboard, mouse and gamepad input.
+
+## How worlds are generated
+
+Every world is generated in code from a seed (`Assets/Scripts/Level/MazeLayout.cs`):
+
+1. **Plan the route.** Choose which shell each section is on, going one layer down or up at a time. The route starts on the surface and finishes on the innermost shell. Each world has a set number of climbs back up.
+2. **Grow each section.** Lay a winding main path from where you arrive. Add side lanes beside it, open walls so the lanes loop back with no dead ends, and wall off a few steps of the main path so the route weaves through the lanes.
+3. **Link the sections.** End the section at a hole above a free spot on the shell below, or at a boost pad under a free spot on the shell above. That spot is where the next section starts.
+4. **Fill the rest.** Give cells outside any section a sealed-off maze, so every shell still looks like a maze.
+
+Every shell has the same corridor width, so the smaller inner spheres have fewer cells rather than narrower corridors.
+
+### Tuning
+
+Most settings live on the **Game Manager** object in the Inspector:
+
+- **Climbs Per World:** how many times you have to climb back up. Each climb adds two sections.
+- **Section Length Min / Max:** the length of each section's main path, in maze cells.
+- **Side Lane Chance:** how wide sections are, and how many alternative routes they have.
+- **Main Path Cut Chance:** how often the main path is walled off, forcing a detour.
+- **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **landmarks**, and the **Base Seed**.
+
+The ball's speed, jump height and gravity are set on the `BallController`, and the camera's distance, pitch and follow behavior on the `OrbitCamera`.
+
+## Project layout
+
+```
+Assets/
+  Scripts/
+    Gameplay/   ball, camera, input, boost pads, game manager and HUD
+    Geometry/   icosphere, hex/pentagon sphere grid, mesh builders
+    Level/      maze generation, level building, zones, settings
+  Shaders/      triplanar zone/grid shader
+  Editor/       scene setup and test tools
+  Scenes/       Main.unity
+Docs/screenshots/  images used in this README
+```
+
+The **Sphere Descent** menu in the editor can rebuild the main scene, run a world-generation check, and re-render these screenshots (**Render README Screenshots**).
