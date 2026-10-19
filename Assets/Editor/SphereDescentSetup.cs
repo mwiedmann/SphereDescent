@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -656,6 +657,205 @@ namespace SphereDescent.EditorTools
             Object.DestroyImmediate(ball);
             Object.DestroyImmediate(level.gameObject);
             Debug.Log("[Readme] screenshots -> " + Path.GetFullPath(outDir));
+        }
+
+        /// <summary>
+        /// Records about 15 seconds of the ball rolling through world 1. It opens on the synthwave sun from
+        /// above the walls, cranes down to the gameplay view as the ball sets off, follows a section's route
+        /// across a zone border (so the ball's color changes) to its exit hole, drops through, and carries on
+        /// along the next section for a few seconds. Uses the real ball physics and follow camera, stepped by
+        /// hand at 60 Hz, saving every other step (30 fps) as PNGs into DEMO_FRAMES_DIR (default
+        /// Recordings/frames). Batch mode, needs graphics.
+        /// </summary>
+        [MenuItem("Sphere Descent/Record Demo Frames")]
+        public static void RecordDemoFrames()
+        {
+            string outDir = System.Environment.GetEnvironmentVariable("DEMO_FRAMES_DIR") ?? "Recordings/frames";
+            const int width = 1280, height = 720;
+            if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
+            Directory.CreateDirectory(outDir);
+
+            EditorSceneManager.OpenScene(ScenePath);
+            var gm = Object.FindAnyObjectByType<GameManager>();
+            gm.materials.EnsureDefaults();
+            var settings = gm.settings;
+            var layout = MazeLayout.Generate(settings, gm.baseSeed + 1 * 7919);
+            var level = LevelBuilder.Build(layout, settings, gm.materials, 1);
+            var cam = Camera.main;
+            var orbit = cam.GetComponent<OrbitCamera>();
+            var sun = gm.sun;
+
+            // Pick a section ending in a drop hole whose route crosses a zone border, preferring the surface.
+            List<int> route = null;
+            int sectionIndex = -1, startAt = 0;
+            for (int pass = 0; pass < 2 && route == null; pass++)
+            {
+                for (int i = 0; i < layout.Sections.Count && route == null; i++)
+                {
+                    var sec = layout.Sections[i];
+                    if (sec.ExitsUp || layout.Holes[i].LandingCell < 0 || (pass == 0 && sec.Shell != 0)) continue;
+                    var candidate = SectionRoute(layout, i);
+                    var grid = layout.Grids[sec.Shell];
+                    int lastChange = -1;
+                    for (int k = 1; k < candidate.Count; k++)
+                        if (level.Zones.ZoneAt(grid.CellCenters[candidate[k]]) != level.Zones.ZoneAt(grid.CellCenters[candidate[k - 1]])) lastChange = k;
+                    if (lastChange < 0) continue;
+                    if (i + 1 >= layout.Sections.Count) continue;
+                    route = candidate;
+                    sectionIndex = i;
+                    // About seven cells before the hole, but always before the zone border.
+                    startAt = Mathf.Max(0, Mathf.Min(lastChange - 2, candidate.Count - 8));
+                }
+            }
+            if (route == null) { Debug.LogError("[Demo] no section crosses a zone border"); return; }
+            var section = layout.Sections[sectionIndex];
+            var hole = layout.Holes[sectionIndex];
+            var sectionGrid = layout.Grids[section.Shell];
+            float r = settings.shellRadii[section.Shell];
+            var waypoints = new List<Vector3>();
+            for (int k = startAt + 1; k < route.Count - 1; k++) waypoints.Add(sectionGrid.CellCenters[route[k]]);
+            waypoints.Add(hole.Direction);
+            // After the drop, carry on along the next section's route.
+            var nextSection = layout.Sections[sectionIndex + 1];
+            var nextGrid = layout.Grids[nextSection.Shell];
+            var afterWaypoints = new List<Vector3>();
+            var nextRoute = SectionRoute(layout, sectionIndex + 1);
+            // Stop short of that section's own exit, so the video doesn't drop or launch again.
+            for (int k = 1; k < nextRoute.Count - 1; k++) afterWaypoints.Add(nextGrid.CellCenters[nextRoute[k]]);
+            if (afterWaypoints.Count == 0) afterWaypoints.Add(nextGrid.CellCenters[nextRoute[0]]);
+            Debug.Log($"[Demo] section {sectionIndex + 1} on {level.LayerName(section.Shell)}, {route.Count - startAt} cells to the hole, " +
+                      $"zones {level.Zones.Names[level.Zones.ZoneAt(sectionGrid.CellCenters[route[startAt]])]} -> " +
+                      $"{level.Zones.Names[level.Zones.ZoneAt(hole.Direction)]}");
+
+            // The ball, set up as in the game.
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var ball = GameManager.CreateBall(gm.materials.ball);
+            typeof(BallController).GetMethod("Awake", flags).Invoke(ball, null);
+            var fixedUpdate = typeof(BallController).GetMethod("FixedUpdate", flags);
+            var input = typeof(BallController).GetField("moveInput", flags);
+            // Collision callbacks don't run in edit mode, so detect the floor under the ball directly.
+            var touching = typeof(BallController).GetField("touchingGround", flags);
+            var rb = ball.GetComponent<Rigidbody>();
+            ball.level = level;
+            ball.cameraTransform = cam.transform;
+            Vector3 startDir = sectionGrid.CellCenters[route[startAt]];
+            ball.Teleport(startDir * (r + ball.Radius + 0.05f));
+            // Open facing the sun on the horizon (the sky puts it this way from wherever the ball is), from
+            // high enough to see over the walls; the camera cranes down to its usual view once the ball moves.
+            Vector3 toSun = Vector3.ProjectOnPlane(new Vector3(0.35f, 0.2f, 1f), startDir).normalized;
+            cam.transform.rotation = Quaternion.LookRotation(toSun, startDir);
+            float gameFocus = orbit.focusHeight, gamePitch = orbit.pitch;
+            const float introHold = 1.5f, craneTime = 2.5f, introFocus = 7f, introPitch = -4f;
+            orbit.focusHeight = introFocus;
+            orbit.pitch = introPitch;
+            orbit.target = ball.transform;
+            orbit.Snap();
+            Physics.simulationMode = SimulationMode.Script;
+            Physics.SyncTransforms();
+
+            var warmUp = new RenderTexture(64, 64, 24);
+            cam.targetTexture = warmUp;
+            cam.Render();
+            cam.targetTexture = null;
+            Object.DestroyImmediate(warmUp);
+            var rt = new RenderTexture(width, height, 24) { antiAliasing = 4 };
+            var tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+
+            const float dt = 1f / 60f;
+            int next = 0, nextAfter = 0, frame = 0;
+            float landedFor = 0f;
+            const float afterLanding = 4.5f;
+            float rAfter = settings.shellRadii[nextSection.Shell];
+            for (int step = 0; step < 60 * 40; step++)
+            {
+                float t = step * dt;
+                Vector3 pos = rb.position;
+                Vector3 up = pos.normalized;
+                bool grounded = Physics.Raycast(pos, -up, ball.Radius + 0.15f, ~(1 << 2), QueryTriggerInteraction.Ignore);
+                bool fell = ball.CurrentLayer > section.Shell;
+                bool landed = fell && landedFor > 0f;
+
+                // Crane down from the opening view to the gameplay camera.
+                float crane = Mathf.SmoothStep(0f, 1f, (t - introHold) / craneTime);
+                orbit.focusHeight = Mathf.Lerp(introFocus, gameFocus, crane);
+                orbit.pitch = Mathf.Lerp(introPitch, gamePitch, crane);
+
+                // Autopilot: head for the next waypoint along the route, as camera-relative stick input.
+                // Hold still for the opening, coast while falling, then carry on through the next section.
+                Vector2 move = Vector2.zero;
+                List<Vector3> path = landed ? afterWaypoints : waypoints;
+                if (t >= introHold && (!fell || landed))
+                {
+                    ref int index = ref next;
+                    if (landed) index = ref nextAfter;
+                    float radius = landed ? rAfter : r;
+                    float toWaypoint = Vector3.Angle(up, path[index]) * Mathf.Deg2Rad * radius;
+                    if (index < path.Count - 1 && toWaypoint < 2.5f) index++;
+                    Vector3 desired = landed && index == path.Count - 1 && toWaypoint < 1.5f
+                        ? Vector3.zero
+                        : Vector3.ProjectOnPlane(path[index] - up, up).normalized;
+                    Vector3 camForward = Vector3.ProjectOnPlane(cam.transform.forward, up).normalized;
+                    Vector3 camRight = Vector3.Cross(up, camForward);
+                    move = new Vector2(Vector3.Dot(desired, camRight), Vector3.Dot(desired, camForward)).normalized * 0.75f;
+                }
+                input.SetValue(ball, move);
+                touching.SetValue(ball, grounded);
+                fixedUpdate.Invoke(ball, null);
+                Physics.Simulate(dt);
+                ball.transform.SetPositionAndRotation(rb.position, rb.rotation);
+
+                // What GameManager does each frame.
+                orbit.Tick(dt);
+                level.SetShadowLayer(ball.CurrentLayer);
+                level.SetVisibleLayers(Mathf.Min(ball.CurrentLayer, level.LayerAt(cam.transform.position.magnitude)));
+                GameManager.UpdateSky(sun, rb.position.normalized);
+
+                if (step % 2 == 0)
+                {
+                    cam.targetTexture = rt;
+                    cam.Render();
+                    RenderTexture.active = rt;
+                    tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                    tex.Apply();
+                    File.WriteAllBytes(Path.Combine(outDir, $"frame_{frame++:D5}.png"), tex.EncodeToPNG());
+                    cam.targetTexture = null;
+                    RenderTexture.active = null;
+                }
+
+                if (fell && (grounded || landedFor > 0f)) landedFor += dt;
+                if (landedFor > afterLanding) break;
+            }
+
+            Physics.simulationMode = SimulationMode.FixedUpdate;
+            Object.DestroyImmediate(rt);
+            Object.DestroyImmediate(tex);
+            Object.DestroyImmediate(ball.gameObject);
+            Object.DestroyImmediate(level.gameObject);
+            Debug.Log($"[Demo] {frame} frames ({frame / 30f:F1} s), {(landedFor > 0f ? "dropped through the hole" : "DID NOT reach the hole")} -> {Path.GetFullPath(outDir)}");
+        }
+
+        /// <summary>The shortest route through a section, entry to exit, as cells on its shell.</summary>
+        static List<int> SectionRoute(MazeLayout layout, int index)
+        {
+            var sec = layout.Sections[index];
+            var grid = layout.Grids[sec.Shell];
+            var prev = new Dictionary<int, int> { [sec.EntryCell] = -1 };
+            var queue = new Queue<int>();
+            queue.Enqueue(sec.EntryCell);
+            while (queue.Count > 0)
+            {
+                int cur = queue.Dequeue();
+                foreach (int nb in grid.Neighbors[cur])
+                {
+                    if (prev.ContainsKey(nb) || layout.Region[sec.Shell][nb] != index) continue;
+                    if (!layout.Open[sec.Shell][grid.EdgeBetween(cur, nb)]) continue;
+                    prev[nb] = cur;
+                    queue.Enqueue(nb);
+                }
+            }
+            var route = new List<int>();
+            for (int c = sec.ExitCell; c != -1; c = prev[c]) route.Insert(0, c);
+            return route;
         }
     }
 }

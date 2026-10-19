@@ -47,12 +47,13 @@ namespace SphereDescent
             BuildWorld();
         }
 
-        void CreatePlayer()
+        /// <summary>The player's ball: a sphere with grippy physics and the ball controller.</summary>
+        public static BallController CreateBall(Material material)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "Player Ball";
             go.layer = 2; // Ignore Raycast, so the camera's collision probe skips the ball
-            go.GetComponent<MeshRenderer>().sharedMaterial = materials.ball;
+            go.GetComponent<MeshRenderer>().sharedMaterial = material;
             var col = go.GetComponent<SphereCollider>();
             col.material = new PhysicsMaterial("Ball")
             {
@@ -63,7 +64,12 @@ namespace SphereDescent
                 bounceCombine = PhysicsMaterialCombine.Minimum,
             };
             go.AddComponent<Rigidbody>().mass = 1f;
-            ball = go.AddComponent<BallController>();
+            return go.AddComponent<BallController>();
+        }
+
+        void CreatePlayer()
+        {
+            ball = CreateBall(materials.ball);
 
             var cam = Camera.main;
             if (cam == null)

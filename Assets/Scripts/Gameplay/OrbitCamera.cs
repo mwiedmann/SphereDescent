@@ -57,17 +57,20 @@ namespace SphereDescent
             if (forward.sqrMagnitude < 0.01f) forward = Vector3.ProjectOnPlane(Vector3.right, up);
             forward.Normalize();
             currentDistance = distance;
-            LateUpdate();
+            Tick(0f);
         }
 
-        void LateUpdate()
+        void LateUpdate() => Tick(Time.deltaTime);
+
+        /// <summary>Advances the camera by dt seconds. Public so tools can drive it outside Play mode.</summary>
+        public void Tick(float dt)
         {
             if (target == null) return;
             Vector3 targetPos = target.position;
             Vector3 targetUp = targetPos.sqrMagnitude > 1e-6f ? targetPos.normalized : Vector3.up;
 
             // Smoothly follow the local up and carry the heading along with it.
-            Vector3 newUp = Vector3.Slerp(up, targetUp, 1f - Mathf.Exp(-upSmoothing * Time.deltaTime));
+            Vector3 newUp = Vector3.Slerp(up, targetUp, 1f - Mathf.Exp(-upSmoothing * dt));
             forward = Quaternion.FromToRotation(up, newUp) * forward;
             up = newUp;
             forward = Vector3.ProjectOnPlane(forward, up);
@@ -77,7 +80,7 @@ namespace SphereDescent
             bool mouseActive = Cursor.lockState == CursorLockMode.Locked;
             Vector2 look = GameInput.Look(mouseActive, mouseSensitivity, keyTurnSpeed);
             forward = Quaternion.AngleAxis(look.x, up) * forward;
-            if (followMovement) FollowMovement(Time.deltaTime);
+            if (followMovement) FollowMovement(dt);
             pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
 
             Vector3 right = Vector3.Cross(up, forward);
@@ -91,7 +94,7 @@ namespace SphereDescent
                 wanted = Mathf.Max(minDistance, hit.distance - 0.1f);
             }
             // Pull in instantly, ease back out.
-            currentDistance = wanted < currentDistance ? wanted : Mathf.Lerp(currentDistance, wanted, 1f - Mathf.Exp(-4f * Time.deltaTime));
+            currentDistance = wanted < currentDistance ? wanted : Mathf.Lerp(currentDistance, wanted, 1f - Mathf.Exp(-4f * dt));
 
             transform.SetPositionAndRotation(focus - lookDir * currentDistance, Quaternion.LookRotation(lookDir, up));
         }
