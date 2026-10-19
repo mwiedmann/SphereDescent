@@ -1,0 +1,226 @@
+using UnityEngine;
+
+namespace SphereDescent
+{
+    /// <summary>
+    /// Physics-driven rolling ball on spherical worlds. Gravity always points at the world center, so the
+    /// ball sticks to whichever shell surface it is on and falls inward through holes. Movement is relative
+    /// to the camera; the ball rolls via torque and gets limited steering in the air. Jumping on a boost
+    /// pad launches it straight up through the hole above and sets it down beside the hole.
+    /// </summary>
+    [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
+    public class BallController : MonoBehaviour
+    {
+        [Header("Movement")]
+        public float gravity = 25f;
+        public float rollTorque = 45f;
+        public float groundAcceleration = 12f;
+        public float maxGroundSpeed = 11f;
+        public float airAcceleration = 9f;
+        public float maxAirSpeed = 8f;
+        [Tooltip("Slows the ball when there is no input on the ground.")]
+        public float brake = 1.5f;
+
+        [Header("Jumping")]
+        public float jumpHeight = 2.2f;
+        public float coyoteTime = 0.12f;
+        public float jumpBuffer = 0.15f;
+        [Tooltip("How far above the upper surface a boost-pad launch peaks.")]
+        public float launchClearance = 2.5f;
+
+        [Header("References")]
+        public Transform cameraTransform;
+        public LevelInstance level;
+
+        public float Radius { get; private set; }
+        public int CurrentLayer { get; private set; }
+        public bool IsGrounded { get; private set; }
+        public bool IsLaunching => launchPad != null;
+        public bool OnPad => pad != null && Time.time - padSeenAt < 0.15f;
+
+        Rigidbody rb;
+        Vector2 moveInput;
+        float jumpPressedAt = -10f;
+        float lastGroundedAt = -10f;
+        bool touchingGround;
+        BoostPad pad;
+        float padSeenAt = -10f;
+        BoostPad launchPad;
+        Vector3 checkpoint;
+        int checkpointLayer = -1;
+        bool frozen;
+
+        void Awake()
+        {
+            rb = GetComponent<Rigidbody>();
+            rb.useGravity = false;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            rb.angularDamping = 0.2f;
+            Radius = GetComponent<SphereCollider>().radius * transform.lossyScale.x;
+            // Rolling speed is naturally limited by spin; launches set linear velocity directly.
+            rb.maxAngularVelocity = maxGroundSpeed / Radius * 1.15f;
+        }
+
+        void Update()
+        {
+            if (frozen) { moveInput = Vector2.zero; return; }
+            moveInput = GameInput.Move();
+            if (GameInput.JumpPressed()) jumpPressedAt = Time.time;
+            if (GameInput.RespawnPressed()) RespawnAtCheckpoint();
+        }
+
+        void FixedUpdate()
+        {
+            Vector3 pos = rb.position;
+            float r = pos.magnitude;
+            Vector3 up = r > 1e-4f ? pos / r : Vector3.up;
+
+            IsGrounded = touchingGround && launchPad == null;
+            touchingGround = false;
+            if (level != null) CurrentLayer = level.LayerAt(r);
+            if (IsGrounded)
+            {
+                lastGroundedAt = Time.time;
+                if (CurrentLayer != checkpointLayer) { checkpoint = pos; checkpointLayer = CurrentLayer; }
+            }
+
+            rb.AddForce(-up * gravity, ForceMode.Acceleration);
+            if (frozen) return;
+
+            if (level != null && r > level.OuterRadius + 60f) { RespawnAtCheckpoint(); return; }
+            if (launchPad != null) { GuideLaunch(pos, up, r); return; }
+
+            Vector3 move = MoveDirection(up);
+            Vector3 tangentVel = Vector3.ProjectOnPlane(rb.linearVelocity, up);
+
+            if (IsGrounded)
+            {
+                if (move.sqrMagnitude > 0.0001f)
+                {
+                    rb.AddTorque(Vector3.Cross(up, move) * rollTorque, ForceMode.Acceleration);
+                    float headroom = Mathf.Clamp01(1f - Vector3.Dot(tangentVel, move.normalized) / maxGroundSpeed);
+                    rb.AddForce(move * (groundAcceleration * headroom), ForceMode.Acceleration);
+                }
+                else
+                {
+                    rb.AddForce(-tangentVel * brake, ForceMode.Acceleration);
+                }
+            }
+            else if (move.sqrMagnitude > 0.0001f)
+            {
+                float headroom = Mathf.Clamp01(1f - Vector3.Dot(tangentVel, move.normalized) / maxAirSpeed);
+                rb.AddForce(move * (airAcceleration * headroom), ForceMode.Acceleration);
+            }
+
+            bool jumpQueued = Time.time - jumpPressedAt <= jumpBuffer;
+            bool canJump = Time.time - lastGroundedAt <= coyoteTime;
+            if (jumpQueued && canJump)
+            {
+                jumpPressedAt = -10f;
+                lastGroundedAt = -10f;
+                if (OnPad) StartLaunch(pad, up, r);
+                else
+                {
+                    Vector3 v = rb.linearVelocity;
+                    rb.linearVelocity = v - up * Vector3.Dot(v, up) + up * Mathf.Sqrt(2f * gravity * jumpHeight);
+                }
+            }
+        }
+
+        Vector3 MoveDirection(Vector3 up)
+        {
+            if (moveInput.sqrMagnitude < 0.0001f || cameraTransform == null) return Vector3.zero;
+            Vector3 fwd = Vector3.ProjectOnPlane(cameraTransform.forward, up);
+            if (fwd.sqrMagnitude < 0.001f) fwd = Vector3.ProjectOnPlane(cameraTransform.up, up);
+            fwd.Normalize();
+            Vector3 right = Vector3.Cross(up, fwd);
+            return Vector3.ClampMagnitude(fwd * moveInput.y + right * moveInput.x, 1f);
+        }
+
+        void StartLaunch(BoostPad boost, Vector3 up, float r)
+        {
+            launchPad = boost;
+            float rise = Mathf.Max(1f, boost.TargetSurfaceRadius + launchClearance - r);
+            rb.linearVelocity = up * Mathf.Sqrt(2f * gravity * rise);
+            rb.angularVelocity *= 0.3f;
+            boost.OnLaunched();
+        }
+
+        /// <summary>
+        /// While below the upper shell, keep the ball centered on the hole's axis. Once clear of it, aim the
+        /// sideways velocity so the ball comes down on solid ground next to the hole, then hand control back.
+        /// </summary>
+        void GuideLaunch(Vector3 pos, Vector3 up, float r)
+        {
+            Vector3 v = rb.linearVelocity;
+            float vr = Vector3.Dot(v, up);
+            Vector3 axis = launchPad.Axis;
+            float target = launchPad.TargetSurfaceRadius;
+
+            if (r < target + 1f)
+            {
+                if (vr <= 0f) { launchPad = null; return; } // somehow stalled; let physics take over
+                Vector3 offAxis = pos - axis * Vector3.Dot(pos, axis);
+                rb.linearVelocity = up * vr + Vector3.ProjectOnPlane(-offAxis * 6f, up);
+                return;
+            }
+
+            float landRadius = target + Radius;
+            float h = Mathf.Max(0f, r - landRadius);
+            float t = (vr + Mathf.Sqrt(vr * vr + 2f * gravity * h)) / gravity;
+            float a = launchPad.LandAngle;
+            Vector3 landDir = (axis * Mathf.Cos(a) + launchPad.ExitTangent * Mathf.Sin(a)).normalized;
+            Vector3 toLand = Vector3.ProjectOnPlane(landDir * landRadius - pos, up);
+            rb.linearVelocity = up * vr + toLand / Mathf.Max(t, 0.2f);
+            launchPad = null;
+        }
+
+        void OnCollisionStay(Collision c) => CheckGround(c);
+        void OnCollisionEnter(Collision c) => CheckGround(c);
+
+        void CheckGround(Collision c)
+        {
+            Vector3 up = rb.position.normalized;
+            for (int i = 0; i < c.contactCount; i++)
+            {
+                if (Vector3.Dot(c.GetContact(i).normal, up) > 0.55f) { touchingGround = true; return; }
+            }
+        }
+
+        public void SetPad(BoostPad boost)
+        {
+            pad = boost;
+            padSeenAt = Time.time;
+        }
+
+        public void Teleport(Vector3 position)
+        {
+            launchPad = null;
+            transform.position = position;
+            rb.position = position;
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            checkpoint = position;
+            checkpointLayer = level != null ? level.LayerAt(position.magnitude) : -1;
+            CurrentLayer = Mathf.Max(0, checkpointLayer);
+        }
+
+        public void RespawnAtCheckpoint()
+        {
+            int layer = checkpointLayer;
+            Teleport(checkpoint + checkpoint.normalized * 0.5f);
+            checkpointLayer = layer;
+        }
+
+        public void SetFrozen(bool value)
+        {
+            frozen = value;
+            if (value)
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+        }
+    }
+}
