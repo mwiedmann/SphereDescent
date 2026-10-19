@@ -23,10 +23,10 @@ namespace SphereDescent
         {
             if (ground == null) ground = MakeGrid(new Color(0.75f, 0.85f, 0.9f), new Color(0.45f, 0.55f, 0.6f), 2f, false);
             if (wall == null) wall = MakeGrid(new Color(0.85f, 0.6f, 0.45f), new Color(0.6f, 0.4f, 0.3f), 1f, false);
-            if (ball == null) ball = MakeGrid(new Color(0.95f, 0.95f, 0.95f), new Color(0.9f, 0.2f, 0.2f), 0.5f, true);
+            if (ball == null) ball = MakeGrid(new Color(0.95f, 0.95f, 0.95f), new Color(1f, 0.15f, 0.6f), 0.5f, true);
             if (pad == null) pad = MakeEmissive(new Color(0.2f, 0.9f, 1f), 2f);
             if (ringUp == null) ringUp = MakeEmissive(new Color(0.2f, 0.9f, 1f), 1.5f);
-            if (ringDrop == null) ringDrop = MakeEmissive(new Color(1f, 0.55f, 0.1f), 1.5f);
+            if (ringDrop == null) ringDrop = MakeEmissive(new Color(1f, 0.45f, 0.05f), 1.8f);
             if (exit == null) exit = MakeEmissive(new Color(1f, 0.85f, 0.2f), 3f);
         }
 

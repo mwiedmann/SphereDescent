@@ -13,7 +13,8 @@ namespace SphereDescent
 
         public LevelSettings settings = new LevelSettings();
         public LevelMaterials materials = new LevelMaterials();
-        public Color skyColor = new Color(0.55f, 0.72f, 0.92f);
+        [Tooltip("Background color when the scene has no skybox material.")]
+        public Color skyColor = new Color(0.08f, 0.02f, 0.16f);
         [Tooltip("Each world's seed is derived from this, so the same number always gives the same worlds.")]
         public int baseSeed = 1337;
         public int startWorld = 1;
@@ -72,9 +73,8 @@ namespace SphereDescent
             }
             cam.nearClipPlane = 0.1f;
             cam.farClipPlane = 1000f;
-            // Unity's procedural skybox draws its horizon relative to world up, which looks wrong on the
-            // sides of a planet, so use a plain sky color instead.
-            cam.clearFlags = CameraClearFlags.SolidColor;
+            // The synthwave skybox follows the player's local up (see UpdateSky); without it, use a plain color.
+            cam.clearFlags = RenderSettings.skybox != null ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
             cam.backgroundColor = skyColor;
             orbit = cam.GetComponent<OrbitCamera>();
             if (orbit == null) orbit = cam.gameObject.AddComponent<OrbitCamera>();
@@ -147,13 +147,22 @@ namespace SphereDescent
 
         void LateUpdate()
         {
-            // Keep the sun overhead wherever the ball is, so no part of the sphere is stuck in night.
-            if (sun == null || ball == null) return;
-            Vector3 up = ball.transform.position.normalized;
+            if (ball != null) UpdateSky(sun, ball.transform.position.normalized);
+        }
+
+        /// <summary>
+        /// Keeps the sun light high above wherever the player is, so no part of the sphere is stuck in night,
+        /// and points the skybox's horizon and retro sun the same way (the sky sun sits on the horizon in the
+        /// light's direction).
+        /// </summary>
+        public static void UpdateSky(Light sun, Vector3 up)
+        {
             Vector3 tilt = Vector3.ProjectOnPlane(new Vector3(0.35f, 0.2f, 1f), up);
             if (tilt.sqrMagnitude < 0.01f) tilt = Vector3.ProjectOnPlane(Vector3.right, up);
-            Vector3 lightDir = -(up + tilt.normalized * 0.55f).normalized;
-            sun.transform.rotation = Quaternion.LookRotation(lightDir, tilt);
+            tilt.Normalize();
+            if (sun != null) sun.transform.rotation = Quaternion.LookRotation(-(up + tilt * 0.55f).normalized, tilt);
+            Shader.SetGlobalVector("_PlayerUp", up);
+            Shader.SetGlobalVector("_SkySunDir", (tilt + up * 0.1f).normalized);
         }
 
         void ShowMessage(string text, float seconds)

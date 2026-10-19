@@ -26,17 +26,22 @@ Material:
     m_Ints: []
     m_Floats:
     - _Checker: 0
-    - _Glossiness: 0.25
+    - _Glossiness: 0.5
+    - _GlowIntensity: 1.8
     - _GridSize: 1
     - _LineWidth: 0.04
     - _Metallic: 0
     - _ObjectSpace: 0
-    - _PatternContrast: 0.3
-    - _ZoneBorder: 0.5
+    - _StripWidth: 0.22
+    - _SurfaceRadius: 0
+    - _WallHeight: 4
+    - _WallMode: 0
+    - _ZoneBorder: 0.2
     - _ZoneMix: 0.6
     - _ZoneMode: 0
     m_Colors:
     - _Color: {r: 0.85, g: 0.6, b: 0.45, a: 1}
+    - _DarkColor: {r: 0.035, g: 0.025, b: 0.07, a: 1}
     - _LineColor: {r: 0.6, g: 0.4, b: 0.3, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

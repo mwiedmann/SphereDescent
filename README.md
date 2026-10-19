@@ -1,6 +1,8 @@
 # Sphere Descent
 
-A 3D rolling-ball maze game made in Unity. You steer a small ball across the outside of a planet covered in maze walls. You drop through holes onto smaller spheres nested inside, and sometimes climb back up, until you reach the glowing core at the center.
+A 3D rolling-ball maze game made in Unity, with a synthwave look. You steer a small ball across the outside of a planet covered in neon-lit maze walls. You drop through holes onto smaller spheres nested inside, and sometimes climb back up, until you reach the glowing core at the center.
+
+![The synthwave sun over the maze](Docs/screenshots/horizon.png)
 
 ![Rolling through a maze corridor](Docs/screenshots/gameplay.png)
 
@@ -23,7 +25,16 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 
 ![Landing on the gold core completes the world](Docs/screenshots/core.png)
 
-To help you find your way, each sphere is split into 12 colored zones, each with its own pattern. Glowing landmark pillars mark the zones, and the zones line up through every layer. The HUD shows the world, section, layer and zone you're in.
+To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. Glowing landmark pillars mark the zones, and the zones line up through every layer. The HUD shows the world, section, layer and zone you're in.
+
+## Look
+
+Everything is drawn by shaders, with no image textures:
+
+- **Floors:** dark, with glowing anti-aliased lines in the zone's neon color (`Assets/Shaders/TriplanarGrid.shader`).
+- **Walls:** dark panels with a neon strip along the top edge.
+- **Sky:** a purple-to-magenta gradient with stars and a striped retro sun on the horizon (`Assets/Shaders/SynthwaveSky.shader`). It follows your local "up" wherever you are on the planet.
+- **Glow:** bloom and a light vignette from URP post-processing (`Assets/Settings/PostProcessing.asset`).
 
 ## Controls
 
@@ -75,8 +86,8 @@ Assets/
     Gameplay/   ball, camera, input, boost pads, game manager and HUD
     Geometry/   icosphere, hex/pentagon sphere grid, mesh builders
     Level/      maze generation, level building, zones, settings
-  Shaders/      triplanar zone/grid shader (URP)
-  Settings/     URP pipeline, renderer and global settings
+  Shaders/      neon zone/grid shader and synthwave skybox (URP)
+  Settings/     URP pipeline, renderer, global and post-processing settings
   Editor/       scene setup and test tools
   Scenes/       Main.unity
 Docs/screenshots/  images used in this README

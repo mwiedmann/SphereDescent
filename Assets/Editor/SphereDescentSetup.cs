@@ -23,12 +23,15 @@ namespace SphereDescent.EditorTools
             {
                 ground = SaveMaterial("Ground", LevelMaterials.MakeGrid(new Color(0.75f, 0.85f, 0.9f), new Color(0.5f, 0.6f, 0.65f), 2f, false)),
                 wall = SaveMaterial("Wall", LevelMaterials.MakeGrid(new Color(0.85f, 0.6f, 0.45f), new Color(0.6f, 0.4f, 0.3f), 1f, false)),
-                ball = SaveMaterial("Ball", LevelMaterials.MakeGrid(new Color(0.96f, 0.96f, 0.96f), new Color(0.9f, 0.2f, 0.25f), 0.5f, true)),
+                ball = SaveMaterial("Ball", LevelMaterials.MakeGrid(new Color(0.96f, 0.96f, 0.96f), new Color(1f, 0.15f, 0.6f), 0.5f, true)),
                 pad = SaveMaterial("BoostPad", LevelMaterials.MakeEmissive(new Color(0.2f, 0.9f, 1f), 2f)),
                 ringUp = SaveMaterial("HoleRingTwoWay", LevelMaterials.MakeEmissive(new Color(0.2f, 0.9f, 1f), 1.5f)),
-                ringDrop = SaveMaterial("HoleRingDrop", LevelMaterials.MakeEmissive(new Color(1f, 0.55f, 0.1f), 1.5f)),
+                ringDrop = SaveMaterial("HoleRingDrop", LevelMaterials.MakeEmissive(new Color(1f, 0.45f, 0.05f), 1.8f)),
                 exit = SaveMaterial("Exit", LevelMaterials.MakeEmissive(new Color(1f, 0.85f, 0.2f), 3f)),
             };
+
+            var sky = SaveMaterial("Sky", new Material(Shader.Find("SphereDescent/SynthwaveSky")));
+            var postProfile = SavePostProcessing();
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
@@ -41,20 +44,26 @@ namespace SphereDescent.EditorTools
                     cam.gameObject.AddComponent<OrbitCamera>();
                     cam.nearClipPlane = 0.1f;
                     cam.farClipPlane = 1000f;
-                    cam.clearFlags = CameraClearFlags.SolidColor;
-                    cam.backgroundColor = new Color(0.55f, 0.72f, 0.92f);
+                    cam.clearFlags = CameraClearFlags.Skybox;
+                    cam.backgroundColor = new Color(0.08f, 0.02f, 0.16f);
+                    cam.GetUniversalAdditionalCameraData().renderPostProcessing = true;
                 }
             }
             if (sun != null)
             {
                 sun.shadows = LightShadows.Soft;
-                sun.intensity = 1.1f;
+                sun.intensity = 1f;
+                sun.color = new Color(1f, 0.85f, 0.95f);
                 RenderSettings.sun = sun;
             }
 
-            RenderSettings.skybox = null;
+            // Synthwave night: purple ambient light, sky from the skybox, neon glow from bloom.
+            RenderSettings.skybox = sky;
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.42f, 0.45f, 0.52f);
+            RenderSettings.ambientLight = new Color(0.32f, 0.24f, 0.42f);
+            var volume = new GameObject("Post Processing").AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.sharedProfile = postProfile;
             if (GraphicsSettings.defaultRenderPipeline is UniversalRenderPipelineAsset urp)
             {
                 urp.shadowDistance = 60f;
@@ -69,6 +78,26 @@ namespace SphereDescent.EditorTools
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             AssetDatabase.SaveAssets();
             Debug.Log("Sphere Descent: main scene created at " + ScenePath);
+        }
+
+        /// <summary>Bloom makes the neon lines and glowing objects glow; a light vignette frames the view.</summary>
+        static VolumeProfile SavePostProcessing()
+        {
+            const string path = "Assets/Settings/PostProcessing.asset";
+            AssetDatabase.DeleteAsset(path);
+            var profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            AssetDatabase.CreateAsset(profile, path);
+
+            var bloom = profile.Add<Bloom>(true);
+            bloom.threshold.Override(0.9f);
+            bloom.intensity.Override(1.2f);
+            bloom.scatter.Override(0.65f);
+            var vignette = profile.Add<Vignette>(true);
+            vignette.intensity.Override(0.28f);
+            vignette.color.Override(new Color(0.1f, 0f, 0.15f));
+            foreach (var component in profile.components) AssetDatabase.AddObjectToAsset(component, profile);
+            EditorUtility.SetDirty(profile);
+            return profile;
         }
 
         static Material SaveMaterial(string name, Material m)
@@ -276,7 +305,7 @@ namespace SphereDescent.EditorTools
                 ball.transform.position = ballPos;
                 Vector3 up = ballPos.normalized;
                 cam.transform.SetPositionAndRotation(camPos, Quaternion.LookRotation(ballPos + up * 0.6f - camPos, up));
-                sun.transform.rotation = Quaternion.LookRotation(-(up + Vector3.ProjectOnPlane(new Vector3(0.35f, 0.2f, 1f), up).normalized * 0.55f).normalized);
+                GameManager.UpdateSky(sun, up);
                 var rt = new RenderTexture(1280, 720, 24);
                 cam.targetTexture = rt;
                 cam.Render();
@@ -359,8 +388,7 @@ namespace SphereDescent.EditorTools
                 level.SetShadowLayer(level.LayerAt(ballPos.magnitude));
                 level.SetVisibleLayers(focusLayer);
                 ball.transform.position = ballPos;
-                Vector3 up = ballPos.normalized;
-                sun.transform.rotation = Quaternion.LookRotation(-(up + Vector3.ProjectOnPlane(new Vector3(0.35f, 0.2f, 1f), up).normalized * 0.55f).normalized);
+                GameManager.UpdateSky(sun, ballPos.normalized);
                 cam.transform.SetPositionAndRotation(camPos, camRot);
                 var rt = new RenderTexture(width, height, 24) { antiAliasing = 8 };
                 cam.targetTexture = rt;
@@ -456,6 +484,15 @@ namespace SphereDescent.EditorTools
                 Vector3 near = Vector3.Slerp(grid.CellCenters[route[route.Count - 2]], padDir, 0.3f);
                 GameView("boost_pad", sec.Shell, near, padDir, 14f);
                 break;
+            }
+
+            // The synthwave sun on the horizon, from just above the wall tops near the start.
+            {
+                Vector3 toSun = Vector3.ProjectOnPlane(new Vector3(0.35f, 0.2f, 1f), start).normalized;
+                Vector3 sunBall = start * (r0 + 0.5f);
+                Vector3 sunEye = sunBall + start * (settings.wallHeight + 3f) - toSun * 6f;
+                Vector3 look = Quaternion.AngleAxis(8f, Vector3.Cross(start, toSun)) * toSun;
+                Render("horizon", sunBall, sunEye, Quaternion.LookRotation(look, start), 0);
             }
 
             // Touching down on the core.

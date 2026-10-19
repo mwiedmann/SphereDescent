@@ -47,7 +47,7 @@ namespace SphereDescent
                     if (h.Shell == shell)
                         cuts.Add(new HoleCut { Direction = h.Direction, AngularRadius = holeRadius / radius });
 
-                var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 2.5f, 0.6f));
+                var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 3f, 0.6f));
                 var shellMesh = level.Own(MeshBuilders.BuildShell(shellIco, radius, s.shellThickness, cuts));
                 // Shells don't cast shadows, otherwise the outer shell would plunge every inner layer into darkness.
                 shellRenderers[shell] = CreateMeshObject(layerRoot, "Shell", shellMesh, groundMat, true, ShadowCastingMode.Off)
@@ -56,7 +56,11 @@ namespace SphereDescent
                 var walls = new List<(Vector3, Vector3)>();
                 for (int e = 0; e < grid.Edges.Length; e++)
                     if (!layout.Open[shell][e]) walls.Add((grid.Edges[e].P0, grid.Edges[e].P1));
-                var wallMat = level.Own(ZoneMaterial(mats.wall, WallColor(shell), 1f, 0.9f));
+                var wallMat = level.Own(ZoneMaterial(mats.wall, WallColor(shell), 2f, 0.9f));
+                // Neon strip along the top of the walls: the shader measures height above this shell.
+                wallMat.SetFloat("_WallMode", 1f);
+                wallMat.SetFloat("_SurfaceRadius", radius);
+                wallMat.SetFloat("_WallHeight", s.wallHeight);
                 var wallMesh = level.Own(MeshBuilders.BuildWalls(walls, radius, s.wallHeight, s.wallThickness));
                 var wallObj = CreateMeshObject(layerRoot, "Walls", wallMesh, wallMat, true, ShadowCastingMode.On);
                 level.RegisterShadowCaster(shell, wallObj.GetComponent<MeshRenderer>());
@@ -207,9 +211,9 @@ namespace SphereDescent
             return m;
         }
 
-        // Deeper layers get a little darker, on top of the zone colors.
-        static Color GroundColor(int layer) => Color.white * (0.95f - 0.08f * layer);
+        // Brightness of each layer's surfaces and glow: deeper layers get a little dimmer.
+        static Color GroundColor(int layer) => Color.white * (1f - 0.08f * layer);
 
-        static Color WallColor(int layer) => Color.white * (0.8f - 0.07f * layer);
+        static Color WallColor(int layer) => Color.white * (1f - 0.08f * layer);
     }
 }

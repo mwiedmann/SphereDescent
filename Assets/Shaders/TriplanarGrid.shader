@@ -1,8 +1,10 @@
 // Triplanar grid / checker for procedurally generated meshes that have no UVs.
 // World-space grid lines give the curved floors a sense of speed and scale; object-space checker
 // mode (used on the ball) makes rolling visible.
-// Zone mode tints and patterns surfaces by which of the 12 world zones (ZoneMap, set as global
-// arrays) they face, with a dark seam along zone borders, so each side of the world looks different.
+// Zone mode is the synthwave look for the world: dark surfaces with glowing, anti-aliased neon lines in
+// the color of the world zone (ZoneMap, set as global arrays) they face, one of four line patterns per
+// zone, and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
+// along the top edge and a dimmer one at the base. Glow is HDR emission, picked up by the bloom effect.
 // Universal Render Pipeline: lit with URP's PBR lighting and main-light shadows.
 Shader "SphereDescent/TriplanarGrid"
 {
@@ -12,14 +14,19 @@ Shader "SphereDescent/TriplanarGrid"
         _LineColor ("Line Color", Color) = (0.5,0.5,0.5,1)
         _GridSize ("Grid Size", Float) = 2
         _LineWidth ("Line Width", Range(0, 0.5)) = 0.04
-        _Glossiness ("Smoothness", Range(0,1)) = 0.25
+        _Glossiness ("Smoothness", Range(0,1)) = 0.5
         _Metallic ("Metallic", Range(0,1)) = 0
         [Toggle] _ObjectSpace ("Object Space", Float) = 0
         [Toggle] _Checker ("Checker Instead Of Lines", Float) = 0
         [Toggle] _ZoneMode ("Color By World Zone", Float) = 0
         _ZoneMix ("Zone Color Strength", Range(0,1)) = 0.6
-        _ZoneBorder ("Zone Border Width", Float) = 0.5
-        _PatternContrast ("Pattern Contrast", Range(0,1)) = 0.3
+        _ZoneBorder ("Zone Border Width", Float) = 0.2
+        _DarkColor ("Dark Surface Color", Color) = (0.035,0.025,0.07,1)
+        _GlowIntensity ("Glow Intensity", Float) = 1.8
+        [Toggle] _WallMode ("Wall Mode", Float) = 0
+        _SurfaceRadius ("Wall Base Radius", Float) = 0
+        _WallHeight ("Wall Height", Float) = 4
+        _StripWidth ("Neon Strip Width", Float) = 0.22
     }
     SubShader
     {
@@ -41,7 +48,12 @@ Shader "SphereDescent/TriplanarGrid"
             float _ZoneMode;
             float _ZoneMix;
             float _ZoneBorder;
-            float _PatternContrast;
+            float4 _DarkColor;
+            float _GlowIntensity;
+            float _WallMode;
+            float _SurfaceRadius;
+            float _WallHeight;
+            float _StripWidth;
         CBUFFER_END
         ENDHLSL
 
@@ -99,25 +111,38 @@ Shader "SphereDescent/TriplanarGrid"
                 return o;
             }
 
-            // 0 = grid lines, 1 = checker, 2 = diagonal stripes, 3 = dots
+            // Coverage of lines along integer coordinates of q (cell units), anti-aliased with screen-space
+            // derivatives. Where lines get denser than a few pixels they fade to their average coverage, so
+            // distant floors don't shimmer.
+            float Lines1D (float q, float width)
+            {
+                float w = fwidth(q);
+                float d = 0.5 - abs(frac(q) - 0.5);
+                float l = 1.0 - smoothstep(width - w, width + w, d);
+                return lerp(width * 2.0, l, saturate(1.0 - w * 3.0));
+            }
+
+            float Lines2D (float2 q, float width)
+            {
+                return max(Lines1D(q.x, width), Lines1D(q.y, width));
+            }
+
+            // 0 = square grid, 1 = diagonal grid, 2 = stripes, 3 = dots, 4 = checker (the ball)
             float Pattern (float2 p, int kind)
             {
                 float2 q = p / _GridSize;
-                if (kind == 0)
+                if (kind == 0) return Lines2D(q, _LineWidth);
+                if (kind == 1) return Lines2D(float2(q.x + q.y, q.x - q.y) * 0.7071, _LineWidth);
+                if (kind == 2) return Lines1D((q.x + q.y) * 1.4142, _LineWidth);
+                if (kind == 3)
                 {
-                    float2 f = abs(frac(q) - 0.5);
-                    return 1.0 - step(_LineWidth, 0.5 - max(f.x, f.y));
+                    float d = length(frac(q) - 0.5);
+                    float w = fwidth(d);
+                    float spot = 1.0 - smoothstep(0.12 - w, 0.12 + w, d);
+                    return lerp(0.045, spot, saturate(1.0 - fwidth(q.x) * 3.0));
                 }
-                if (kind == 1)
-                {
-                    float2 c = floor(q);
-                    return fmod(abs(c.x + c.y), 2.0);
-                }
-                if (kind == 2)
-                {
-                    return step(frac((q.x + q.y) * 0.5), 0.3);
-                }
-                return 1.0 - step(0.2, length(frac(q) - 0.5));
+                float2 c = floor(q);
+                return fmod(abs(c.x + c.y), 2.0);
             }
 
             float Triplanar (float3 p, float3 n, int kind)
@@ -131,6 +156,7 @@ Shader "SphereDescent/TriplanarGrid"
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 float3 albedo;
+                float3 emission = 0;
                 if (_ZoneMode > 0.5)
                 {
                     float3 dir = normalize(i.positionWS);
@@ -146,14 +172,37 @@ Shader "SphereDescent/TriplanarGrid"
                     // directions are ~1.05 apart, which turns the dot-product gap into a sine distance.
                     float borderDist = (best - second) / 1.05 * length(i.positionWS);
 
-                    float3 baseCol = lerp(_Color.rgb, _Color.rgb * _ZoneColors[zone].rgb * 1.1, _ZoneMix);
-                    float m = saturate(Triplanar(i.gridPos, i.gridNormal, zone % 4));
-                    albedo = lerp(baseCol, baseCol * (1.0 - _PatternContrast), m);
-                    albedo = lerp(albedo, baseCol * 0.25, step(borderDist, _ZoneBorder));
+                    float3 neon = _ZoneColors[zone].rgb;
+                    albedo = _DarkColor.rgb * lerp(1.0, 0.4 + neon * 2.0, _ZoneMix) * _Color.rgb;
+
+                    if (_WallMode > 0.5)
+                    {
+                        // Height above the floor this wall stands on.
+                        float h = length(i.positionWS) - _SurfaceRadius;
+                        float aa = fwidth(h);
+                        float top = smoothstep(_WallHeight - _StripWidth - aa, _WallHeight - _StripWidth + aa, h);
+                        float base = 1.0 - smoothstep(_StripWidth * 0.5 - aa, _StripWidth * 0.5 + aa, h);
+                        // The flat top face glows dimmer than the strip down its sides, so walls read as
+                        // edged in neon rather than capped with solid bars.
+                        float topFace = saturate((dot(normalize(i.normalWS), normalize(i.positionWS)) - 0.8) * 5.0);
+                        emission = neon * (top * lerp(1.0, 0.3, topFace) + base * 0.35);
+                        // Panel seams.
+                        albedo *= 1.0 - 0.6 * saturate(Triplanar(i.gridPos, i.gridNormal, 0));
+                    }
+                    else
+                    {
+                        float m = saturate(Triplanar(i.gridPos, i.gridNormal, zone % 4));
+                        float bw = fwidth(borderDist);
+                        float border = 1.0 - smoothstep(_ZoneBorder - bw, _ZoneBorder + bw, borderDist);
+                        emission = lerp(neon * m, neon * 1.5, border);
+                        // Ceilings (the underside of the shell above) glow less, so they don't crowd the view.
+                        if (dot(i.normalWS, i.positionWS) < 0) emission *= 0.35;
+                    }
+                    emission *= _GlowIntensity * _Color.rgb;
                 }
                 else
                 {
-                    float m = saturate(Triplanar(i.gridPos, i.gridNormal, _Checker > 0.5 ? 1 : 0));
+                    float m = saturate(Triplanar(i.gridPos, i.gridNormal, _Checker > 0.5 ? 4 : 0));
                     albedo = lerp(_Color.rgb, _LineColor.rgb, m);
                 }
 
@@ -174,6 +223,7 @@ Shader "SphereDescent/TriplanarGrid"
                 surface.occlusion = 1;
                 surface.alpha = 1;
                 surface.normalTS = float3(0, 0, 1);
+                surface.emission = emission;
 
                 half4 color = UniversalFragmentPBR(input, surface);
                 color.rgb = MixFog(color.rgb, i.fogFactor);
