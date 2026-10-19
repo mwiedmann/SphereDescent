@@ -16,6 +16,7 @@ namespace SphereDescent
         public Material exit;
 
         public const string GridShaderName = "SphereDescent/TriplanarGrid";
+        public const string LitShaderName = "Universal Render Pipeline/Lit";
 
         /// <summary>Fills any unassigned slot with a runtime material so the game still runs without the setup step.</summary>
         public void EnsureDefaults()
@@ -31,7 +32,7 @@ namespace SphereDescent
 
         public static Material MakeGrid(Color baseColor, Color lineColor, float gridSize, bool objectSpaceChecker)
         {
-            var shader = Shader.Find(GridShaderName) ?? Shader.Find("Standard");
+            var shader = Shader.Find(GridShaderName) ?? Shader.Find(LitShaderName);
             var m = new Material(shader) { color = baseColor };
             if (m.HasProperty("_LineColor")) m.SetColor("_LineColor", lineColor);
             if (m.HasProperty("_GridSize")) m.SetFloat("_GridSize", gridSize);
@@ -42,7 +43,7 @@ namespace SphereDescent
 
         public static Material MakeEmissive(Color color, float intensity)
         {
-            var m = new Material(Shader.Find("Standard")) { color = color };
+            var m = new Material(Shader.Find(LitShaderName)) { color = color };
             m.EnableKeyword("_EMISSION");
             m.SetColor("_EmissionColor", color * intensity);
             m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;

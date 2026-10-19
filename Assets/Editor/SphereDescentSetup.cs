@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace SphereDescent.EditorTools
 {
@@ -54,7 +55,11 @@ namespace SphereDescent.EditorTools
             RenderSettings.skybox = null;
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.42f, 0.45f, 0.52f);
-            QualitySettings.shadowDistance = 60f;
+            if (GraphicsSettings.defaultRenderPipeline is UniversalRenderPipelineAsset urp)
+            {
+                urp.shadowDistance = 60f;
+                EditorUtility.SetDirty(urp);
+            }
 
             var gm = new GameObject("Game Manager").AddComponent<GameManager>();
             gm.materials = mats;

@@ -42,7 +42,7 @@ To help you find your way, each sphere is split into 12 colored zones, each with
 2. Add this folder as a project in Unity Hub and open it.
 3. Open `Assets/Scenes/Main.unity` and press **Play**.
 
-The project uses the built-in render pipeline and the Input System package (included with Unity) for keyboard, mouse and gamepad input.
+The project uses the Universal Render Pipeline (URP) and the Input System package, both included with Unity.
 
 ## How worlds are generated
 
@@ -75,7 +75,8 @@ Assets/
     Gameplay/   ball, camera, input, boost pads, game manager and HUD
     Geometry/   icosphere, hex/pentagon sphere grid, mesh builders
     Level/      maze generation, level building, zones, settings
-  Shaders/      triplanar zone/grid shader
+  Shaders/      triplanar zone/grid shader (URP)
+  Settings/     URP pipeline, renderer and global settings
   Editor/       scene setup and test tools
   Scenes/       Main.unity
 Docs/screenshots/  images used in this README
