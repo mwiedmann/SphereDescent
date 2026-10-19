@@ -117,9 +117,35 @@ namespace SphereDescent
             return MakeMesh("Core", verts, normals, new List<int>(ico.Triangles));
         }
 
+        /// <summary>Identifies a wall corner at a joint: the joint point, the two walls, and inside/outside.</summary>
+        readonly struct CornerKey : System.IEquatable<CornerKey>
+        {
+            readonly Vector3 point;
+            readonly int wallA, wallB;
+            readonly bool outside;
+
+            public CornerKey(Vector3 point, int wall, int otherWall, bool outside)
+            {
+                this.point = point;
+                wallA = Mathf.Min(wall, otherWall);
+                wallB = Mathf.Max(wall, otherWall);
+                this.outside = outside;
+            }
+
+            public bool Equals(CornerKey o) => point.Equals(o.point) && wallA == o.wallA && wallB == o.wallB && outside == o.outside;
+            public override bool Equals(object obj) => obj is CornerKey o && Equals(o);
+            public override int GetHashCode() => (point.GetHashCode() * 397 ^ wallA * 31 ^ wallB) * 2 + (outside ? 1 : 0);
+        }
+
         /// <summary>
         /// One combined mesh for every maze wall on a sphere. Each wall follows the great-circle arc between
-        /// its endpoints, sinks slightly into the ground, and is extended by half its thickness so corners close.
+        /// its endpoints and sinks slightly into the ground. Ends are shaped by what meets them, so walls join
+        /// without seams or poking corners: each side of a wall that meets another wall is mitered against it,
+        /// so at a bend the two walls meet along the line that splits the corner, and where three meet they
+        /// leave a small triangle in the middle that gets a cap on top. A free end extends by half the
+        /// thickness. Walls meeting at a joint reuse the exact same corner vertices (and the cap uses them too),
+        /// so joints are watertight rather than relying on separately computed points lining up. Normals are
+        /// per vertex, so the short flat pieces that make up each curved wall shade as one smooth surface.
         /// </summary>
         public static Mesh BuildWalls(IList<(Vector3 p0, Vector3 p1)> walls, float radius, float height, float thickness)
         {
@@ -129,46 +155,154 @@ namespace SphereDescent
             const float sink = 0.6f;
             float half = thickness * 0.5f;
 
-            foreach (var (p0, p1) in walls)
+            // Walls meeting at each endpoint. Shared endpoints are computed identically, so exact keys match.
+            var junctions = new Dictionary<Vector3, List<int>>();
+            for (int w = 0; w < walls.Count; w++)
             {
-                float ang = Vector3.Angle(p0, p1) * Mathf.Deg2Rad;
-                if (ang < 1e-5f) continue;
-                float ext = half / radius;
-                int segments = Mathf.Max(1, Mathf.CeilToInt((ang + 2f * ext) * radius / 2f));
-
-                Vector3 prevDir = Vector3.zero, prevSide = Vector3.zero;
-                for (int i = 0; i <= segments; i++)
+                foreach (var p in new[] { walls[w].p0, walls[w].p1 })
                 {
-                    float t = (-ext + (ang + 2f * ext) * i / segments) / ang;
-                    Vector3 dir = Vector3.SlerpUnclamped(p0, p1, t).normalized;
-                    Vector3 along = Vector3.ProjectOnPlane(p1 - p0, dir).normalized;
-                    Vector3 side = Vector3.Cross(dir, along).normalized * half;
-
-                    if (i == 0) AddWallCap(verts, normals, indices, dir, side, radius, sink, height, -along);
-                    if (i > 0)
-                    {
-                        Vector3 b0 = prevDir * (radius - sink), t0 = prevDir * (radius + height);
-                        Vector3 b1 = dir * (radius - sink), t1 = dir * (radius + height);
-                        Vector3 sideN = ((prevSide + side) * 0.5f).normalized;
-                        Vector3 upN = ((prevDir + dir) * 0.5f).normalized;
-                        AddQuad(verts, normals, indices, b0 + prevSide, t0 + prevSide, t1 + side, b1 + side, sideN);
-                        AddQuad(verts, normals, indices, b0 - prevSide, t0 - prevSide, t1 - side, b1 - side, -sideN);
-                        AddQuad(verts, normals, indices, t0 + prevSide, t0 - prevSide, t1 - side, t1 + side, upN);
-                    }
-                    if (i == segments) AddWallCap(verts, normals, indices, dir, side, radius, sink, height, along);
-                    prevDir = dir;
-                    prevSide = side;
+                    if (!junctions.TryGetValue(p, out var list)) junctions[p] = list = new List<int>(3);
+                    list.Add(w);
                 }
             }
 
-            return MakeMesh("Walls", verts, normals, indices);
-        }
+            // Unit direction along the surface from endpoint p into wall w.
+            Vector3 Into(int w, Vector3 p)
+            {
+                Vector3 other = walls[w].p0 == p ? walls[w].p1 : walls[w].p0;
+                return Vector3.ProjectOnPlane(other - p, p).normalized;
+            }
 
-        static void AddWallCap(List<Vector3> verts, List<Vector3> normals, List<int> indices,
-            Vector3 dir, Vector3 side, float radius, float sink, float height, Vector3 facing)
-        {
-            Vector3 b = dir * (radius - sink), t = dir * (radius + height);
-            AddQuad(verts, normals, indices, b + side, t + side, t - side, b - side, facing);
+            // How far (radians, along the arc beyond endpoint p) each side of wall w runs, and which shared
+            // corner each side ends on. "Left" is the side Cross(up, into the wall) points to.
+            void EndExtension(int w, Vector3 p, out float left, out float right, out CornerKey? leftCorner, out CornerKey? rightCorner)
+            {
+                var meeting = junctions[p];
+                left = right = half / radius;
+                leftCorner = rightCorner = null;
+                if (meeting.Count == 1) return;
+                Vector3 into = Into(w, p);
+                Vector3 leftDir = Vector3.Cross(p, into);
+                // Miter each side against the neighboring wall on that side: the side facing a wall is cut
+                // short so the two meet along the line splitting the angle between them. At a bend the outer
+                // side, with no wall to face, runs on just as far to meet the other wall's outer corner.
+                float leftMiter = float.NaN, rightMiter = float.NaN;
+                int leftWall = -1, rightWall = -1;
+                foreach (int o in meeting)
+                {
+                    if (o == w) continue;
+                    Vector3 other = Into(o, p);
+                    float angle = Vector3.Angle(into, other) * Mathf.Deg2Rad;
+                    float miter = Mathf.Clamp(half / Mathf.Tan(angle * 0.5f), 0f, 2f * half) / radius;
+                    if (Vector3.Dot(leftDir, other) > 0f)
+                    {
+                        if (float.IsNaN(leftMiter) || miter < leftMiter) { leftMiter = miter; leftWall = o; }
+                    }
+                    else if (float.IsNaN(rightMiter) || miter < rightMiter) { rightMiter = miter; rightWall = o; }
+                }
+                // A side with no wall to face (the outside of a bend) shares its corner with the other wall's
+                // outside instead.
+                left = float.IsNaN(leftMiter) ? rightMiter : -leftMiter;
+                right = float.IsNaN(rightMiter) ? leftMiter : -rightMiter;
+                leftCorner = leftWall >= 0 ? new CornerKey(p, w, leftWall, false) : new CornerKey(p, w, rightWall, true);
+                rightCorner = rightWall >= 0 ? new CornerKey(p, w, rightWall, false) : new CornerKey(p, w, leftWall, true);
+            }
+
+            // Corner vertices (bottom, top) shared by the walls meeting at each joint: the first wall to reach
+            // a joint stores its corner and the other reuses it exactly.
+            var sharedCorners = new Dictionary<CornerKey, (Vector3 bottom, Vector3 top)>();
+            void ShareCorner(CornerKey? key, ref Vector3 bottom, ref Vector3 top)
+            {
+                if (key == null) return;
+                if (sharedCorners.TryGetValue(key.Value, out var shared)) { bottom = shared.bottom; top = shared.top; }
+                else sharedCorners[key.Value] = (bottom, top);
+            }
+
+            // Top corners of the walls around each three-way junction, which outline the cap's triangle.
+            var capCorners = new Dictionary<Vector3, List<Vector3>>();
+
+            for (int w = 0; w < walls.Count; w++)
+            {
+                var (p0, p1) = walls[w];
+                float ang = Vector3.Angle(p0, p1) * Mathf.Deg2Rad;
+                if (ang < 1e-5f) continue;
+                // Sides as seen walking from p0 to p1: "a" is the side Cross(up, along) points to.
+                EndExtension(w, p0, out float startA, out float startB, out var startCornerA, out var startCornerB);
+                // From p1, "into the wall" points back toward p0, which swaps left and right.
+                EndExtension(w, p1, out float endB, out float endA, out var endCornerB, out var endCornerA);
+                int segments = Mathf.Max(1, Mathf.CeilToInt((ang + 2f * half / radius) * radius / 2f));
+
+                Vector3 prevA = Vector3.zero, prevB = Vector3.zero, prevSideA = Vector3.zero, prevSideB = Vector3.zero;
+                Vector3 pBaseA = Vector3.zero, pTopA = Vector3.zero, pBaseB = Vector3.zero, pTopB = Vector3.zero;
+                for (int i = 0; i <= segments; i++)
+                {
+                    float f = (float)i / segments;
+                    // Both sides follow the same arc but can start and end at different points (miters).
+                    Vector3 dirA = Vector3.SlerpUnclamped(p0, p1, (-startA + (ang + startA + endA) * f) / ang).normalized;
+                    Vector3 dirB = Vector3.SlerpUnclamped(p0, p1, (-startB + (ang + startB + endB) * f) / ang).normalized;
+                    Vector3 sideA = Vector3.Cross(dirA, Vector3.ProjectOnPlane(p1 - p0, dirA)).normalized;
+                    Vector3 sideB = Vector3.Cross(dirB, Vector3.ProjectOnPlane(p1 - p0, dirB)).normalized;
+                    Vector3 baseA = dirA * (radius - sink) + sideA * half, topA = dirA * (radius + height) + sideA * half;
+                    Vector3 baseB = dirB * (radius - sink) - sideB * half, topB = dirB * (radius + height) - sideB * half;
+                    if (i == 0)
+                    {
+                        ShareCorner(startCornerA, ref baseA, ref topA);
+                        ShareCorner(startCornerB, ref baseB, ref topB);
+                    }
+                    if (i == segments)
+                    {
+                        ShareCorner(endCornerA, ref baseA, ref topA);
+                        ShareCorner(endCornerB, ref baseB, ref topB);
+                    }
+
+                    Vector3 endPoint = i == 0 ? p0 : p1;
+                    bool hub = (i == 0 || i == segments) && junctions[endPoint].Count >= 3;
+                    if (hub)
+                    {
+                        // The end face is hidden under the junction cap; just record the left top corner
+                        // (seen from the junction), which the next wall around shares as its right one.
+                        if (!capCorners.TryGetValue(endPoint, out var corners)) capCorners[endPoint] = corners = new List<Vector3>(3);
+                        corners.Add(i == 0 ? topA : topB);
+                    }
+                    else if (i == 0 || i == segments)
+                    {
+                        // End face, square or mitered.
+                        Vector3 facing = Vector3.Cross(topB - baseA, topA - baseB).normalized;
+                        Vector3 outward = Vector3.ProjectOnPlane(p1 - p0, dirA) * (i == 0 ? -1f : 1f);
+                        if (Vector3.Dot(facing, outward) < 0f) facing = -facing;
+                        AddQuad(verts, normals, indices, baseA, topA, topB, baseB, facing);
+                    }
+                    if (i > 0)
+                    {
+                        AddQuad(verts, normals, indices, pBaseA, pTopA, topA, baseA, prevSideA, prevSideA, sideA, sideA);
+                        AddQuad(verts, normals, indices, pBaseB, pTopB, topB, baseB, -prevSideB, -prevSideB, -sideB, -sideB);
+                        AddQuad(verts, normals, indices, pTopA, pTopB, topB, topA, prevA, prevB, dirB, dirA);
+                    }
+                    prevA = dirA;
+                    prevB = dirB;
+                    prevSideA = sideA;
+                    prevSideB = sideB;
+                    pBaseA = baseA;
+                    pTopA = topA;
+                    pBaseB = baseB;
+                    pTopB = topB;
+                }
+            }
+
+            // Cap the small triangle left in the middle of each three-way junction.
+            foreach (var kv in capCorners)
+            {
+                if (kv.Value.Count != 3) continue;
+                Vector3 up = kv.Key.normalized;
+                var c = kv.Value;
+                int i0 = verts.Count;
+                verts.Add(c[0]); verts.Add(c[1]); verts.Add(c[2]);
+                normals.Add(up); normals.Add(up); normals.Add(up);
+                bool facesUp = Vector3.Dot(Vector3.Cross(c[1] - c[0], c[2] - c[0]), up) >= 0f;
+                indices.Add(i0); indices.Add(facesUp ? i0 + 1 : i0 + 2); indices.Add(facesUp ? i0 + 2 : i0 + 1);
+            }
+
+            return MakeMesh("Walls", verts, normals, indices);
         }
 
         /// <summary>Torus lying in the local XZ plane, centered on the origin.</summary>
@@ -228,6 +362,20 @@ namespace SphereDescent
                 indices.Add(i); indices.Add(i + 2); indices.Add(i + 1);
                 indices.Add(i); indices.Add(i + 3); indices.Add(i + 2);
             }
+        }
+
+        /// <summary>
+        /// Adds a quad with a normal per vertex (for smooth shading across neighboring quads); winding is
+        /// chosen so the quad faces the average normal.
+        /// </summary>
+        static void AddQuad(List<Vector3> verts, List<Vector3> normals, List<int> indices,
+            Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, Vector3 n0, Vector3 n1, Vector3 n2, Vector3 n3)
+        {
+            AddQuad(verts, normals, indices, v0, v1, v2, v3, n0 + n1 + n2 + n3);
+            normals[normals.Count - 4] = n0.normalized;
+            normals[normals.Count - 3] = n1.normalized;
+            normals[normals.Count - 2] = n2.normalized;
+            normals[normals.Count - 1] = n3.normalized;
         }
 
         static Mesh MakeMesh(string name, List<Vector3> verts, List<Vector3> normals, List<int> indices)

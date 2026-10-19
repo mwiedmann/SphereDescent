@@ -445,6 +445,14 @@ namespace SphereDescent.EditorTools
                 return route;
             }
 
+            // The first render of a batch-mode session can come out wrong (materials not fully set up yet),
+            // so render one throwaway frame first.
+            var warmUp = new RenderTexture(64, 64, 24);
+            cam.targetTexture = warmUp;
+            cam.Render();
+            cam.targetTexture = null;
+            Object.DestroyImmediate(warmUp);
+
             float r0 = settings.shellRadii[0];
             var g0 = layout.Grids[0];
             Vector3 start = g0.CellCenters[layout.StartCell];

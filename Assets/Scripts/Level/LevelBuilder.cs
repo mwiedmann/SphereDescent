@@ -61,6 +61,7 @@ namespace SphereDescent
                 wallMat.SetFloat("_WallMode", 1f);
                 wallMat.SetFloat("_SurfaceRadius", radius);
                 wallMat.SetFloat("_WallHeight", s.wallHeight);
+                wallMat.SetFloat("_LineWidth", 0.025f); // thinner panel lines than the floor's
                 var wallMesh = level.Own(MeshBuilders.BuildWalls(walls, radius, s.wallHeight, s.wallThickness));
                 var wallObj = CreateMeshObject(layerRoot, "Walls", wallMesh, wallMat, true, ShadowCastingMode.On);
                 level.RegisterShadowCaster(shell, wallObj.GetComponent<MeshRenderer>());

@@ -2,10 +2,10 @@
 // Zone mode is the synthwave look for the world: dark surfaces with glowing, anti-aliased neon lines in
 // the color of the world zone (ZoneMap, set as global arrays) they face, one of four line patterns per
 // zone, and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
-// along the top edge and a dimmer one at the base. Ball mode draws the player's ball: eight equal segments
-// split by three great circles (so rolling is easy to see), alternating glossy black and neon in the
-// color of the zone the ball is in, fading across zone borders, plus a soft rim glow. Glow is HDR emission, picked up
-// by the bloom effect.
+// along the top edge, a dimmer one at the base, and faintly glowing panel lines on the sides. Ball mode
+// draws the player's ball: eight equal segments split by three great circles (so rolling is easy to
+// see), alternating glossy black and neon in the color of the zone the ball is in, fading across zone
+// borders, plus a soft rim glow. Glow is HDR emission, picked up by the bloom effect.
 // Universal Render Pipeline: lit with URP's PBR lighting and main-light shadows.
 Shader "SphereDescent/TriplanarGrid"
 {
@@ -28,6 +28,7 @@ Shader "SphereDescent/TriplanarGrid"
         _SurfaceRadius ("Wall Base Radius", Float) = 0
         _WallHeight ("Wall Height", Float) = 4
         _StripWidth ("Neon Strip Width", Float) = 0.22
+        _SeamGlow ("Wall Panel Line Glow", Range(0, 1)) = 0.15
         [Toggle] _BallMode ("Ball Mode", Float) = 0
         _RimStrength ("Ball Rim Glow", Float) = 1.6
     }
@@ -57,6 +58,7 @@ Shader "SphereDescent/TriplanarGrid"
             float _SurfaceRadius;
             float _WallHeight;
             float _StripWidth;
+            float _SeamGlow;
             float _BallMode;
             float _RimStrength;
         CBUFFER_END
@@ -219,9 +221,10 @@ Shader "SphereDescent/TriplanarGrid"
                         // The flat top face glows dimmer than the strip down its sides, so walls read as
                         // edged in neon rather than capped with solid bars.
                         float topFace = saturate((dot(normalize(i.normalWS), normalize(i.positionWS)) - 0.8) * 5.0);
-                        emission = neon * (top * lerp(1.0, 0.3, topFace) + base * 0.35);
-                        // Panel seams.
-                        albedo *= 1.0 - 0.6 * saturate(Triplanar(i.gridPos, i.gridNormal, 0));
+                        // Panel lines on the sides glow faintly, below the bloom threshold so they don't halo.
+                        // Not on the top, where they'd look like joints between wall pieces.
+                        float seams = (1.0 - topFace) * saturate(Triplanar(i.gridPos, i.gridNormal, 0));
+                        emission = neon * (top * lerp(1.0, 0.3, topFace) + base * 0.35 + seams * _SeamGlow);
                     }
                     else
                     {
