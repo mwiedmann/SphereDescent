@@ -42,6 +42,7 @@ Everything is drawn by shaders, with no image textures:
 | Action | Keyboard / mouse | Gamepad |
 |---|---|---|
 | Roll (relative to the camera) | W A S D | Left stick or D-pad |
+| Back up (camera keeps facing forward) | S | Stick / D-pad down |
 | Jump / launch from a boost pad | Space | A / South button |
 | Turn the camera | Mouse (click to capture), or Q / E | Right stick |
 | Respawn on the current layer | R | Select / View |

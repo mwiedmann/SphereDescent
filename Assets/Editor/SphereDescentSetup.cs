@@ -230,8 +230,10 @@ namespace SphereDescent.EditorTools
                        $"{settings.HoleRadius(layout.Grids[h.Shell], h.Shell):F1})", end, above + 0.5f);
             }
 
-            Physics.simulationMode = prevMode;
+            // Control tests on open ground, after the level is gone so its walls can't get in the way.
             Object.DestroyImmediate(level.gameObject);
+            ResponsivenessTest(r0);
+            Physics.simulationMode = prevMode;
         }
 
         static Vector3 Simulate(LevelInstance level, Vector3 start, float seconds, BoostPad launchFrom)
@@ -273,6 +275,147 @@ namespace SphereDescent.EditorTools
             Vector3 end = rb.position;
             Object.DestroyImmediate(go);
             return end;
+        }
+
+        /// <summary>
+        /// Times how quickly the ball answers the controls on open ground (a plain sphere the size of the
+        /// surface, no walls): reaching speed from rest, turning 90 degrees, and reversing.
+        /// </summary>
+        static void ResponsivenessTest(float radius)
+        {
+            var ground = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            ground.transform.localScale = Vector3.one * radius * 2f;
+            var camera = new GameObject("Test Camera").transform;
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var fixedUpdate = typeof(BallController).GetMethod("FixedUpdate", flags);
+            var input = typeof(BallController).GetField("moveInput", flags);
+            // Collision callbacks don't run in edit mode, so report the floor contact the ball really has.
+            var touching = typeof(BallController).GetField("touchingGround", flags);
+            float dt = Time.fixedDeltaTime;
+
+            // Runs a fresh ball: optionally gets it up to full speed heading forward, then holds the given input
+            // until done() says so (or a time limit). Returns how long that took.
+            float Measure(Vector2 move, bool startAtSpeed, System.Func<Vector3, Vector3, Vector3, bool> done, out float speed)
+            {
+                var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                go.layer = 2;
+                var rb = go.AddComponent<Rigidbody>();
+                var ball = go.AddComponent<BallController>();
+                typeof(BallController).GetMethod("Awake", flags).Invoke(ball, null);
+                ball.cameraTransform = camera;
+                ball.Teleport(Vector3.up * (radius + 0.5f));
+                Physics.SyncTransforms();
+                Vector3 forward = Vector3.forward;
+                void Step(Vector2 m)
+                {
+                    Vector3 up = rb.position.normalized;
+                    forward = Vector3.ProjectOnPlane(forward, up).normalized;
+                    camera.rotation = Quaternion.LookRotation(forward, up);
+                    input.SetValue(ball, m);
+                    touching.SetValue(ball, true);
+                    fixedUpdate.Invoke(ball, null);
+                    Physics.Simulate(dt);
+                }
+                if (startAtSpeed) for (int i = 0; i < 200; i++) Step(Vector2.up);
+                float t = 0f;
+                speed = 0f;
+                for (; t < 5f; t += dt)
+                {
+                    Step(move);
+                    Vector3 up = rb.position.normalized;
+                    Vector3 v = Vector3.ProjectOnPlane(rb.linearVelocity, up);
+                    speed = v.magnitude;
+                    if (done(v, forward, Vector3.Cross(up, forward))) break;
+                }
+                Object.DestroyImmediate(go);
+                return t;
+            }
+
+            float max = 11f;
+            float start = Measure(Vector2.up, false, (v, f, r) => Vector3.Dot(v, f) >= 0.9f * max, out _);
+            float turn = Measure(Vector2.right, true, (v, f, r) => v.magnitude > 1f && Vector3.Angle(v, r) < 15f, out float turnSpeed);
+            float reverse = Measure(Vector2.down, true, (v, f, r) => Vector3.Dot(v, -f) >= 5f, out _);
+            bool ok = start < 1f && turn < 0.6f && reverse < 0.8f;
+            Debug.Log($"[Physics] {(ok ? "PASS" : "FAIL")} responsiveness: 0 to 90% speed {start:F2} s, 90-degree turn {turn:F2} s " +
+                      $"(speed after {turnSpeed:F1}), reverse to 5 units/s backward {reverse:F2} s");
+
+            BackingUpTest(radius, true);
+            BackingUpTest(radius, false);
+
+            Object.DestroyImmediate(camera.gameObject);
+            Object.DestroyImmediate(ground);
+        }
+
+        /// <summary>
+        /// Rolls forward with the real follow camera, then holds back, then lets go. With holdWhenBackingUp the
+        /// camera should keep its heading and the ball should drive steadily backward.
+        /// </summary>
+        static void BackingUpTest(float radius, bool hold)
+        {
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.layer = 2;
+            var rb = go.AddComponent<Rigidbody>();
+            var ball = go.AddComponent<BallController>();
+            typeof(BallController).GetMethod("Awake", flags).Invoke(ball, null);
+            var camGo = new GameObject("Test Orbit Camera");
+            var orbit = camGo.AddComponent<OrbitCamera>();
+            orbit.holdWhenBackingUp = hold;
+            orbit.target = go.transform;
+            ball.cameraTransform = camGo.transform;
+            ball.Teleport(Vector3.up * (radius + 0.5f));
+            camGo.transform.rotation = Quaternion.LookRotation(Vector3.forward, Vector3.up);
+            orbit.Snap();
+            Physics.SyncTransforms();
+            var fixedUpdate = typeof(BallController).GetMethod("FixedUpdate", flags);
+            var input = typeof(BallController).GetField("moveInput", flags);
+            var touching = typeof(BallController).GetField("touchingGround", flags);
+            var follow = typeof(OrbitCamera).GetMethod("FollowMovement", flags);
+            var upField = typeof(OrbitCamera).GetField("up", flags);
+            var fwdField = typeof(OrbitCamera).GetField("forward", flags);
+            float dt = Time.fixedDeltaTime;
+
+            void Step(Vector2 m)
+            {
+                // What the camera's LateUpdate does each frame, minus smoothing: carry the heading along the
+                // surface, follow the ball's movement, and face that way.
+                Vector3 up = rb.position.normalized;
+                Vector3 oldUp = (Vector3)upField.GetValue(orbit);
+                Vector3 f = Vector3.ProjectOnPlane(Quaternion.FromToRotation(oldUp, up) * orbit.Forward, up).normalized;
+                upField.SetValue(orbit, up);
+                fwdField.SetValue(orbit, f);
+                follow.Invoke(orbit, new object[] { dt });
+                camGo.transform.rotation = Quaternion.LookRotation(orbit.Forward, up);
+                input.SetValue(ball, m);
+                touching.SetValue(ball, true);
+                fixedUpdate.Invoke(ball, null);
+                Physics.Simulate(dt);
+            }
+
+            for (float t = 0; t < 1.5f; t += dt) Step(Vector2.up);
+            Vector3 headingBefore = orbit.Forward;
+            float minBackSpeed = float.MaxValue, maxSwing = 0f;
+            for (float t = 0; t < 2.5f; t += dt)
+            {
+                Step(Vector2.down);
+                Vector3 up = rb.position.normalized;
+                // Compare headings after carrying the old one to the ball's current spot on the sphere.
+                Vector3 carried = Vector3.ProjectOnPlane(headingBefore, up).normalized;
+                maxSwing = Mathf.Max(maxSwing, Vector3.Angle(carried, orbit.Forward));
+                if (t > 1f) minBackSpeed = Mathf.Min(minBackSpeed, Vector3.Dot(rb.linearVelocity, -orbit.Forward));
+            }
+            for (float t = 0; t < 1f; t += dt)
+            {
+                Step(Vector2.zero);
+                Vector3 carried = Vector3.ProjectOnPlane(headingBefore, rb.position.normalized).normalized;
+                maxSwing = Mathf.Max(maxSwing, Vector3.Angle(carried, orbit.Forward));
+            }
+            string label = hold ? "backing up holds the camera" : "(for comparison, without the hold)";
+            bool ok = maxSwing < 10f && minBackSpeed > 8f;
+            Debug.Log($"[Physics] {(hold ? (ok ? "PASS " : "FAIL ") : "")}{label}: camera swung at most {maxSwing:F0} deg, " +
+                      $"backward speed while holding back at least {minBackSpeed:F1}");
+            Object.DestroyImmediate(go);
+            Object.DestroyImmediate(camGo);
         }
 
         static void Report(string name, Vector3 end, float expectedRadius)

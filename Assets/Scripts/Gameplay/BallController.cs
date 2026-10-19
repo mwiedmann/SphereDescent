@@ -13,11 +13,17 @@ namespace SphereDescent
     {
         [Header("Movement")]
         public float gravity = 25f;
-        public float rollTorque = 45f;
-        public float groundAcceleration = 12f;
         public float maxGroundSpeed = 11f;
-        public float airAcceleration = 9f;
+        [Tooltip("How sharply the ball steers toward the requested velocity on the ground (1/s). Higher = snappier.")]
+        public float groundResponse = 7f;
+        [Tooltip("Most acceleration the controls can apply on the ground, including turning and reversing.")]
+        public float groundAcceleration = 35f;
+        [Tooltip("Most angular acceleration used to keep the ball's spin matching where it's going.")]
+        public float rollTorque = 120f;
         public float maxAirSpeed = 8f;
+        [Tooltip("How sharply the ball steers toward the requested direction in the air (1/s).")]
+        public float airResponse = 4f;
+        public float airAcceleration = 14f;
         [Tooltip("Slows the ball when there is no input on the ground.")]
         public float brake = 1.5f;
 
@@ -37,6 +43,8 @@ namespace SphereDescent
         public bool IsGrounded { get; private set; }
         public bool IsLaunching => launchPad != null;
         public bool OnPad => pad != null && Time.time - padSeenAt < 0.15f;
+        /// <summary>True while the player is pushing back (down), e.g. to back out of a dead end.</summary>
+        public bool PushingBack => moveInput.y < -0.5f;
 
         Rigidbody rb;
         Vector2 moveInput;
@@ -98,9 +106,15 @@ namespace SphereDescent
             {
                 if (move.sqrMagnitude > 0.0001f)
                 {
-                    rb.AddTorque(Vector3.Cross(up, move) * rollTorque, ForceMode.Acceleration);
-                    float headroom = Mathf.Clamp01(1f - Vector3.Dot(tangentVel, move.normalized) / maxGroundSpeed);
-                    rb.AddForce(move * (groundAcceleration * headroom), ForceMode.Acceleration);
+                    // Steer toward the requested velocity: this both speeds the ball up and cancels drift in
+                    // other directions, so turns and reversals take effect quickly.
+                    Vector3 target = move * maxGroundSpeed;
+                    rb.AddForce(Vector3.ClampMagnitude((target - tangentVel) * groundResponse, groundAcceleration), ForceMode.Acceleration);
+                    // Spin the ball to roll at that velocity too, or its existing spin keeps carrying it the
+                    // old way through friction.
+                    Vector3 targetSpin = Vector3.Cross(up, target) / Radius;
+                    Vector3 spinError = Vector3.ProjectOnPlane(targetSpin - rb.angularVelocity, up);
+                    rb.AddTorque(Vector3.ClampMagnitude(spinError * groundResponse, rollTorque), ForceMode.Acceleration);
                 }
                 else
                 {
@@ -109,8 +123,13 @@ namespace SphereDescent
             }
             else if (move.sqrMagnitude > 0.0001f)
             {
-                float headroom = Mathf.Clamp01(1f - Vector3.Dot(tangentVel, move.normalized) / maxAirSpeed);
-                rb.AddForce(move * (airAcceleration * headroom), ForceMode.Acceleration);
+                // Same steering in the air, gentler, and never slowing a fast jump in the direction you're
+                // already pushing.
+                Vector3 dir = move.normalized;
+                Vector3 change = move * maxAirSpeed - tangentVel;
+                float along = Vector3.Dot(change, dir);
+                if (along < 0f) change -= dir * along;
+                rb.AddForce(Vector3.ClampMagnitude(change * airResponse, airAcceleration), ForceMode.Acceleration);
             }
 
             bool jumpQueued = Time.time - jumpPressedAt <= jumpBuffer;

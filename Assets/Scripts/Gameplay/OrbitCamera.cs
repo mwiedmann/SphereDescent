@@ -30,11 +30,18 @@ namespace SphereDescent
         public float followMinSpeed = 1.5f;
         [Tooltip("How quickly the camera swings around behind the ball. Scales up with speed.")]
         public float followSharpness = 4f;
+        [Tooltip("Hold the view while the player pushes back, or while the ball moves back toward the camera " +
+                 "(backing out of a dead end, or coasting backward afterwards), instead of swinging around behind it.")]
+        public bool holdWhenBackingUp = true;
+        [Tooltip("How far from straight back (as a dot product with the view direction) still counts as backing up. " +
+                 "-0.3 is anything more than about 107 degrees from forward.")]
+        [Range(-1f, 0f)] public float backingUpDot = -0.3f;
 
         Vector3 up = Vector3.up;
         Vector3 forward = Vector3.forward;
         float currentDistance;
         Rigidbody targetBody;
+        BallController targetBall;
 
         public Vector3 Forward => forward;
 
@@ -70,7 +77,7 @@ namespace SphereDescent
             bool mouseActive = Cursor.lockState == CursorLockMode.Locked;
             Vector2 look = GameInput.Look(mouseActive, mouseSensitivity, keyTurnSpeed);
             forward = Quaternion.AngleAxis(look.x, up) * forward;
-            if (followMovement) FollowMovement();
+            if (followMovement) FollowMovement(Time.deltaTime);
             pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
 
             Vector3 right = Vector3.Cross(up, forward);
@@ -90,16 +97,24 @@ namespace SphereDescent
         }
 
         /// <summary>Turns the heading toward the ball's direction of travel along the surface.</summary>
-        void FollowMovement()
+        void FollowMovement(float dt)
         {
-            if (targetBody == null || targetBody.transform != target) targetBody = target.GetComponent<Rigidbody>();
+            if (targetBody == null || targetBody.transform != target)
+            {
+                targetBody = target.GetComponent<Rigidbody>();
+                targetBall = target.GetComponent<BallController>();
+            }
             if (targetBody == null) return;
             Vector3 moving = Vector3.ProjectOnPlane(targetBody.linearVelocity, up);
             float speed = moving.magnitude;
             if (speed < followMinSpeed) return;
+            // Backing up: keep facing the way the player was going, so pushing forward again carries on.
+            // Checking the input as well covers the slowdown, when the ball's leftover drift can briefly point
+            // sideways before it starts moving back.
+            if (holdWhenBackingUp && ((targetBall != null && targetBall.PushingBack) || Vector3.Dot(moving / speed, forward) < backingUpDot)) return;
             // Faster movement swings the camera around more decisively.
             float rate = followSharpness * Mathf.Clamp(speed / 6f, 0.5f, 2f);
-            forward = Vector3.Slerp(forward, moving / speed, 1f - Mathf.Exp(-rate * Time.deltaTime));
+            forward = Vector3.Slerp(forward, moving / speed, 1f - Mathf.Exp(-rate * dt));
             forward = Vector3.ProjectOnPlane(forward, up).normalized;
         }
     }
