@@ -23,7 +23,7 @@ namespace SphereDescent.EditorTools
             {
                 ground = SaveMaterial("Ground", LevelMaterials.MakeGrid(new Color(0.75f, 0.85f, 0.9f), new Color(0.5f, 0.6f, 0.65f), 2f, false)),
                 wall = SaveMaterial("Wall", LevelMaterials.MakeGrid(new Color(0.85f, 0.6f, 0.45f), new Color(0.6f, 0.4f, 0.3f), 1f, false)),
-                ball = SaveMaterial("Ball", LevelMaterials.MakeGrid(new Color(0.96f, 0.96f, 0.96f), new Color(1f, 0.15f, 0.6f), 0.5f, true)),
+                ball = SaveMaterial("Ball", LevelMaterials.MakeBall()),
                 pad = SaveMaterial("BoostPad", LevelMaterials.MakeEmissive(new Color(0.2f, 0.9f, 1f), 2f)),
                 ringUp = SaveMaterial("HoleRingTwoWay", LevelMaterials.MakeEmissive(new Color(0.2f, 0.9f, 1f), 1.5f)),
                 ringDrop = SaveMaterial("HoleRingDrop", LevelMaterials.MakeEmissive(new Color(1f, 0.45f, 0.05f), 1.8f)),

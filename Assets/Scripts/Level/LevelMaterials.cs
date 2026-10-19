@@ -23,7 +23,7 @@ namespace SphereDescent
         {
             if (ground == null) ground = MakeGrid(new Color(0.75f, 0.85f, 0.9f), new Color(0.45f, 0.55f, 0.6f), 2f, false);
             if (wall == null) wall = MakeGrid(new Color(0.85f, 0.6f, 0.45f), new Color(0.6f, 0.4f, 0.3f), 1f, false);
-            if (ball == null) ball = MakeGrid(new Color(0.95f, 0.95f, 0.95f), new Color(1f, 0.15f, 0.6f), 0.5f, true);
+            if (ball == null) ball = MakeBall();
             if (pad == null) pad = MakeEmissive(new Color(0.2f, 0.9f, 1f), 2f);
             if (ringUp == null) ringUp = MakeEmissive(new Color(0.2f, 0.9f, 1f), 1.5f);
             if (ringDrop == null) ringDrop = MakeEmissive(new Color(1f, 0.45f, 0.05f), 1.8f);
@@ -38,6 +38,20 @@ namespace SphereDescent
             if (m.HasProperty("_GridSize")) m.SetFloat("_GridSize", gridSize);
             if (m.HasProperty("_ObjectSpace")) m.SetFloat("_ObjectSpace", objectSpaceChecker ? 1f : 0f);
             if (m.HasProperty("_Checker")) m.SetFloat("_Checker", objectSpaceChecker ? 1f : 0f);
+            return m;
+        }
+
+        /// <summary>
+        /// The player's ball: eight segments (so you can see it roll), alternating glossy black and
+        /// neon in the current zone's color, with a soft rim glow.
+        /// </summary>
+        public static Material MakeBall()
+        {
+            var m = MakeGrid(Color.white, Color.white, 0.5f, true);
+            m.SetFloat("_BallMode", 1f);
+            m.SetFloat("_Glossiness", 0.85f);
+            m.SetFloat("_GlowIntensity", 1.6f);
+            m.SetFloat("_RimStrength", 1.2f);
             return m;
         }
 

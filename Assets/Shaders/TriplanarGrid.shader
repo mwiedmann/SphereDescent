@@ -1,10 +1,11 @@
-// Triplanar grid / checker for procedurally generated meshes that have no UVs.
-// World-space grid lines give the curved floors a sense of speed and scale; object-space checker
-// mode (used on the ball) makes rolling visible.
+// Triplanar patterns for procedurally generated meshes that have no UVs.
 // Zone mode is the synthwave look for the world: dark surfaces with glowing, anti-aliased neon lines in
 // the color of the world zone (ZoneMap, set as global arrays) they face, one of four line patterns per
 // zone, and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
-// along the top edge and a dimmer one at the base. Glow is HDR emission, picked up by the bloom effect.
+// along the top edge and a dimmer one at the base. Ball mode draws the player's ball: eight equal segments
+// split by three great circles (so rolling is easy to see), alternating glossy black and neon in the
+// color of the zone the ball is in, fading across zone borders, plus a soft rim glow. Glow is HDR emission, picked up
+// by the bloom effect.
 // Universal Render Pipeline: lit with URP's PBR lighting and main-light shadows.
 Shader "SphereDescent/TriplanarGrid"
 {
@@ -27,6 +28,8 @@ Shader "SphereDescent/TriplanarGrid"
         _SurfaceRadius ("Wall Base Radius", Float) = 0
         _WallHeight ("Wall Height", Float) = 4
         _StripWidth ("Neon Strip Width", Float) = 0.22
+        [Toggle] _BallMode ("Ball Mode", Float) = 0
+        _RimStrength ("Ball Rim Glow", Float) = 1.6
     }
     SubShader
     {
@@ -54,6 +57,8 @@ Shader "SphereDescent/TriplanarGrid"
             float _SurfaceRadius;
             float _WallHeight;
             float _StripWidth;
+            float _BallMode;
+            float _RimStrength;
         CBUFFER_END
         ENDHLSL
 
@@ -152,22 +157,51 @@ Shader "SphereDescent/TriplanarGrid"
                 return Pattern(p.yz, kind) * w.x + Pattern(p.xz, kind) * w.y + Pattern(p.xy, kind) * w.z;
             }
 
+            // The two zones whose directions are closest to dir, and how close.
+            void NearestZones (float3 dir, out int zone, out int zone2, out float best, out float second)
+            {
+                best = -2; second = -2; zone = 0; zone2 = 0;
+                for (int z = 0; z < 12; z++)
+                {
+                    float d = dot(dir, _ZoneDirs[z].xyz);
+                    if (d > best) { second = best; zone2 = zone; best = d; zone = z; }
+                    else if (d > second) { second = d; zone2 = z; }
+                }
+            }
+
             half4 frag (Varyings i) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 float3 albedo;
                 float3 emission = 0;
-                if (_ZoneMode > 0.5)
+                if (_BallMode > 0.5)
+                {
+                    // Color of the zone the ball's center is in, blended with the neighboring zone over the
+                    // last unit and a half before the border so it changes smoothly.
+                    float3 center = GetObjectToWorldMatrix()._m03_m13_m23;
+                    int zone, zone2;
+                    float best, second;
+                    NearestZones(normalize(center), zone, zone2, best, second);
+                    float w = 0.5 + 0.5 * saturate((best - second) / 1.05 * length(center) / 1.5);
+                    float3 neon = lerp(_ZoneColors[zone2].rgb, _ZoneColors[zone].rgb, w);
+                    // Octants of the ball (object space), alternating like a checkerboard. Computed from the
+                    // sphere itself rather than projected, so every segment is the same size and shape.
+                    // The soft sign anti-aliases the edges.
+                    float3 p = normalize(i.gridPos);
+                    float3 soft = clamp(p / max(fwidth(p), 1e-4), -1.0, 1.0);
+                    float m = 0.5 + 0.5 * soft.x * soft.y * soft.z;
+
+                    albedo = lerp(_DarkColor.rgb, neon * 0.3, m);
+                    float3 viewDir = GetWorldSpaceNormalizeViewDir(i.positionWS);
+                    float rim = pow(1.0 - saturate(dot(normalize(i.normalWS), viewDir)), 3.0);
+                    emission = neon * m * _GlowIntensity + lerp(neon, 1.0, 0.5) * rim * _RimStrength;
+                }
+                else if (_ZoneMode > 0.5)
                 {
                     float3 dir = normalize(i.positionWS);
-                    float best = -2, second = -2;
-                    int zone = 0;
-                    for (int z = 0; z < 12; z++)
-                    {
-                        float d = dot(dir, _ZoneDirs[z].xyz);
-                        if (d > best) { second = best; best = d; zone = z; }
-                        else if (d > second) { second = d; }
-                    }
+                    int zone, zone2;
+                    float best, second;
+                    NearestZones(dir, zone, zone2, best, second);
                     // Distance (world units) to the border with the nearest other zone. Adjacent icosahedron
                     // directions are ~1.05 apart, which turns the dot-product gap into a sine distance.
                     float borderDist = (best - second) / 1.05 * length(i.positionWS);

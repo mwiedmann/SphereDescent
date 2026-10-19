@@ -33,6 +33,7 @@ Everything is drawn by shaders, with no image textures:
 
 - **Floors:** dark, with glowing anti-aliased lines in the zone's neon color (`Assets/Shaders/TriplanarGrid.shader`).
 - **Walls:** dark panels with a neon strip along the top edge.
+- **Ball:** eight equal segments, like a crash-test ball, alternating glossy black and neon in the color of the zone you're in. The color fades smoothly as you cross a border.
 - **Sky:** a purple-to-magenta gradient with stars and a striped retro sun on the horizon (`Assets/Shaders/SynthwaveSky.shader`). It follows your local "up" wherever you are on the planet.
 - **Glow:** bloom and a light vignette from URP post-processing (`Assets/Settings/PostProcessing.asset`).
 
