@@ -14,11 +14,10 @@ namespace SphereDescent
 
         readonly List<Object> ownedAssets = new List<Object>();
         readonly Dictionary<int, List<Renderer>> shadowCasters = new Dictionary<int, List<Renderer>>();
-        readonly Dictionary<int, GameObject> beams = new Dictionary<int, GameObject>();
+        readonly Dictionary<int, (GameObject beam, int layer)> beams = new Dictionary<int, (GameObject, int)>();
         int beamSection = -2;
         int shadowLayer = -1;
         Renderer[][] layerRenderers;   // [layer] -> every renderer on that layer
-        Renderer[] layerShells;        // [layer] -> the shell (or core) surface itself
         int visibleFocus = -2;
 
         public int LayerCount => Settings.ShellCount + 1;
@@ -46,21 +45,29 @@ namespace SphereDescent
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
 
-        internal void RegisterBeam(int section, GameObject beam)
+        internal void RegisterBeam(int section, int layer, GameObject beam)
         {
-            beams[section] = beam;
+            beams[section] = (beam, layer);
             beam.SetActive(false);
         }
 
         /// <summary>
-        /// Shows only the light beam over the given section's exit (its hole or boost pad). Beams are switched
-        /// on and off as objects, so layer hiding, which toggles renderers, can't bring the others back.
+        /// Shows only the light beam over the given section's exit (its hole or boost pad), and only while its
+        /// layer is the one in view: beams rise far past the (hidden) shells above, so from a layer higher up
+        /// one would poke up through the floor. Beams are switched on and off as objects, so layer hiding,
+        /// which toggles renderers, can't bring the others back.
         /// </summary>
         public void SetBeamSection(int section)
         {
             if (section == beamSection) return;
             beamSection = section;
-            foreach (var kv in beams) if (kv.Value != null) kv.Value.SetActive(kv.Key == section);
+            RefreshBeams();
+        }
+
+        void RefreshBeams()
+        {
+            foreach (var kv in beams)
+                if (kv.Value.beam != null) kv.Value.beam.SetActive(kv.Key == beamSection && kv.Value.layer == visibleFocus);
         }
 
         /// <summary>
@@ -78,9 +85,8 @@ namespace SphereDescent
             shadowLayer = layer;
         }
 
-        internal void RegisterLayers(Transform[] layerRoots, Renderer[] shells)
+        internal void RegisterLayers(Transform[] layerRoots)
         {
-            layerShells = shells;
             layerRenderers = new Renderer[layerRoots.Length][];
             for (int i = 0; i < layerRoots.Length; i++)
                 layerRenderers[i] = layerRoots[i].GetComponentsInChildren<Renderer>(true);
@@ -88,8 +94,8 @@ namespace SphereDescent
 
         /// <summary>
         /// Draws only what can be seen from the given layer: that layer and the one below it (visible through
-        /// holes) in full, plus just the bare shell above as a ceiling. Everything else is hidden. Colliders
-        /// stay active, so physics is unaffected and layers reappear as soon as the player climbs back up.
+        /// holes). Everything above is hidden, ceiling included, so inner layers sit under a black sky.
+        /// Colliders stay active, so physics is unaffected and layers reappear as soon as the player climbs back up.
         /// </summary>
         public void SetVisibleLayers(int focus)
         {
@@ -99,8 +105,8 @@ namespace SphereDescent
             {
                 bool full = layer == focus || layer == focus + 1;
                 foreach (var r in layerRenderers[layer]) if (r != null) r.enabled = full;
-                if (layer == focus - 1 && layerShells[layer] != null) layerShells[layer].enabled = true;
             }
+            RefreshBeams();
         }
 
         /// <summary>Layer index for a distance from the center: 0 = surface, ShellCount = core.</summary>

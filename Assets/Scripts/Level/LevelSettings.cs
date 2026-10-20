@@ -49,8 +49,7 @@ namespace SphereDescent
         public float hillFlatMargin = 3f;
 
         [Header("Orientation")]
-        [Tooltip("How high the light beams over holes and boost pads rise into the sky on the outer surface. " +
-                 "On inner layers they reach up to the shell above.")]
+        [Tooltip("How high the light beam over the current section's hole or boost pad rises into the sky.")]
         public float beamHeight = 100f;
 
         [Header("Mesh detail")]

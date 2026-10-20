@@ -18,15 +18,14 @@ namespace SphereDescent
             level.Init(s, layout, world, startDir * (s.shellRadii[0] + 1.5f), zones);
 
             // A light beam marks where each section ends, colored like the rings: orange over the hole to drop
-            // through, cyan over the boost pad to climb from. Only the current section's beam is shown.
+            // through, cyan over the boost pad to climb from. Only the current section's beam is shown. The
+            // shells above are hidden from inner layers, so every beam rises the full Beam Height.
             var beamDrop = level.Own(BeamMaterial(mats.beam, mats.ringDrop.color, 0.3f));
-            // A pad's beam stops at the hole in the ceiling, so it doesn't fade out before reaching it.
-            var beamPad = level.Own(BeamMaterial(mats.beam, mats.ringUp.color, 1f));
+            var beamPad = level.Own(BeamMaterial(mats.beam, mats.ringUp.color, 0.3f));
 
             // One root per layer (shells, then the core). Everything is parented under the layer it sits on,
             // so whole layers can be hidden at once.
             var layerRoots = new Transform[layout.ShellCount + 1];
-            var shellRenderers = new Renderer[layout.ShellCount + 1];
             for (int layer = 0; layer <= layout.ShellCount; layer++)
             {
                 layerRoots[layer] = new GameObject(level.LayerName(layer)).transform;
@@ -50,8 +49,7 @@ namespace SphereDescent
                 var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 3f, 0.6f));
                 var shellMesh = level.Own(MeshBuilders.BuildShell(shellIco, radius, s.shellThickness, cuts, terrain));
                 // Shells don't cast shadows, otherwise the outer shell would plunge every inner layer into darkness.
-                shellRenderers[shell] = CreateMeshObject(layerRoot, "Shell", shellMesh, groundMat, true, ShadowCastingMode.Off)
-                    .GetComponent<Renderer>();
+                CreateMeshObject(layerRoot, "Shell", shellMesh, groundMat, true, ShadowCastingMode.Off);
 
                 var walls = new List<(Vector3, Vector3)>();
                 for (int e = 0; e < grid.Edges.Length; e++)
@@ -83,14 +81,15 @@ namespace SphereDescent
                     if (h.TwoWay)
                     {
                         CreateBoostPad(level, layerRoots[shell + 1], layout, s, h, holeRadius, mats.pad);
-                        CreateBeam(level, i, layerRoots[shell + 1], dir, s.SurfaceRadius(shell + 1), radius - s.shellThickness,
+                        float padRadius = s.SurfaceRadius(shell + 1);
+                        CreateBeam(level, i, shell + 1, layerRoots[shell + 1], dir, padRadius, padRadius + s.beamHeight,
                             LevelSettings.PadRadius(holeRadius) * 0.75f, beamPad);
                     }
                     else
                     {
-                        // From inside the hole up into the sky, or up to the shell above.
-                        float beamTop = shell == 0 ? radius + s.beamHeight : s.shellRadii[shell - 1] - s.shellThickness;
-                        CreateBeam(level, i, layerRoot, dir, radius - s.shellThickness, beamTop, holeRadius * 0.75f, beamDrop);
+                        // From inside the hole up into the sky.
+                        CreateBeam(level, i, shell, layerRoot, dir, radius - s.shellThickness, radius + s.beamHeight,
+                            holeRadius * 0.75f, beamDrop);
                     }
                 }
             }
@@ -99,10 +98,9 @@ namespace SphereDescent
             var coreRoot = layerRoots[layout.ShellCount];
             var coreMat = level.Own(LevelMaterials.MakeEmissive(mats.exit.color, 0.8f));
             var coreMesh = level.Own(MeshBuilders.BuildSphere(IcoSphere.Get(s.coreMeshSubdivisions), s.coreRadius));
-            shellRenderers[layout.ShellCount] = CreateMeshObject(coreRoot, "Core (Exit)", coreMesh, coreMat, true, ShadowCastingMode.Off)
-                .GetComponent<Renderer>();
+            CreateMeshObject(coreRoot, "Core (Exit)", coreMesh, coreMat, true, ShadowCastingMode.Off);
 
-            level.RegisterLayers(layerRoots, shellRenderers);
+            level.RegisterLayers(layerRoots);
             return level;
         }
 
@@ -182,14 +180,14 @@ namespace SphereDescent
             pad.pulseVisual = ring.transform;
         }
 
-        static void CreateBeam(LevelInstance level, int section, Transform parent, Vector3 dir, float fromRadius, float toRadius,
-            float radius, Material mat)
+        static void CreateBeam(LevelInstance level, int section, int layer, Transform parent, Vector3 dir, float fromRadius,
+            float toRadius, float radius, Material mat)
         {
             var beam = CreateMeshObject(parent, "Light Beam", level.Own(MeshBuilders.BuildBeam(radius, toRadius - fromRadius)),
                 mat, false, ShadowCastingMode.Off);
             beam.transform.SetPositionAndRotation(dir * fromRadius, Quaternion.FromToRotation(Vector3.up, dir));
             beam.GetComponent<MeshRenderer>().receiveShadows = false;
-            level.RegisterBeam(section, beam);
+            level.RegisterBeam(section, layer, beam);
         }
 
         static Material BeamMaterial(Material template, Color color, float fadeStart)

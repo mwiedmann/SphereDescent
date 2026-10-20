@@ -24,6 +24,8 @@ namespace SphereDescent
         LevelInstance level;
         BallController ball;
         OrbitCamera orbit;
+        Camera cam;
+        CameraClearFlags surfaceClearFlags;
         int world;
         bool transitioning;
         string message;
@@ -71,7 +73,7 @@ namespace SphereDescent
         {
             ball = CreateBall(materials.ball);
 
-            var cam = Camera.main;
+            cam = Camera.main;
             if (cam == null)
             {
                 cam = new GameObject("Main Camera").AddComponent<Camera>();
@@ -82,6 +84,7 @@ namespace SphereDescent
             // The synthwave skybox follows the player's local up (see UpdateSky); without it, use a plain color.
             cam.clearFlags = RenderSettings.skybox != null ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
             cam.backgroundColor = skyColor;
+            surfaceClearFlags = cam.clearFlags;
             orbit = cam.GetComponent<OrbitCamera>();
             if (orbit == null) orbit = cam.gameObject.AddComponent<OrbitCamera>();
             orbit.target = ball.transform;
@@ -148,7 +151,11 @@ namespace SphereDescent
                 // Use the outermost of the ball's and camera's layers, so nothing vanishes while the camera is
                 // still following the ball down through a hole.
                 int cameraLayer = level.LayerAt(orbit.transform.position.magnitude);
-                level.SetVisibleLayers(Mathf.Min(ball.CurrentLayer, cameraLayer));
+                int visibleLayer = Mathf.Min(ball.CurrentLayer, cameraLayer);
+                level.SetVisibleLayers(visibleLayer);
+                // Below the surface the layers above are hidden, and the sky is plain black.
+                cam.clearFlags = visibleLayer > 0 ? CameraClearFlags.SolidColor : surfaceClearFlags;
+                cam.backgroundColor = visibleLayer > 0 ? Color.black : skyColor;
             }
         }
 
