@@ -61,6 +61,14 @@ namespace SphereDescent
             return m;
         }
 
+        public static Material MakeMetal(Color color, float metallic, float smoothness)
+        {
+            var m = new Material(Shader.Find(LitShaderName)) { color = color };
+            m.SetFloat("_Metallic", metallic);
+            m.SetFloat("_Smoothness", smoothness);
+            return m;
+        }
+
         /// <summary>Plain black with no shine, for the darkness at the bottom of holes.</summary>
         public static Material MakeBlack()
         {

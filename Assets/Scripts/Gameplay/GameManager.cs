@@ -180,7 +180,7 @@ namespace SphereDescent
             Shader.SetGlobalVector("_SkySunDir", (tilt + up * 0.1f).normalized);
         }
 
-        void ShowMessage(string text, float seconds)
+        public void ShowMessage(string text, float seconds)
         {
             message = text;
             messageUntil = Time.time + seconds;

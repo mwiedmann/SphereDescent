@@ -101,6 +101,8 @@ namespace SphereDescent
                 }
             }
 
+            CreateMines(level, layout, s, terrains, layerRoots, mats.beam);
+
             // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
             var coreMat = level.Own(LevelMaterials.MakeEmissive(mats.exit.color, 0.8f));
@@ -133,6 +135,108 @@ namespace SphereDescent
                 if (h.Shell + 1 < layout.ShellCount) terrains[h.Shell + 1].AddFlatSpot(h.Direction, flat, Fade(h.Shell + 1));
             }
             return terrains;
+        }
+
+        /// <summary>
+        /// Mines: a dark metal disc sunk into the ground (deep enough to sit flush on a slope) with a ring of
+        /// teeth around its rim, a dim red ring inside them, and a red light in the middle that blinks. Each
+        /// blink also lights a red glow around the mine. A trigger around it catches the ball.
+        /// </summary>
+        static void CreateMines(LevelInstance level, MazeLayout layout, LevelSettings s, ShellTerrain[] terrains,
+            Transform[] layerRoots, Material glowTemplate)
+        {
+            if (layout.Mines.Count == 0) return;
+            var bodyMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
+            var red = new Color(1f, 0.03f, 0.01f);
+            var ringMat = level.Own(LevelMaterials.MakeEmissive(red, 0.5f));
+            var lightOn = level.Own(LevelMaterials.MakeEmissive(red, 2.5f));
+            var lightOff = level.Own(LevelMaterials.MakeEmissive(new Color(0.25f, 0.01f, 0.01f), 0.2f));
+            var glowOn = level.Own(BeamMaterial(glowTemplate, red, 0f));
+            glowOn.SetFloat("_Intensity", 1.2f);
+            var glowOff = level.Own(BeamMaterial(glowTemplate, red, 0f));
+            glowOff.SetFloat("_Intensity", 0.15f);
+            float r = s.mineRadius;
+            float bodyTop = s.mineHeight * 0.6f, sink = 0.35f;
+            var bodyMesh = level.Own(MineBodyMesh(r, bodyTop, sink, s.mineHeight));
+            var ringMesh = level.Own(MeshBuilders.BuildTorus(r * 0.72f, 0.04f, 32, 6));
+            var glowMesh = level.Own(MeshBuilders.BuildBeam(r * 1.6f, 0.4f));
+
+            foreach (var m in layout.Mines)
+            {
+                Vector3 dir = m.Direction;
+                var go = new GameObject("Mine");
+                go.transform.SetParent(layerRoots[m.Shell], false);
+                go.transform.SetPositionAndRotation(dir * terrains[m.Shell].SurfaceRadius(dir), Quaternion.FromToRotation(Vector3.up, dir));
+
+                CreateMeshObject(go.transform, "Body", bodyMesh, bodyMat, false, ShadowCastingMode.Off);
+                var ring = CreateMeshObject(go.transform, "Ring", ringMesh, ringMat, false, ShadowCastingMode.Off);
+                ring.transform.localPosition = new Vector3(0f, bodyTop, 0f);
+                var glow = CreateMeshObject(go.transform, "Glow", glowMesh, glowOff, false, ShadowCastingMode.Off);
+                glow.transform.localPosition = new Vector3(0f, -0.1f, 0f);
+
+                var bulb = Part(go.transform, PrimitiveType.Sphere, "Light", lightOff);
+                bulb.localPosition = new Vector3(0f, bodyTop, 0f);
+                bulb.localScale = new Vector3(r * 0.5f, (s.mineHeight - bodyTop) * 2f, r * 0.5f);
+
+                var trigger = go.AddComponent<SphereCollider>();
+                trigger.isTrigger = true;
+                trigger.radius = r * 0.9f;
+
+                var mine = go.AddComponent<Mine>();
+                mine.lightRenderer = bulb.GetComponent<Renderer>();
+                mine.lightOn = lightOn;
+                mine.lightOff = lightOff;
+                mine.glowRenderer = glow.GetComponent<Renderer>();
+                mine.glowOn = glowOn;
+                mine.glowOff = glowOff;
+            }
+        }
+
+        /// <summary>The mine's metal body as one mesh: a squat cylinder plus eight teeth standing around its rim.</summary>
+        static Mesh MineBodyMesh(float r, float bodyTop, float sink, float height)
+        {
+            var parts = new List<CombineInstance>();
+            var temps = new List<GameObject>();
+            Mesh Builtin(PrimitiveType type)
+            {
+                var t = GameObject.CreatePrimitive(type);
+                temps.Add(t);
+                return t.GetComponent<MeshFilter>().sharedMesh;
+            }
+            parts.Add(new CombineInstance
+            {
+                mesh = Builtin(PrimitiveType.Cylinder),
+                transform = Matrix4x4.TRS(new Vector3(0f, (bodyTop - sink) * 0.5f, 0f), Quaternion.identity,
+                    new Vector3(r * 2f, (bodyTop + sink) * 0.5f, r * 2f)),
+            });
+            var cube = Builtin(PrimitiveType.Cube);
+            for (int k = 0; k < 8; k++)
+            {
+                float a = k * 45f;
+                // Diamond-turned cubes poking up around the rim, like the teeth of a trap.
+                Vector3 at = Quaternion.Euler(0f, a, 0f) * new Vector3(r * 0.9f, bodyTop, 0f);
+                parts.Add(new CombineInstance
+                {
+                    mesh = cube,
+                    transform = Matrix4x4.TRS(at, Quaternion.Euler(0f, a, 45f), new Vector3(0.11f, 0.11f, 0.16f) * (height / 0.125f)),
+                });
+            }
+            var mesh = new Mesh { name = "Mine Body" };
+            mesh.CombineMeshes(parts.ToArray(), true, true);
+            foreach (var t in temps) Object.DestroyImmediate(t);
+            return mesh;
+        }
+
+        static Transform Part(Transform parent, PrimitiveType type, string name, Material mat)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            var mr = go.GetComponent<MeshRenderer>();
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = ShadowCastingMode.Off;
+            return go.transform;
         }
 
         static void CreateBoostPad(LevelInstance level, Transform parent, MazeLayout layout, LevelSettings s,

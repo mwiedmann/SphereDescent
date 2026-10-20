@@ -17,6 +17,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Sections.** A world is a chain of short maze sections, each taking around a minute. A section has a main path with side lanes that branch off and rejoin it. There are several routes but no dead ends, and every route leads to the same spot.
 - **Dropping down.** Most sections end at a hole marked with a glowing ring. Roll into it to fall to the next section on the shell below.
 - **Climbing up.** Some sections end at a cyan boost pad. Roll onto it and it launches you up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
+- **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them. Weave between them or jump over them: touching one blows you up and sends you back to where you last arrived on that sphere.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
 | Section end: a hole to drop through | Section end: a boost pad to climb |
@@ -76,6 +77,7 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Section Length Min / Max:** the length of each section's main path, in maze cells.
 - **Side Lane Chance:** how wide sections are, and how many alternative routes they have.
 - **Main Path Cut Chance:** how often the main path is walled off, forcing a detour.
+- **Mines:** groups per section, spacing, size, the gap left beside walls, and how many of the smallest spheres get fewer.
 - **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **beam height**, and the **Base Seed**.
 
 The ball's speed, jump height and gravity are set on the `BallController`, and the camera's distance, pitch and follow behavior on the `OrbitCamera`.

@@ -48,6 +48,23 @@ namespace SphereDescent
         [Tooltip("Ground stays flat this far beyond the edge of each hole and boost pad.")]
         public float hillFlatMargin = 3f;
 
+        [Header("Mines")]
+        [Tooltip("Mine groups along the route of each section (the stretch between two holes or pads). 0 = no mines.")]
+        public int mineGroupsMin = 4;
+        public int mineGroupsMax = 6;
+        [Tooltip("Distance between neighboring mines in a group (centers). The ball is 1 unit across.")]
+        public float mineSpacing = 5f;
+        [Tooltip("Mine radius. The ball's radius is 0.5.")]
+        public float mineRadius = 0.8f;
+        [Tooltip("How far a mine sticks up out of the ground.")]
+        public float mineHeight = 0.2f;
+        [Tooltip("Each group also gets a mine beside every wall of its cell, this far from the wall. Keep it under " +
+                 "the ball's width (1) so the wall can't be hugged past the group.")]
+        public float mineWallGap = 0.35f;
+        [Tooltip("How many of the innermost (smallest) shells get one mine group fewer per section, and one mine " +
+                 "fewer in each group (not counting the mines by the walls).")]
+        public int fewerMinesInnermost = 2;
+
         [Header("Orientation")]
         [Tooltip("How high the light beam over the current section's hole or boost pad rises into the sky.")]
         public float beamHeight = 100f;

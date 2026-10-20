@@ -28,6 +28,17 @@ namespace SphereDescent
             public bool TwoWay;        // a boost pad sits beneath it on the next layer down
         }
 
+        public struct Mine
+        {
+            public int Shell;
+            public int Section;        // the section whose route it sits on
+            public Vector3 Direction;  // unit direction of its center
+            public bool NearWall;      // set just off a wall, so the wall can't be hugged past the group
+        }
+
+        // Clear space kept between any two mines, so the ball (1 unit across) can always roll between them.
+        public const float MinePassage = 1.6f;
+
         public struct Section
         {
             public int Shell;
@@ -44,6 +55,7 @@ namespace SphereDescent
         public bool[][] Open;      // [shell][edge] -> true when there is no wall
         public List<Hole> Holes = new List<Hole>();
         public List<Section> Sections = new List<Section>();
+        public List<Mine> Mines = new List<Mine>();
         public int StartCell;
         public int Seed;
         public int AttemptsUsed;
@@ -117,7 +129,159 @@ namespace SphereDescent
 
             for (int shell = 0; shell < L; shell++)
                 CarveFiller(layout.Grids[shell], layout.Region[shell], layout.Open[shell], rng);
+            // Own random stream, so mine settings never change the maze itself.
+            PlaceMines(layout, s, new Random(seed * 31 + 7));
             return layout;
+        }
+
+        /// <summary>
+        /// Groups of mines along each section's shortest route, spread out between its entry and exit (never
+        /// in or next to either, so landing spots, holes and pads stay clear). Mines in a group are far enough
+        /// apart to roll between, and the group stays near the middle of its cell, so there's room around it.
+        /// </summary>
+        static void PlaceMines(MazeLayout layout, LevelSettings s, Random rng)
+        {
+            if (s.mineGroupsMax <= 0) return;
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                int shell = layout.Sections[i].Shell;
+                var grid = layout.Grids[shell];
+                float radius = s.shellRadii[shell];
+                var route = layout.Route(i);
+                // Usable stretch of the route: skip two cells at each end.
+                int first = 2, last = route.Count - 3;
+                if (last < first) continue;
+                // The smallest shells are cramped, so they get one group fewer, each with one mine fewer.
+                int fewer = shell >= layout.ShellCount - s.fewerMinesInnermost ? 1 : 0;
+                int groups = rng.Next(s.mineGroupsMin, s.mineGroupsMax + 1) - fewer;
+                groups = Mathf.Min(groups, (last - first) / 2 + 1);
+                for (int g = 0; g < groups; g++)
+                {
+                    // One group per equal slice of the stretch, somewhere in that slice.
+                    int lo = first + (last - first + 1) * g / groups;
+                    int hi = first + (last - first + 1) * (g + 1) / groups - 1;
+                    int cell = route[rng.Next(lo, Mathf.Max(lo, hi) + 1)];
+                    PlaceGroup(layout, s, rng, shell, i, cell, radius, fewer);
+                    PlaceWallMines(layout, s, shell, i, cell, radius);
+                }
+            }
+        }
+
+        static void PlaceGroup(MazeLayout layout, LevelSettings s, Random rng, int shell, int section, int cell, float radius,
+            int fewer)
+        {
+            Vector3 center = layout.Grids[shell].CellCenters[cell];
+            // Tangent frame at the cell center, turned to a random angle.
+            Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 y = Vector3.Cross(center, x);
+            float turn = (float)rng.NextDouble() * Mathf.PI * 2f;
+            Vector3 u = x * Mathf.Cos(turn) + y * Mathf.Sin(turn), v = Vector3.Cross(center, u);
+            // Shift the whole group a little off center so it doesn't always sit in the middle.
+            float shift = (float)rng.NextDouble() * 1.5f, shiftAngle = (float)rng.NextDouble() * Mathf.PI * 2f;
+            Vector2 offset = new Vector2(Mathf.Cos(shiftAngle), Mathf.Sin(shiftAngle)) * shift;
+
+            // 2 mines: a pair; 3: a triangle; 4: a square. Neighbors are Mine Spacing apart.
+            int count = rng.Next(3, 5) - fewer;
+            float ring = s.mineSpacing / (2f * Mathf.Sin(Mathf.PI / count));
+            Vector3 Spot(int k, Vector2 shiftBy)
+            {
+                float a = k * Mathf.PI * 2f / count;
+                Vector2 p = shiftBy + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * ring;
+                return (center * radius + u * p.x + v * p.y).normalized;
+            }
+            // Mines must stay clear of the walls and leave room to roll past every other mine. If the shifted
+            // group doesn't fit the cell, center it; any mine that still doesn't fit is left out.
+            const float wallClearance = 0.5f;
+            bool allFit = true;
+            for (int k = 0; k < count && allFit; k++) allFit = MineFits(layout, s, shell, cell, Spot(k, offset), radius, wallClearance);
+            if (!allFit) offset = Vector2.zero;
+            for (int k = 0; k < count; k++)
+            {
+                Vector3 dir = Spot(k, offset);
+                if (MineFits(layout, s, shell, cell, dir, radius, wallClearance))
+                    layout.Mines.Add(new Mine { Shell = shell, Section = section, Direction = dir });
+            }
+        }
+
+        /// <summary>
+        /// Whether a mine here leaves room to roll between it and every mine already on the shell, and stays at
+        /// least <paramref name="wallClearance"/> from the walls around the cell.
+        /// </summary>
+        static bool MineFits(MazeLayout layout, LevelSettings s, int shell, int cell, Vector3 dir, float radius, float wallClearance)
+        {
+            Vector3 p = dir * radius;
+            float clear = 2f * s.mineRadius + MinePassage;
+            foreach (var other in layout.Mines)
+                if (other.Shell == shell && Vector3.Distance(other.Direction * radius, p) < clear) return false;
+            var grid = layout.Grids[shell];
+            float limit = s.wallThickness * 0.5f + s.mineRadius + wallClearance;
+            bool TooClose(int c)
+            {
+                foreach (int nb in grid.Neighbors[c])
+                {
+                    int e = grid.EdgeBetween(c, nb);
+                    if (layout.Open[shell][e]) continue;
+                    Vector3 a0 = grid.Edges[e].P0 * radius, a1 = grid.Edges[e].P1 * radius;
+                    float t = Mathf.Clamp01(Vector3.Dot(p - a0, a1 - a0) / (a1 - a0).sqrMagnitude);
+                    if (Vector3.Distance(p, a0 + (a1 - a0) * t) < limit) return true;
+                }
+                return false;
+            }
+            if (TooClose(cell)) return false;
+            foreach (int nb in grid.Neighbors[cell]) if (TooClose(nb)) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// One mine just off each wall of the group's cell, too close to the wall for the ball to squeeze past,
+        /// so you can't skirt the group by hugging a wall. Each starts at the middle of its wall and slides
+        /// along it until it leaves room to roll between it and every other mine on the shell.
+        /// </summary>
+        static void PlaceWallMines(MazeLayout layout, LevelSettings s, int shell, int section, int cell, float radius)
+        {
+            var grid = layout.Grids[shell];
+            Vector3 center = grid.CellCenters[cell] * radius;
+            float inset = s.wallThickness * 0.5f + s.mineWallGap + s.mineRadius;
+            float[] along = { 0.5f, 0.35f, 0.65f, 0.22f, 0.78f };
+            foreach (int nb in grid.Neighbors[cell])
+            {
+                var edge = grid.Edges[grid.EdgeBetween(cell, nb)];
+                if (layout.Open[shell][grid.EdgeBetween(cell, nb)]) continue;
+                foreach (float t in along)
+                {
+                    Vector3 onWall = Vector3.Slerp(edge.P0, edge.P1, t) * radius;
+                    Vector3 inward = Vector3.ProjectOnPlane(center - onWall, onWall).normalized;
+                    Vector3 dir = (onWall + inward * inset).normalized;
+                    // Its own wall is Mine Wall Gap away; this just keeps it off the next wall at a corner.
+                    if (!MineFits(layout, s, shell, cell, dir, radius, Mathf.Min(0.3f, s.mineWallGap) - 0.02f)) continue;
+                    layout.Mines.Add(new Mine { Shell = shell, Section = section, Direction = dir, NearWall = true });
+                    break;
+                }
+            }
+        }
+
+        /// <summary>The shortest route through a section, entry to exit, as cells on its shell.</summary>
+        public List<int> Route(int section)
+        {
+            var sec = Sections[section];
+            var grid = Grids[sec.Shell];
+            var prev = new Dictionary<int, int> { [sec.EntryCell] = -1 };
+            var queue = new Queue<int>();
+            queue.Enqueue(sec.EntryCell);
+            while (queue.Count > 0)
+            {
+                int cur = queue.Dequeue();
+                foreach (int nb in grid.Neighbors[cur])
+                {
+                    if (prev.ContainsKey(nb) || Region[sec.Shell][nb] != section) continue;
+                    if (!Open[sec.Shell][grid.EdgeBetween(cur, nb)]) continue;
+                    prev[nb] = cur;
+                    queue.Enqueue(nb);
+                }
+            }
+            var route = new List<int>();
+            for (int c = sec.ExitCell; c != -1; c = prev[c]) route.Insert(0, c);
+            return route;
         }
 
         /// <summary>

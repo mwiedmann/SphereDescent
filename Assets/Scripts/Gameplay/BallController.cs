@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace SphereDescent
@@ -34,6 +35,10 @@ namespace SphereDescent
         [Tooltip("How far above the upper surface a boost-pad launch peaks.")]
         public float launchClearance = 2.5f;
 
+        [Header("Mines")]
+        [Tooltip("Seconds between blowing up on a mine and reappearing at the checkpoint.")]
+        public float respawnDelay = 1.1f;
+
         [Header("References")]
         public Transform cameraTransform;
         public LevelInstance level;
@@ -55,6 +60,7 @@ namespace SphereDescent
         float padSeenAt = -10f;
         BoostPad launchPad;
         bool dropping;
+        bool exploding;
         Vector3 checkpoint;
         int checkpointLayer = -1;
         bool frozen;
@@ -76,11 +82,12 @@ namespace SphereDescent
             if (frozen) { moveInput = Vector2.zero; return; }
             moveInput = GameInput.Move();
             if (GameInput.JumpPressed()) jumpPressedAt = Time.time;
-            if (GameInput.RespawnPressed()) RespawnAtCheckpoint();
+            if (GameInput.RespawnPressed() && !exploding) RespawnAtCheckpoint();
         }
 
         void FixedUpdate()
         {
+            if (exploding) return;
             Vector3 pos = rb.position;
             float r = pos.magnitude;
             Vector3 up = r > 1e-4f ? pos / r : Vector3.up;
@@ -246,6 +253,34 @@ namespace SphereDescent
             int layer = checkpointLayer;
             Teleport(checkpoint + checkpoint.normalized * 0.5f);
             checkpointLayer = layer;
+        }
+
+        /// <summary>Blown up by a mine: vanish in a fireball, then reappear at the checkpoint.</summary>
+        public void HitMine(Vector3 minePosition)
+        {
+            if (exploding || frozen) return;
+            StartCoroutine(Explode());
+        }
+
+        IEnumerator Explode()
+        {
+            exploding = true;
+            var look = GetComponent<Renderer>();
+            look.enabled = false;
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+            var gm = GameManager.Instance;
+            if (gm != null)
+            {
+                if (gm.materials.beam != null) Explosion.Spawn(transform.position, gm.materials.beam, new Color(1f, 0.45f, 0.1f));
+                gm.ShowMessage("Boom!", respawnDelay);
+            }
+            yield return new WaitForSeconds(respawnDelay);
+            rb.isKinematic = false;
+            exploding = false;
+            RespawnAtCheckpoint();
+            look.enabled = true;
         }
 
         public void SetFrozen(bool value)

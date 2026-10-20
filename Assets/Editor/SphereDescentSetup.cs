@@ -160,6 +160,45 @@ namespace SphereDescent.EditorTools
                     }
                 if (deadEnds > 0) problems.Append($" {deadEnds} dead ends;");
 
+                // Mines: clear of walls, holes and pads, far enough apart to roll between, 2-3 groups a section.
+                float minGap = float.MaxValue, minWall = float.MaxValue, minHole = float.MaxValue, maxWallMineGap = 0f;
+                int wallMines = 0;
+                var perSection = new int[layout.Sections.Count];
+                for (int m = 0; m < layout.Mines.Count; m++)
+                {
+                    var mine = layout.Mines[m];
+                    float r = settings.shellRadii[mine.Shell];
+                    Vector3 p = mine.Direction * r;
+                    perSection[mine.Section]++;
+                    for (int n = m + 1; n < layout.Mines.Count; n++)
+                        if (layout.Mines[n].Shell == mine.Shell)
+                            minGap = Mathf.Min(minGap, Vector3.Distance(p, layout.Mines[n].Direction * r) - 2f * settings.mineRadius);
+                    var grid = layout.Grids[mine.Shell];
+                    float wallGap = float.MaxValue;
+                    for (int e = 0; e < grid.Edges.Length; e++)
+                    {
+                        if (layout.Open[mine.Shell][e]) continue;
+                        Vector3 a0 = grid.Edges[e].P0 * r, a1 = grid.Edges[e].P1 * r;
+                        Vector3 closest = a0 + Vector3.Project(p - a0, a1 - a0);
+                        if (Vector3.Dot(closest - a0, a1 - a0) < 0f) closest = a0;
+                        else if ((closest - a0).sqrMagnitude > (a1 - a0).sqrMagnitude) closest = a1;
+                        wallGap = Mathf.Min(wallGap, Vector3.Distance(p, closest) - settings.wallThickness * 0.5f - settings.mineRadius);
+                    }
+                    if (mine.NearWall) { wallMines++; maxWallMineGap = Mathf.Max(maxWallMineGap, wallGap); }
+                    else minWall = Mathf.Min(minWall, wallGap);
+                    if (wallGap < 0.05f) problems.Append($" a mine touches a wall ({wallGap:F2});");
+                    foreach (var h in layout.Holes)
+                        if (h.Shell == mine.Shell || h.Shell + 1 == mine.Shell)
+                            minHole = Mathf.Min(minHole, Vector3.Angle(h.Direction, mine.Direction) * Mathf.Deg2Rad * r
+                                - settings.HoleRadius(layout.Grids[h.Shell], h.Shell) - settings.mineRadius);
+                }
+                if (minGap < MazeLayout.MinePassage - 0.05f) problems.Append($" mines only {minGap:F2} apart;");
+                if (maxWallMineGap >= 1f) problems.Append($" a wall mine leaves {maxWallMineGap:F2} to squeeze past;");
+                if (minWall < 0.5f) problems.Append($" a mine {minWall:F2} from a wall;");
+                if (minHole < 2f) problems.Append($" a mine {minHole:F2} from a hole or pad;");
+                var mineCounts = new System.Text.StringBuilder();
+                foreach (int c in perSection) mineCounts.Append(' ').Append(c);
+
                 var routes = new System.Text.StringBuilder();
                 foreach (var sec in layout.Sections)
                 {
@@ -169,6 +208,7 @@ namespace SphereDescent.EditorTools
                 if (problems.Length > 0) failures++;
                 string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
                              $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
+                             $" mines per section:{mineCounts} ({wallMines} by walls; gap {minGap:F1}, other mines to wall {minWall:F1}, wall mines to wall max {maxWallMineGap:F2}, hole {minHole:F1})" +
                              (problems.Length > 0 ? " PROBLEMS:" + problems : "");
 
                 if (world <= 2)
@@ -587,29 +627,7 @@ namespace SphereDescent.EditorTools
                 Render(name, ballPos, focus - lookDir * dist, Quaternion.LookRotation(lookDir, up), shell);
             }
 
-            // The route through a section, entry to exit.
-            System.Collections.Generic.List<int> Route(int index)
-            {
-                var sec = layout.Sections[index];
-                var grid = layout.Grids[sec.Shell];
-                var prev = new System.Collections.Generic.Dictionary<int, int> { [sec.EntryCell] = -1 };
-                var queue = new System.Collections.Generic.Queue<int>();
-                queue.Enqueue(sec.EntryCell);
-                while (queue.Count > 0)
-                {
-                    int cur = queue.Dequeue();
-                    foreach (int nb in grid.Neighbors[cur])
-                    {
-                        if (prev.ContainsKey(nb) || layout.Region[sec.Shell][nb] != index) continue;
-                        if (!layout.Open[sec.Shell][grid.EdgeBetween(cur, nb)]) continue;
-                        prev[nb] = cur;
-                        queue.Enqueue(nb);
-                    }
-                }
-                var route = new System.Collections.Generic.List<int>();
-                for (int c = sec.ExitCell; c != -1; c = prev[c]) route.Insert(0, c);
-                return route;
-            }
+            System.Collections.Generic.List<int> Route(int index) => layout.Route(index);
 
             // The first render of a batch-mode session can come out wrong (materials not fully set up yet),
             // so render one throwaway frame first.
@@ -720,7 +738,7 @@ namespace SphereDescent.EditorTools
                 {
                     var sec = layout.Sections[i];
                     if (sec.ExitsUp || layout.Holes[i].LandingCell < 0 || (pass == 0 && sec.Shell != 0)) continue;
-                    var candidate = SectionRoute(layout, i);
+                    var candidate = layout.Route(i);
                     var grid = layout.Grids[sec.Shell];
                     int lastChange = -1;
                     for (int k = 1; k < candidate.Count; k++)
@@ -745,7 +763,7 @@ namespace SphereDescent.EditorTools
             var nextSection = layout.Sections[sectionIndex + 1];
             var nextGrid = layout.Grids[nextSection.Shell];
             var afterWaypoints = new List<Vector3>();
-            var nextRoute = SectionRoute(layout, sectionIndex + 1);
+            var nextRoute = layout.Route(sectionIndex + 1);
             // Stop short of that section's own exit, so the video doesn't drop or launch again.
             for (int k = 1; k < nextRoute.Count - 1; k++) afterWaypoints.Add(nextGrid.CellCenters[nextRoute[k]]);
             if (afterWaypoints.Count == 0) afterWaypoints.Add(nextGrid.CellCenters[nextRoute[0]]);
@@ -858,30 +876,6 @@ namespace SphereDescent.EditorTools
             Object.DestroyImmediate(ball.gameObject);
             Object.DestroyImmediate(level.gameObject);
             Debug.Log($"[Demo] {frame} frames ({frame / 30f:F1} s), {(landedFor > 0f ? "dropped through the hole" : "DID NOT reach the hole")} -> {Path.GetFullPath(outDir)}");
-        }
-
-        /// <summary>The shortest route through a section, entry to exit, as cells on its shell.</summary>
-        static List<int> SectionRoute(MazeLayout layout, int index)
-        {
-            var sec = layout.Sections[index];
-            var grid = layout.Grids[sec.Shell];
-            var prev = new Dictionary<int, int> { [sec.EntryCell] = -1 };
-            var queue = new Queue<int>();
-            queue.Enqueue(sec.EntryCell);
-            while (queue.Count > 0)
-            {
-                int cur = queue.Dequeue();
-                foreach (int nb in grid.Neighbors[cur])
-                {
-                    if (prev.ContainsKey(nb) || layout.Region[sec.Shell][nb] != index) continue;
-                    if (!layout.Open[sec.Shell][grid.EdgeBetween(cur, nb)]) continue;
-                    prev[nb] = cur;
-                    queue.Enqueue(nb);
-                }
-            }
-            var route = new List<int>();
-            for (int c = sec.ExitCell; c != -1; c = prev[c]) route.Insert(0, c);
-            return route;
         }
     }
 }

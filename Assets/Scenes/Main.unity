@@ -212,6 +212,8 @@ MonoBehaviour:
   followMovement: 1
   followMinSpeed: 1.5
   followSharpness: 4
+  holdWhenBackingUp: 1
+  backingUpDot: -0.3
 --- !u!81 &632211835
 AudioListener:
   m_ObjectHideFlags: 0
@@ -435,6 +437,11 @@ MonoBehaviour:
     hillSize: 5
     hillCoverage: 1.2
     hillFlatMargin: 3
+    mineGroupsMin: 4
+    mineGroupsMax: 6
+    mineSpacing: 5
+    mineRadius: 0.8
+    mineHeight: 0.2
     beamHeight: 100
     shellMeshSubdivisions: 6
     coreMeshSubdivisions: 5
