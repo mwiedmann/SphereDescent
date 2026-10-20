@@ -15,13 +15,13 @@ namespace SphereDescent
         [Header("Maze")]
         [Tooltip("Distance between neighbouring maze cells (corridor width) in world units, the same on every layer. " +
                  "Smaller inner spheres get fewer cells rather than narrower corridors.")]
-        public float cellSpacing = 10.5f;
+        public float cellSpacing = 16f;
         [Tooltip("Times per world you have to climb back up a layer on a boost pad. Each climb adds two sections.")]
         public int climbsPerWorld = 3;
         [Tooltip("Length of each section's main path in maze cells (about Cell Spacing units each). " +
                  "Every section ends at a hole down or a boost pad up.")]
-        public int sectionLengthMin = 10;
-        public int sectionLengthMax = 18;
+        public int sectionLengthMin = 11;
+        public int sectionLengthMax = 19;
         [Tooltip("How often a cell beside the main path becomes part of a side lane. Higher = wider sections with more alternative routes.")]
         [Range(0f, 1f)] public float sideLaneChance = 0.5f;
         [Tooltip("How often a step of the main path is walled off, so the route has to detour through a side lane.")]
@@ -34,15 +34,47 @@ namespace SphereDescent
         public float holeRadiusFactor = 0.2f;
         public float minHoleRadius = 1f;
 
+        [Header("Hills")]
+        [Tooltip("Tallest hill in world units on the Hill Reference Shell (0 = flat shells). Hills on other shells are scaled " +
+                 "(height and size) by their radius, so they look the same relative to the sphere. Walls follow the ground, " +
+                 "so this doesn't change how high they are.")]
+        public float hillHeight = 3.5f;
+        [Tooltip("Shell (0 = outermost) whose hills are exactly Hill Height and Hill Size. Bigger shells get bigger hills, smaller ones smaller.")]
+        public int hillReferenceShell = 2;
+        [Tooltip("Typical hill radius in world units on the Hill Reference Shell. Bigger = broader, gentler slopes.")]
+        public float hillSize = 5f;
+        [Tooltip("Roughly how much of each shell is covered by hills.")]
+        [Range(0f, 2f)] public float hillCoverage = 1.2f;
+        [Tooltip("Ground stays flat this far beyond the edge of each hole and boost pad.")]
+        public float hillFlatMargin = 3f;
+
         [Header("Orientation")]
-        [Tooltip("Glowing pillar near the center of each colored zone on every shell.")]
-        public bool landmarks = true;
+        [Tooltip("How high the light beams over holes and boost pads rise into the sky on the outer surface. " +
+                 "On inner layers they reach up to the shell above.")]
+        public float beamHeight = 100f;
 
         [Header("Mesh detail")]
         public int shellMeshSubdivisions = 6;
         public int coreMeshSubdivisions = 5;
 
         public int ShellCount => shellRadii.Length;
+
+        /// <summary>How much bigger this shell's hills are than the reference shell's (its radius relative to it).</summary>
+        public float HillScale(int shell) => shellRadii[shell] / shellRadii[Mathf.Clamp(hillReferenceShell, 0, ShellCount - 1)];
+
+        /// <summary>Typical hill radius on a shell.</summary>
+        public float HillSize(int shell) => hillSize * HillScale(shell);
+
+        /// <summary>
+        /// Tallest hill on a shell: Hill Height scaled like the shell, capped so a wall on top of a hill stays
+        /// clear of the shell above.
+        /// </summary>
+        public float HillHeight(int shell)
+        {
+            float h = hillHeight * HillScale(shell);
+            if (shell > 0) h = Mathf.Min(h, shellRadii[shell - 1] - shellThickness - shellRadii[shell] - wallHeight - 1f);
+            return Mathf.Max(0f, h);
+        }
 
         /// <summary>Boost pad radius for a hole of the given radius.</summary>
         public static float PadRadius(float holeRadius) => Mathf.Max(0.9f, holeRadius * 0.85f);

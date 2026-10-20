@@ -420,17 +420,22 @@ MonoBehaviour:
     - 38
     coreRadius: 22
     shellThickness: 1
-    cellSpacing: 10.5
+    cellSpacing: 16
     climbsPerWorld: 3
-    sectionLengthMin: 10
-    sectionLengthMax: 18
+    sectionLengthMin: 11
+    sectionLengthMax: 19
     sideLaneChance: 0.5
     mainPathCutChance: 0.35
     wallHeight: 4
     wallThickness: 0.6
     holeRadiusFactor: 0.2
     minHoleRadius: 1
-    landmarks: 1
+    hillHeight: 3.5
+    hillReferenceShell: 2
+    hillSize: 5
+    hillCoverage: 1.2
+    hillFlatMargin: 3
+    beamHeight: 100
     shellMeshSubdivisions: 6
     coreMeshSubdivisions: 5
   materials:
@@ -441,6 +446,7 @@ MonoBehaviour:
     ringUp: {fileID: 2100000, guid: ffbefe491267e4c09b2119e73a4df50c, type: 2}
     ringDrop: {fileID: 2100000, guid: e43ca400bf9ed4d68ac1eec30340d439, type: 2}
     exit: {fileID: 2100000, guid: e1c7a22fe90fa4969b50ff8386c2e313, type: 2}
+    beam: {fileID: 2100000, guid: dc0c2fbbf0454fbc899b50aeaf5fd6bb, type: 2}
   skyColor: {r: 0.08, g: 0.02, b: 0.16, a: 1}
   baseSeed: 1337
   startWorld: 1

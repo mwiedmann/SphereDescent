@@ -25,7 +25,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 
 ![Landing on the gold core completes the world](Docs/screenshots/core.png)
 
-To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. Glowing landmark pillars mark the zones, and the zones line up through every layer. The HUD shows the world, section, layer and zone you're in.
+To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. The HUD shows the world, section, layer and zone you're in.
 
 ## Look
 
@@ -76,7 +76,7 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Section Length Min / Max:** the length of each section's main path, in maze cells.
 - **Side Lane Chance:** how wide sections are, and how many alternative routes they have.
 - **Main Path Cut Chance:** how often the main path is walled off, forcing a detour.
-- **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **landmarks**, and the **Base Seed**.
+- **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **beam height**, and the **Base Seed**.
 
 The ball's speed, jump height and gravity are set on the `BallController`, and the camera's distance, pitch and follow behavior on the `OrbitCamera`.
 

@@ -15,8 +15,9 @@ namespace SphereDescent
         /// <summary>
         /// A spherical shell (outer surface at <paramref name="radius"/>, inner surface at radius - thickness)
         /// with circular holes cut through it. Hole edges are snapped to a clean circle and closed with a rim.
+        /// With <paramref name="terrain"/>, the outer surface rises into hills; the inner one stays a sphere.
         /// </summary>
-        public static Mesh BuildShell(IcoSphere ico, float radius, float thickness, IList<HoleCut> holes)
+        public static Mesh BuildShell(IcoSphere ico, float radius, float thickness, IList<HoleCut> holes, ShellTerrain terrain = null)
         {
             var unit = ico.Vertices;
             var tris = ico.Triangles;
@@ -81,8 +82,26 @@ namespace SphereDescent
             float innerRadius = radius - thickness;
             var verts = new List<Vector3>(vCount * 2 + boundary.Count * 4);
             var normals = new List<Vector3>(verts.Capacity);
-            for (int v = 0; v < vCount; v++) { verts.Add(dirs[v] * radius); normals.Add(dirs[v]); }
+            for (int v = 0; v < vCount; v++)
+            {
+                verts.Add(dirs[v] * (terrain != null ? terrain.SurfaceRadius(dirs[v]) : radius));
+                normals.Add(dirs[v]);
+            }
             for (int v = 0; v < vCount; v++) { verts.Add(dirs[v] * innerRadius); normals.Add(-dirs[v]); }
+            if (terrain != null)
+            {
+                // Hillsides lean, so outer normals come from the surrounding triangles (area weighted).
+                var sum = new Vector3[vCount];
+                for (int i = 0; i < kept.Count; i += 3)
+                {
+                    int a = kept[i], b = kept[i + 1], c = kept[i + 2];
+                    Vector3 n = Vector3.Cross(verts[b] - verts[a], verts[c] - verts[a]);
+                    if (Vector3.Dot(n, verts[a]) < 0f) n = -n;
+                    sum[a] += n; sum[b] += n; sum[c] += n;
+                }
+                for (int v = 0; v < vCount; v++)
+                    if (sum[v] != Vector3.zero) normals[v] = sum[v].normalized;
+            }
 
             var indices = new List<int>(kept.Count * 2 + boundary.Count * 6);
             for (int i = 0; i < kept.Count; i += 3)
@@ -97,10 +116,10 @@ namespace SphereDescent
             // Rims: quads joining outer and inner boundary edges, facing into the hole.
             foreach (var (a, b, third) in boundary)
             {
-                Vector3 ao = dirs[a] * radius, bo = dirs[b] * radius;
+                Vector3 ao = verts[a], bo = verts[b];
                 Vector3 bi = dirs[b] * innerRadius, ai = dirs[a] * innerRadius;
                 Vector3 mid = (ao + bo) * 0.5f;
-                Vector3 outward = Vector3.ProjectOnPlane(mid - dirs[third] * radius, bo - ao);
+                Vector3 outward = Vector3.ProjectOnPlane(mid - verts[third], bo - ao);
                 outward = Vector3.ProjectOnPlane(outward, mid.normalized).normalized;
                 AddQuad(verts, normals, indices, ao, bo, bi, ai, outward);
             }
@@ -146,9 +165,15 @@ namespace SphereDescent
         /// thickness. Walls meeting at a joint reuse the exact same corner vertices (and the cap uses them too),
         /// so joints are watertight rather than relying on separately computed points lining up. Normals are
         /// per vertex, so the short flat pieces that make up each curved wall shade as one smooth surface.
+        /// With <paramref name="terrain"/>, each side of a wall rises and falls with the ground beneath it.
+        /// UV x holds the ground radius under each vertex, so the shader can measure height above the floor.
         /// </summary>
-        public static Mesh BuildWalls(IList<(Vector3 p0, Vector3 p1)> walls, float radius, float height, float thickness)
+        public static Mesh BuildWalls(IList<(Vector3 p0, Vector3 p1)> walls, float radius, float height, float thickness,
+            ShellTerrain terrain = null)
         {
+            float Ground(Vector3 dir) => terrain != null ? terrain.SurfaceRadius(dir) : radius;
+            float pieceLength = terrain != null ? terrain.DetailLength(2f) : 2f;
+
             var verts = new List<Vector3>();
             var normals = new List<Vector3>();
             var indices = new List<int>();
@@ -230,7 +255,7 @@ namespace SphereDescent
                 EndExtension(w, p0, out float startA, out float startB, out var startCornerA, out var startCornerB);
                 // From p1, "into the wall" points back toward p0, which swaps left and right.
                 EndExtension(w, p1, out float endB, out float endA, out var endCornerB, out var endCornerA);
-                int segments = Mathf.Max(1, Mathf.CeilToInt((ang + 2f * half / radius) * radius / 2f));
+                int segments = Mathf.Max(1, Mathf.CeilToInt((ang + 2f * half / radius) * radius / pieceLength));
 
                 Vector3 prevA = Vector3.zero, prevB = Vector3.zero, prevSideA = Vector3.zero, prevSideB = Vector3.zero;
                 Vector3 pBaseA = Vector3.zero, pTopA = Vector3.zero, pBaseB = Vector3.zero, pTopB = Vector3.zero;
@@ -242,8 +267,11 @@ namespace SphereDescent
                     Vector3 dirB = Vector3.SlerpUnclamped(p0, p1, (-startB + (ang + startB + endB) * f) / ang).normalized;
                     Vector3 sideA = Vector3.Cross(dirA, Vector3.ProjectOnPlane(p1 - p0, dirA)).normalized;
                     Vector3 sideB = Vector3.Cross(dirB, Vector3.ProjectOnPlane(p1 - p0, dirB)).normalized;
-                    Vector3 baseA = dirA * (radius - sink) + sideA * half, topA = dirA * (radius + height) + sideA * half;
-                    Vector3 baseB = dirB * (radius - sink) - sideB * half, topB = dirB * (radius + height) - sideB * half;
+                    // Each side stands on the ground directly beneath it.
+                    Vector3 footA = (dirA * radius + sideA * half).normalized, footB = (dirB * radius - sideB * half).normalized;
+                    float groundA = Ground(footA), groundB = Ground(footB);
+                    Vector3 baseA = footA * (groundA - sink), topA = footA * (groundA + height);
+                    Vector3 baseB = footB * (groundB - sink), topB = footB * (groundB + height);
                     if (i == 0)
                     {
                         ShareCorner(startCornerA, ref baseA, ref topA);
@@ -302,7 +330,36 @@ namespace SphereDescent
                 indices.Add(i0); indices.Add(facesUp ? i0 + 1 : i0 + 2); indices.Add(facesUp ? i0 + 2 : i0 + 1);
             }
 
-            return MakeMesh("Walls", verts, normals, indices);
+            var mesh = MakeMesh("Walls", verts, normals, indices);
+            var uvs = new List<Vector2>(verts.Count);
+            foreach (var v in verts) uvs.Add(new Vector2(Ground(v), 0f));
+            mesh.SetUVs(0, uvs);
+            return mesh;
+        }
+
+        /// <summary>Open tube along local +Y from 0 to <paramref name="height"/>; UV y runs 0 at the base to 1 at the top.</summary>
+        public static Mesh BuildBeam(float radius, float height, int segments = 24)
+        {
+            var verts = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var indices = new List<int>();
+            for (int i = 0; i <= segments; i++)
+            {
+                float u = i / (float)segments;
+                Vector3 n = new Vector3(Mathf.Cos(u * Mathf.PI * 2f), 0f, Mathf.Sin(u * Mathf.PI * 2f));
+                verts.Add(n * radius); normals.Add(n); uvs.Add(new Vector2(u, 0f));
+                verts.Add(n * radius + Vector3.up * height); normals.Add(n); uvs.Add(new Vector2(u, 1f));
+            }
+            for (int i = 0; i < segments; i++)
+            {
+                int a = i * 2;
+                indices.Add(a); indices.Add(a + 1); indices.Add(a + 3);
+                indices.Add(a); indices.Add(a + 3); indices.Add(a + 2);
+            }
+            var mesh = MakeMesh("Beam", verts, normals, indices);
+            mesh.SetUVs(0, uvs);
+            return mesh;
         }
 
         /// <summary>Torus lying in the local XZ plane, centered on the origin.</summary>

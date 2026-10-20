@@ -14,9 +14,11 @@ namespace SphereDescent
         public Material ringUp;
         public Material ringDrop;
         public Material exit;
+        public Material beam;
 
         public const string GridShaderName = "SphereDescent/TriplanarGrid";
         public const string LitShaderName = "Universal Render Pipeline/Lit";
+        public const string BeamShaderName = "SphereDescent/LightBeam";
 
         /// <summary>Fills any unassigned slot with a runtime material so the game still runs without the setup step.</summary>
         public void EnsureDefaults()
@@ -28,7 +30,11 @@ namespace SphereDescent
             if (ringUp == null) ringUp = MakeEmissive(new Color(0.2f, 0.9f, 1f), 1.5f);
             if (ringDrop == null) ringDrop = MakeEmissive(new Color(1f, 0.45f, 0.05f), 1.8f);
             if (exit == null) exit = MakeEmissive(new Color(1f, 0.85f, 0.2f), 3f);
+            if (beam == null) beam = MakeBeam();
         }
+
+        /// <summary>Light beam rising from holes and boost pads; LevelBuilder tints copies to match the rings.</summary>
+        public static Material MakeBeam() => new Material(Shader.Find(BeamShaderName));
 
         public static Material MakeGrid(Color baseColor, Color lineColor, float gridSize, bool objectSpaceChecker)
         {

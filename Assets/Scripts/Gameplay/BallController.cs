@@ -54,6 +54,7 @@ namespace SphereDescent
         BoostPad pad;
         float padSeenAt = -10f;
         BoostPad launchPad;
+        bool dropping;
         Vector3 checkpoint;
         int checkpointLayer = -1;
         bool frozen;
@@ -86,9 +87,14 @@ namespace SphereDescent
 
             IsGrounded = touchingGround && launchPad == null;
             touchingGround = false;
+            int previousLayer = CurrentLayer;
             if (level != null) CurrentLayer = level.LayerAt(r);
+            // Fell through a hole: drop straight down from here on, so momentum can't carry the ball over a
+            // wall into a sealed-off part of the maze below.
+            if (CurrentLayer > previousLayer && launchPad == null) dropping = true;
             if (IsGrounded)
             {
+                dropping = false;
                 lastGroundedAt = Time.time;
                 if (CurrentLayer != checkpointLayer) { checkpoint = pos; checkpointLayer = CurrentLayer; }
             }
@@ -98,6 +104,12 @@ namespace SphereDescent
 
             if (level != null && r > level.OuterRadius + 60f) { RespawnAtCheckpoint(); return; }
             if (launchPad != null) { GuideLaunch(pos, up, r); return; }
+            if (dropping)
+            {
+                rb.linearVelocity = up * Vector3.Dot(rb.linearVelocity, up);
+                rb.angularVelocity = Vector3.zero;
+                return;
+            }
 
             Vector3 move = MoveDirection(up);
             Vector3 tangentVel = Vector3.ProjectOnPlane(rb.linearVelocity, up);
@@ -216,6 +228,7 @@ namespace SphereDescent
         public void Teleport(Vector3 position)
         {
             launchPad = null;
+            dropping = false;
             transform.position = position;
             rb.position = position;
             rb.linearVelocity = Vector3.zero;

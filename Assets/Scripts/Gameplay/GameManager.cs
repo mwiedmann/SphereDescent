@@ -142,6 +142,7 @@ namespace SphereDescent
                 if (ball.IsGrounded && ball.CurrentLayer >= level.LayerCount - 1) OnExitReached();
                 int s = level.Layout.SectionAt(ball.CurrentLayer, ball.transform.position);
                 if (s >= 0) section = s;
+                level.SetBeamSection(section);
 
                 level.SetShadowLayer(ball.CurrentLayer);
                 // Use the outermost of the ball's and camera's layers, so nothing vanishes while the camera is

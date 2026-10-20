@@ -17,13 +17,11 @@ namespace SphereDescent
             zones.ApplyToShaders();
             level.Init(s, layout, world, startDir * (s.shellRadii[0] + 1.5f), zones);
 
-            Material[] landmarkMats = null;
-            if (s.landmarks)
-            {
-                landmarkMats = new Material[ZoneMap.Count];
-                for (int z = 0; z < ZoneMap.Count; z++)
-                    landmarkMats[z] = level.Own(LevelMaterials.MakeEmissive(zones.Colors[z], 1.3f));
-            }
+            // A light beam marks where each section ends, colored like the rings: orange over the hole to drop
+            // through, cyan over the boost pad to climb from. Only the current section's beam is shown.
+            var beamDrop = level.Own(BeamMaterial(mats.beam, mats.ringDrop.color, 0.3f));
+            // A pad's beam stops at the hole in the ceiling, so it doesn't fade out before reaching it.
+            var beamPad = level.Own(BeamMaterial(mats.beam, mats.ringUp.color, 1f));
 
             // One root per layer (shells, then the core). Everything is parented under the layer it sits on,
             // so whole layers can be hidden at once.
@@ -35,9 +33,11 @@ namespace SphereDescent
                 layerRoots[layer].SetParent(root.transform, false);
             }
 
+            var terrains = BuildTerrains(layout, s);
             for (int shell = 0; shell < layout.ShellCount; shell++)
             {
                 var grid = layout.Grids[shell];
+                var terrain = terrains[shell];
                 float radius = s.shellRadii[shell];
                 float holeRadius = s.HoleRadius(grid, shell);
                 var layerRoot = layerRoots[shell];
@@ -48,7 +48,7 @@ namespace SphereDescent
                         cuts.Add(new HoleCut { Direction = h.Direction, AngularRadius = holeRadius / radius });
 
                 var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 3f, 0.6f));
-                var shellMesh = level.Own(MeshBuilders.BuildShell(shellIco, radius, s.shellThickness, cuts));
+                var shellMesh = level.Own(MeshBuilders.BuildShell(shellIco, radius, s.shellThickness, cuts, terrain));
                 // Shells don't cast shadows, otherwise the outer shell would plunge every inner layer into darkness.
                 shellRenderers[shell] = CreateMeshObject(layerRoot, "Shell", shellMesh, groundMat, true, ShadowCastingMode.Off)
                     .GetComponent<Renderer>();
@@ -62,26 +62,37 @@ namespace SphereDescent
                 wallMat.SetFloat("_SurfaceRadius", radius);
                 wallMat.SetFloat("_WallHeight", s.wallHeight);
                 wallMat.SetFloat("_LineWidth", 0.025f); // thinner panel lines than the floor's
-                var wallMesh = level.Own(MeshBuilders.BuildWalls(walls, radius, s.wallHeight, s.wallThickness));
+                var wallMesh = level.Own(MeshBuilders.BuildWalls(walls, radius, s.wallHeight, s.wallThickness, terrain));
                 var wallObj = CreateMeshObject(layerRoot, "Walls", wallMesh, wallMat, true, ShadowCastingMode.On);
                 level.RegisterShadowCaster(shell, wallObj.GetComponent<MeshRenderer>());
 
                 // Glowing rings mark holes: cyan = you can come back up through it, orange = one-way drop.
                 var upRing = level.Own(MeshBuilders.BuildTorus(holeRadius + 0.3f, 0.18f));
                 var dropRing = level.Own(MeshBuilders.BuildTorus(holeRadius + 0.3f, 0.18f));
-                foreach (var h in layout.Holes)
+                for (int i = 0; i < layout.Holes.Count; i++)
                 {
+                    var h = layout.Holes[i];
                     if (h.Shell != shell) continue;
                     Vector3 dir = h.Direction;
                     var ring = CreateMeshObject(layerRoot, h.TwoWay ? "Hole (two-way)" : "Hole (drop)",
                         h.TwoWay ? upRing : dropRing, h.TwoWay ? mats.ringUp : mats.ringDrop, false, ShadowCastingMode.Off);
                     ring.transform.SetPositionAndRotation(dir * radius, Quaternion.FromToRotation(Vector3.up, dir));
 
+                    // Hole i ends section i. A two-way hole is where a climb comes out, so its section ends at
+                    // the pad below it instead.
                     if (h.TwoWay)
+                    {
                         CreateBoostPad(level, layerRoots[shell + 1], layout, s, h, holeRadius, mats.pad);
+                        CreateBeam(level, i, layerRoots[shell + 1], dir, s.SurfaceRadius(shell + 1), radius - s.shellThickness,
+                            LevelSettings.PadRadius(holeRadius) * 0.75f, beamPad);
+                    }
+                    else
+                    {
+                        // From inside the hole up into the sky, or up to the shell above.
+                        float beamTop = shell == 0 ? radius + s.beamHeight : s.shellRadii[shell - 1] - s.shellThickness;
+                        CreateBeam(level, i, layerRoot, dir, radius - s.shellThickness, beamTop, holeRadius * 0.75f, beamDrop);
+                    }
                 }
-
-                if (landmarkMats != null) CreateLandmarks(layerRoot, layout, s, zones, shell, landmarkMats);
             }
 
             // The whole core is the exit: it glows gold, and landing on it completes the world.
@@ -93,6 +104,30 @@ namespace SphereDescent
 
             level.RegisterLayers(layerRoots, shellRenderers);
             return level;
+        }
+
+        /// <summary>
+        /// Hills for every shell. The ground stays flat around each hole, under each boost pad (beneath the
+        /// hole on the next shell down, which is also where you land after a drop) and at the start.
+        /// </summary>
+        static ShellTerrain[] BuildTerrains(MazeLayout layout, LevelSettings s)
+        {
+            var terrains = new ShellTerrain[layout.ShellCount];
+            for (int shell = 0; shell < layout.ShellCount; shell++)
+                terrains[shell] = ShellTerrain.Generate(s.shellRadii[shell], s.HillHeight(shell), s.HillSize(shell), s.hillCoverage,
+                    layout.Seed * 31 + shell);
+            // Ease back into the hills gently (slope under about 37 degrees), so you never land beside a cliff.
+            float Fade(int shell) => Mathf.Max(s.HillSize(shell), 2f * s.HillHeight(shell));
+            terrains[0].AddFlatSpot(layout.Grids[0].CellCenters[layout.StartCell], s.hillFlatMargin, Fade(0));
+            foreach (var h in layout.Holes)
+            {
+                float flat = s.HoleRadius(layout.Grids[h.Shell], h.Shell) + s.hillFlatMargin;
+                // After a boost pad climb you land beside the hole still rolling; extra room to stop keeps
+                // the ball from running up a hill and rolling back into the hole.
+                terrains[h.Shell].AddFlatSpot(h.Direction, h.TwoWay ? flat + 4f : flat, Fade(h.Shell));
+                if (h.Shell + 1 < layout.ShellCount) terrains[h.Shell + 1].AddFlatSpot(h.Direction, flat, Fade(h.Shell + 1));
+            }
+            return terrains;
         }
 
         static void CreateBoostPad(LevelInstance level, Transform parent, MazeLayout layout, LevelSettings s,
@@ -147,6 +182,24 @@ namespace SphereDescent
             pad.pulseVisual = ring.transform;
         }
 
+        static void CreateBeam(LevelInstance level, int section, Transform parent, Vector3 dir, float fromRadius, float toRadius,
+            float radius, Material mat)
+        {
+            var beam = CreateMeshObject(parent, "Light Beam", level.Own(MeshBuilders.BuildBeam(radius, toRadius - fromRadius)),
+                mat, false, ShadowCastingMode.Off);
+            beam.transform.SetPositionAndRotation(dir * fromRadius, Quaternion.FromToRotation(Vector3.up, dir));
+            beam.GetComponent<MeshRenderer>().receiveShadows = false;
+            level.RegisterBeam(section, beam);
+        }
+
+        static Material BeamMaterial(Material template, Color color, float fadeStart)
+        {
+            var m = new Material(template);
+            m.SetColor("_Color", color);
+            m.SetFloat("_FadeStart", fadeStart);
+            return m;
+        }
+
         static GameObject CreateMeshObject(Transform parent, string name, Mesh mesh, Material mat, bool collider, ShadowCastingMode shadows)
         {
             var go = new GameObject(name);
@@ -157,50 +210,6 @@ namespace SphereDescent
             mr.shadowCastingMode = shadows;
             if (collider) go.AddComponent<MeshCollider>().sharedMesh = mesh;
             return go;
-        }
-
-        /// <summary>
-        /// One glowing pillar per zone on this shell, at the free cell nearest the zone's center. They're
-        /// tall enough to see over the maze walls, and share the zone's color so you can steer by them.
-        /// </summary>
-        static void CreateLandmarks(Transform parent, MazeLayout layout, LevelSettings s, ZoneMap zones, int shell, Material[] mats)
-        {
-            var grid = layout.Grids[shell];
-            float radius = s.shellRadii[shell];
-            float height = shell == 0 ? 12f : Mathf.Min(10f, s.shellRadii[shell - 1] - s.shellThickness - radius - 2.5f);
-
-            // Keep clear of holes on this shell and of landing spots / pads from the shell above.
-            var avoid = new HashSet<int>();
-            void Avoid(int cell) { avoid.Add(cell); foreach (int nb in grid.Neighbors[cell]) avoid.Add(nb); }
-            if (shell == 0) Avoid(layout.StartCell);
-            foreach (var h in layout.Holes)
-            {
-                if (h.Shell == shell) Avoid(h.Cell);
-                if (h.Shell == shell - 1) Avoid(h.LandingCell);
-            }
-
-            for (int z = 0; z < ZoneMap.Count; z++)
-            {
-                int bestCell = -1;
-                float bestDot = -2f;
-                for (int c = 0; c < grid.CellCount; c++)
-                {
-                    if (avoid.Contains(c)) continue;
-                    float d = Vector3.Dot(grid.CellCenters[c], zones.Directions[z]);
-                    if (d > bestDot) { bestDot = d; bestCell = c; }
-                }
-                if (bestCell < 0) continue;
-
-                Vector3 dir = grid.CellCenters[bestCell];
-                var pillar = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                pillar.name = $"Landmark ({zones.Names[z]})";
-                pillar.transform.SetParent(parent, false);
-                pillar.transform.SetPositionAndRotation(dir * (radius + height * 0.5f - 0.3f), Quaternion.FromToRotation(Vector3.up, dir));
-                pillar.transform.localScale = new Vector3(1f, height * 0.5f, 1f);
-                var mr = pillar.GetComponent<MeshRenderer>();
-                mr.sharedMaterial = mats[z];
-                mr.shadowCastingMode = ShadowCastingMode.Off;
-            }
         }
 
         static Material ZoneMaterial(Material template, Color tint, float gridSize, float zoneMix)

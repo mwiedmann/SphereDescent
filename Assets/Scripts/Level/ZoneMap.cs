@@ -13,7 +13,7 @@ namespace SphereDescent
     {
         public const int Count = 12;
 
-        // Neon colors: each zone's grid lines, wall strips and landmark glow in its color.
+        // Neon colors: each zone's grid lines and wall strips glow in its color.
         static readonly (string name, Color color)[] Palette =
         {
             ("Crimson", new Color(1.00f, 0.10f, 0.25f)),

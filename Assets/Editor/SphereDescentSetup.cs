@@ -29,6 +29,7 @@ namespace SphereDescent.EditorTools
                 ringUp = SaveMaterial("HoleRingTwoWay", LevelMaterials.MakeEmissive(new Color(0.2f, 0.9f, 1f), 1.5f)),
                 ringDrop = SaveMaterial("HoleRingDrop", LevelMaterials.MakeEmissive(new Color(1f, 0.45f, 0.05f), 1.8f)),
                 exit = SaveMaterial("Exit", LevelMaterials.MakeEmissive(new Color(1f, 0.85f, 0.2f), 3f)),
+                beam = SaveMaterial("LightBeam", LevelMaterials.MakeBeam()),
             };
 
             var sky = SaveMaterial("Sky", new Material(Shader.Find("SphereDescent/SynthwaveSky")));
@@ -221,6 +222,12 @@ namespace SphereDescent.EditorTools
                 float above = settings.shellRadii[h.Shell], below = settings.SurfaceRadius(h.Shell + 1);
                 Report($"section {i + 1} drop (shell {h.Shell}{(h.LandingCell < 0 ? " into core" : "")})",
                     Simulate(level, h.Direction * (above + 3f), 4f, null), below + 0.5f);
+                // Rolling into the hole fast must still land right under it, not carry on over a wall.
+                Vector3 across = Vector3.Cross(h.Direction, Vector3.up).normalized;
+                Vector3 fast = Simulate(level, h.Direction * (above - 0.2f), 4f, null, across * 8f - h.Direction * 5f);
+                float off = Vector3.Angle(fast, h.Direction) * Mathf.Deg2Rad * below;
+                Report($"section {i + 1} fast drop ({off:F1} units from under the hole, hole radius " +
+                       $"{settings.HoleRadius(layout.Grids[h.Shell], h.Shell):F1})", off < settings.HoleRadius(layout.Grids[h.Shell], h.Shell) + 1f ? fast : Vector3.zero, below + 0.5f);
                 if (!h.TwoWay) continue;
                 BoostPad pad = null;
                 foreach (var p in pads)
@@ -228,7 +235,7 @@ namespace SphereDescent.EditorTools
                 Vector3 end = Simulate(level, pad.transform.position + pad.Axis * 0.5f, 5f, pad);
                 float fromHole = Vector3.Angle(end, pad.Axis) * Mathf.Deg2Rad * above;
                 Report($"section {i + 1} launch to shell {h.Shell} ({fromHole:F1} units from hole center, hole radius " +
-                       $"{settings.HoleRadius(layout.Grids[h.Shell], h.Shell):F1})", end, above + 0.5f);
+                       $"{settings.HoleRadius(layout.Grids[h.Shell], h.Shell):F1})", end, above + 0.5f, settings.HillHeight(h.Shell));
             }
 
             // Control tests on open ground, after the level is gone so its walls can't get in the way.
@@ -237,7 +244,7 @@ namespace SphereDescent.EditorTools
             Physics.simulationMode = prevMode;
         }
 
-        static Vector3 Simulate(LevelInstance level, Vector3 start, float seconds, BoostPad launchFrom)
+        static Vector3 Simulate(LevelInstance level, Vector3 start, float seconds, BoostPad launchFrom, Vector3 velocity = default)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.layer = 2;
@@ -248,6 +255,7 @@ namespace SphereDescent.EditorTools
             var fixedUpdate = typeof(BallController).GetMethod("FixedUpdate", flags);
             ball.level = level;
             ball.Teleport(start);
+            go.GetComponent<Rigidbody>().linearVelocity = velocity;
             Physics.SyncTransforms();
             float dt = Time.fixedDeltaTime;
             if (launchFrom != null)
@@ -419,11 +427,13 @@ namespace SphereDescent.EditorTools
             Object.DestroyImmediate(camGo);
         }
 
-        static void Report(string name, Vector3 end, float expectedRadius)
+        /// <param name="hills">How far above the expected radius still counts, for a ball that may roll onto a hill.</param>
+        static void Report(string name, Vector3 end, float expectedRadius, float hills = 0f)
         {
             float r = end.magnitude;
-            bool ok = Mathf.Abs(r - expectedRadius) < 0.3f;
-            Debug.Log($"[Physics] {(ok ? "PASS" : "FAIL")} {name}: ended at radius {r:F2}, expected {expectedRadius:F2}");
+            bool ok = r > expectedRadius - 0.3f && r < expectedRadius + hills + 0.3f;
+            string expected = hills > 0f ? $"{expectedRadius:F2} to {expectedRadius + hills:F2}" : $"{expectedRadius:F2}";
+            Debug.Log($"[Physics] {(ok ? "PASS" : "FAIL")} {name}: ended at radius {r:F2}, expected {expected}");
         }
     
         /// <summary>Renders a few preview shots of world 1 to the given folder (batch mode, needs graphics).</summary>

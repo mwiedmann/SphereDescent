@@ -88,6 +88,7 @@ Shader "SphereDescent/TriplanarGrid"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
+                float2 uv : TEXCOORD0; // walls: x = radius of the ground under this vertex
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -99,6 +100,7 @@ Shader "SphereDescent/TriplanarGrid"
                 float3 gridPos : TEXCOORD2;
                 float3 gridNormal : TEXCOORD3;
                 float fogFactor : TEXCOORD4;
+                float groundRadius : TEXCOORD5;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -115,6 +117,7 @@ Shader "SphereDescent/TriplanarGrid"
                 o.gridPos = lerp(pos.positionWS, v.positionOS.xyz, _ObjectSpace);
                 o.gridNormal = lerp(normalWS, v.normalOS, _ObjectSpace);
                 o.fogFactor = ComputeFogFactor(pos.positionCS.z);
+                o.groundRadius = v.uv.x > 0.0 ? v.uv.x : _SurfaceRadius;
                 return o;
             }
 
@@ -214,7 +217,7 @@ Shader "SphereDescent/TriplanarGrid"
                     if (_WallMode > 0.5)
                     {
                         // Height above the floor this wall stands on.
-                        float h = length(i.positionWS) - _SurfaceRadius;
+                        float h = length(i.positionWS) - i.groundRadius;
                         float aa = fwidth(h);
                         float top = smoothstep(_WallHeight - _StripWidth - aa, _WallHeight - _StripWidth + aa, h);
                         float base = 1.0 - smoothstep(_StripWidth * 0.5 - aa, _StripWidth * 0.5 + aa, h);

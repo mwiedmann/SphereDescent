@@ -14,6 +14,8 @@ namespace SphereDescent
 
         readonly List<Object> ownedAssets = new List<Object>();
         readonly Dictionary<int, List<Renderer>> shadowCasters = new Dictionary<int, List<Renderer>>();
+        readonly Dictionary<int, GameObject> beams = new Dictionary<int, GameObject>();
+        int beamSection = -2;
         int shadowLayer = -1;
         Renderer[][] layerRenderers;   // [layer] -> every renderer on that layer
         Renderer[] layerShells;        // [layer] -> the shell (or core) surface itself
@@ -42,6 +44,23 @@ namespace SphereDescent
             if (!shadowCasters.TryGetValue(layer, out var list)) shadowCasters[layer] = list = new List<Renderer>();
             list.Add(r);
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        internal void RegisterBeam(int section, GameObject beam)
+        {
+            beams[section] = beam;
+            beam.SetActive(false);
+        }
+
+        /// <summary>
+        /// Shows only the light beam over the given section's exit (its hole or boost pad). Beams are switched
+        /// on and off as objects, so layer hiding, which toggles renderers, can't bring the others back.
+        /// </summary>
+        public void SetBeamSection(int section)
+        {
+            if (section == beamSection) return;
+            beamSection = section;
+            foreach (var kv in beams) if (kv.Value != null) kv.Value.SetActive(kv.Key == section);
         }
 
         /// <summary>
