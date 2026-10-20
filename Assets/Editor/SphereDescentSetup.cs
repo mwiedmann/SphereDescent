@@ -558,12 +558,24 @@ namespace SphereDescent.EditorTools
                 Object.DestroyImmediate(tex);
             }
 
+            // Height of the ground (hills included) on a shell in a direction: the highest point of the shell's
+            // own surface below the shell above.
+            float Ground(int shell, Vector3 dir)
+            {
+                dir = dir.normalized;
+                float top = shell == 0 ? settings.shellRadii[0] + 50f : settings.shellRadii[shell - 1] - settings.shellThickness - 0.05f;
+                float best = settings.SurfaceRadius(shell);
+                foreach (var hit in Physics.RaycastAll(dir * top, -dir, top - settings.SurfaceRadius(shell) + 0.5f))
+                    if (hit.collider.name == "Shell") best = Mathf.Max(best, hit.point.magnitude);
+                return best;
+            }
+
             // The in-game camera: behind and above the ball, looking along forward, pulled in like the real
             // camera when a wall is in the way.
             void GameView(string name, int shell, Vector3 ballDir, Vector3 lookToward, float pitch)
             {
-                float r = settings.SurfaceRadius(shell);
                 Vector3 up = ballDir.normalized;
+                float r = Ground(shell, up);
                 Vector3 ballPos = up * (r + 0.5f);
                 Vector3 fwd = Vector3.ProjectOnPlane(lookToward.normalized * r - ballPos, up).normalized;
                 Vector3 lookDir = Quaternion.AngleAxis(pitch, Vector3.Cross(up, fwd)) * fwd;
@@ -610,6 +622,8 @@ namespace SphereDescent.EditorTools
             float r0 = settings.shellRadii[0];
             var g0 = layout.Grids[0];
             Vector3 start = g0.CellCenters[layout.StartCell];
+            // Show the light beam over the first section's exit, as at the start of a game.
+            level.SetBeamSection(0);
 
             // Whole planet, from space.
             Vector3 side = Vector3.ProjectOnPlane(new Vector3(0.3f, 0.6f, 1f), start).normalized;
@@ -644,7 +658,9 @@ namespace SphereDescent.EditorTools
                 var route = Route(i);
                 Vector3 padDir = layout.Holes[i].Direction;
                 Vector3 near = Vector3.Slerp(grid.CellCenters[route[route.Count - 2]], padDir, 0.3f);
+                level.SetBeamSection(i);
                 GameView("boost_pad", sec.Shell, near, padDir, 14f);
+                level.SetBeamSection(0);
                 break;
             }
 
