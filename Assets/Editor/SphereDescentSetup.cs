@@ -455,7 +455,7 @@ namespace SphereDescent.EditorTools
             void Shot(string name, Vector3 ballPos, Vector3 camPos)
             {
                 level.SetShadowLayer(level.LayerAt(ballPos.magnitude));
-                level.SetVisibleLayers(Mathf.Min(level.LayerAt(ballPos.magnitude), level.LayerAt(camPos.magnitude)));
+                level.SetVisibleLayers(Mathf.Max(level.LayerAt(ballPos.magnitude), level.LayerAt(camPos.magnitude)));
                 ball.transform.position = ballPos;
                 Vector3 up = ballPos.normalized;
                 cam.transform.SetPositionAndRotation(camPos, Quaternion.LookRotation(ballPos + up * 0.6f - camPos, up));
@@ -833,7 +833,7 @@ namespace SphereDescent.EditorTools
                 // What GameManager does each frame.
                 orbit.Tick(dt);
                 level.SetShadowLayer(ball.CurrentLayer);
-                level.SetVisibleLayers(Mathf.Min(ball.CurrentLayer, level.LayerAt(cam.transform.position.magnitude)));
+                level.SetVisibleLayers(Mathf.Max(ball.CurrentLayer, level.LayerAt(cam.transform.position.magnitude)));
                 GameManager.UpdateSky(sun, rb.position.normalized);
 
                 if (step % 2 == 0)

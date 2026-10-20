@@ -93,9 +93,9 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// Draws only what can be seen from the given layer: that layer and the one below it (visible through
-        /// holes). Everything above is hidden, ceiling included, so inner layers sit under a black sky.
-        /// Colliders stay active, so physics is unaffected and layers reappear as soon as the player climbs back up.
+        /// Draws only the given layer. Everything else is hidden: the layers above (so inner layers sit under a
+        /// black sky) and the ones below (holes just show darkness until you drop through). Colliders stay
+        /// active, so physics is unaffected and layers reappear as soon as the player gets to them.
         /// </summary>
         public void SetVisibleLayers(int focus)
         {
@@ -103,8 +103,7 @@ namespace SphereDescent
             visibleFocus = focus;
             for (int layer = 0; layer < layerRenderers.Length; layer++)
             {
-                bool full = layer == focus || layer == focus + 1;
-                foreach (var r in layerRenderers[layer]) if (r != null) r.enabled = full;
+                foreach (var r in layerRenderers[layer]) if (r != null) r.enabled = layer == focus;
             }
             RefreshBeams();
         }

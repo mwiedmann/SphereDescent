@@ -5,8 +5,8 @@ namespace SphereDescent
     /// <summary>
     /// Physics-driven rolling ball on spherical worlds. Gravity always points at the world center, so the
     /// ball sticks to whichever shell surface it is on and falls inward through holes. Movement is relative
-    /// to the camera; the ball rolls via torque and gets limited steering in the air. Jumping on a boost
-    /// pad launches it straight up through the hole above and sets it down beside the hole.
+    /// to the camera; the ball rolls via torque and gets limited steering in the air. Touching a boost pad
+    /// launches it straight up through the hole above and sets it down beside the hole.
     /// </summary>
     [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
     public class BallController : MonoBehaviour
@@ -110,6 +110,13 @@ namespace SphereDescent
                 rb.angularVelocity = Vector3.zero;
                 return;
             }
+            // Touching a boost pad launches straight away, no jump needed.
+            if (OnPad)
+            {
+                jumpPressedAt = -10f;
+                StartLaunch(pad, up, r);
+                return;
+            }
 
             Vector3 move = MoveDirection(up);
             Vector3 tangentVel = Vector3.ProjectOnPlane(rb.linearVelocity, up);
@@ -150,12 +157,8 @@ namespace SphereDescent
             {
                 jumpPressedAt = -10f;
                 lastGroundedAt = -10f;
-                if (OnPad) StartLaunch(pad, up, r);
-                else
-                {
-                    Vector3 v = rb.linearVelocity;
-                    rb.linearVelocity = v - up * Vector3.Dot(v, up) + up * Mathf.Sqrt(2f * gravity * jumpHeight);
-                }
+                Vector3 v = rb.linearVelocity;
+                rb.linearVelocity = v - up * Vector3.Dot(v, up) + up * Mathf.Sqrt(2f * gravity * jumpHeight);
             }
         }
 

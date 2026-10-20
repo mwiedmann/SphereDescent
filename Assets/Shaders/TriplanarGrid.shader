@@ -235,8 +235,6 @@ Shader "SphereDescent/TriplanarGrid"
                         float bw = fwidth(borderDist);
                         float border = 1.0 - smoothstep(_ZoneBorder - bw, _ZoneBorder + bw, borderDist);
                         emission = lerp(neon * m, neon * 1.5, border);
-                        // Ceilings (the underside of the shell above) glow less, so they don't crowd the view.
-                        if (dot(i.normalWS, i.positionWS) < 0) emission *= 0.35;
                     }
                     emission *= _GlowIntensity * _Color.rgb;
                 }

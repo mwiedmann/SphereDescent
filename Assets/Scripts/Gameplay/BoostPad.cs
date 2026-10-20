@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace SphereDescent
 {
-    /// <summary>Sits beneath a two-way hole. Jumping while on it launches the ball up to the layer above.</summary>
+    /// <summary>Sits beneath a two-way hole. Touching it launches the ball up to the layer above.</summary>
     public class BoostPad : MonoBehaviour
     {
         [HideInInspector] public Vector3 Axis;               // unit direction of the hole above

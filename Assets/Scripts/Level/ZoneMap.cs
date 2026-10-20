@@ -7,7 +7,7 @@ namespace SphereDescent
     /// Splits the sphere into 12 named, colored zones (nearest of 12 icosahedron directions) so players can
     /// tell where they are. The zones line up through every layer, so "Amber" is the same side of the world on
     /// the surface and on the core. Each world gets its own rotation and color assignment. The grid shader
-    /// reads the zones from global shader arrays to color and pattern the ground, walls and ceilings.
+    /// reads the zones from global shader arrays to color and pattern the ground and walls.
     /// </summary>
     public sealed class ZoneMap
     {

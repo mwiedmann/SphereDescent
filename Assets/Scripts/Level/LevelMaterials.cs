@@ -61,6 +61,18 @@ namespace SphereDescent
             return m;
         }
 
+        /// <summary>Plain black with no shine, for the darkness at the bottom of holes.</summary>
+        public static Material MakeBlack()
+        {
+            var m = new Material(Shader.Find(LitShaderName)) { color = Color.black };
+            m.SetFloat("_Smoothness", 0f);
+            m.SetFloat("_SpecularHighlights", 0f);
+            m.SetFloat("_EnvironmentReflections", 0f);
+            m.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+            m.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
+            return m;
+        }
+
         public static Material MakeEmissive(Color color, float intensity)
         {
             var m = new Material(Shader.Find(LitShaderName)) { color = color };

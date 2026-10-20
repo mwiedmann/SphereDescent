@@ -16,7 +16,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 
 - **Sections.** A world is a chain of short maze sections, each taking around a minute. A section has a main path with side lanes that branch off and rejoin it. There are several routes but no dead ends, and every route leads to the same spot.
 - **Dropping down.** Most sections end at a hole marked with a glowing ring. Roll into it to fall to the next section on the shell below.
-- **Climbing up.** Some sections end at a cyan boost pad. Jump while on it to launch up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
+- **Climbing up.** Some sections end at a cyan boost pad. Roll onto it and it launches you up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
 | Section end: a hole to drop through | Section end: a boost pad to climb |
@@ -43,7 +43,7 @@ Everything is drawn by shaders, with no image textures:
 |---|---|---|
 | Roll (relative to the camera) | W A S D | Left stick or D-pad |
 | Back up (camera keeps facing forward) | S | Stick / D-pad down |
-| Jump / launch from a boost pad | Space | A / South button |
+| Jump | Space | A / South button |
 | Turn the camera | Mouse (click to capture), or Q / E | Right stick |
 | Respawn on the current layer | R | Select / View |
 | Release the mouse | Esc | |

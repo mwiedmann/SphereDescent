@@ -6,8 +6,8 @@ namespace SphereDescent
     /// <summary>
     /// Rolling hills on one shell: a height above the shell's base radius for any direction, made of
     /// randomly placed smooth bumps. Flat spots (around holes, boost pads and the start) blend back down to
-    /// zero, so those keep working exactly as on a flat shell. Height is never negative, so the shell
-    /// only ever gets thicker and its underside (the ceiling of the layer below) stays a plain sphere.
+    /// zero, so those keep working exactly as on a flat shell. Height is never negative, so hills never
+    /// dip toward the layer below.
     /// </summary>
     public sealed class ShellTerrain
     {

@@ -22,6 +22,7 @@ namespace SphereDescent
             // shells above are hidden from inner layers, so every beam rises the full Beam Height.
             var beamDrop = level.Own(BeamMaterial(mats.beam, mats.ringDrop.color, 0.3f));
             var beamPad = level.Own(BeamMaterial(mats.beam, mats.ringUp.color, 0.3f));
+            var holeFloorMat = level.Own(LevelMaterials.MakeBlack());
 
             // One root per layer (shells, then the core). Everything is parented under the layer it sits on,
             // so whole layers can be hidden at once.
@@ -67,6 +68,7 @@ namespace SphereDescent
                 // Glowing rings mark holes: cyan = you can come back up through it, orange = one-way drop.
                 var upRing = level.Own(MeshBuilders.BuildTorus(holeRadius + 0.3f, 0.18f));
                 var dropRing = level.Own(MeshBuilders.BuildTorus(holeRadius + 0.3f, 0.18f));
+                var holeFloor = level.Own(MeshBuilders.BuildDisc(holeRadius + 0.4f));
                 for (int i = 0; i < layout.Holes.Count; i++)
                 {
                     var h = layout.Holes[i];
@@ -75,6 +77,11 @@ namespace SphereDescent
                     var ring = CreateMeshObject(layerRoot, h.TwoWay ? "Hole (two-way)" : "Hole (drop)",
                         h.TwoWay ? upRing : dropRing, h.TwoWay ? mats.ringUp : mats.ringDrop, false, ShadowCastingMode.Off);
                     ring.transform.SetPositionAndRotation(dir * radius, Quaternion.FromToRotation(Vector3.up, dir));
+
+                    // Only the current layer is drawn, so without this you'd see into the sphere through the hole.
+                    // No collider: the ball falls straight through, and the layer (disc included) is hidden once it has.
+                    var floor = CreateMeshObject(layerRoot, "Hole Floor", holeFloor, holeFloorMat, false, ShadowCastingMode.Off);
+                    floor.transform.SetPositionAndRotation(dir * (radius - s.shellThickness - 0.1f), Quaternion.FromToRotation(Vector3.up, dir));
 
                     // Hole i ends section i. A two-way hole is where a climb comes out, so its section ends at
                     // the pad below it instead.

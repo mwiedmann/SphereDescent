@@ -148,10 +148,11 @@ namespace SphereDescent
                 level.SetBeamSection(section);
 
                 level.SetShadowLayer(ball.CurrentLayer);
-                // Use the outermost of the ball's and camera's layers, so nothing vanishes while the camera is
-                // still following the ball down through a hole.
+                // Only one layer is drawn: the deeper of the ball's and camera's. Falling through a hole shows the
+                // new layer as soon as the ball is through; climbing waits for the camera to come up through the
+                // hole too, so it never looks up at the underside of the shell above.
                 int cameraLayer = level.LayerAt(orbit.transform.position.magnitude);
-                int visibleLayer = Mathf.Min(ball.CurrentLayer, cameraLayer);
+                int visibleLayer = Mathf.Max(ball.CurrentLayer, cameraLayer);
                 level.SetVisibleLayers(visibleLayer);
                 // Below the surface the layers above are hidden, and the sky is plain black.
                 cam.clearFlags = visibleLayer > 0 ? CameraClearFlags.SolidColor : surfaceClearFlags;
@@ -198,7 +199,6 @@ namespace SphereDescent
             string zone = level.Zones.Names[level.Zones.ZoneAt(ball.transform.position)];
             string status = $"World {world}   ·   Section {section + 1}/{level.Layout.Sections.Count}   ·   " +
                             $"{level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone";
-            if (ball.OnPad) status += "   ·   Boost pad: press Jump!";
             Shadowed(new Rect(16, 12, 900, 30), status, hudStyle);
 
             string help = GameInput.GamepadConnected

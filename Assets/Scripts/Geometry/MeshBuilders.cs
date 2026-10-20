@@ -13,9 +13,10 @@ namespace SphereDescent
     public static class MeshBuilders
     {
         /// <summary>
-        /// A spherical shell (outer surface at <paramref name="radius"/>, inner surface at radius - thickness)
-        /// with circular holes cut through it. Hole edges are snapped to a clean circle and closed with a rim.
-        /// With <paramref name="terrain"/>, the outer surface rises into hills; the inner one stays a sphere.
+        /// A spherical shell's walkable surface at <paramref name="radius"/> with circular holes cut through it.
+        /// Hole edges are snapped to a clean circle and lined with a rim reaching <paramref name="thickness"/>
+        /// down. There's no underside: only the layer you're on is drawn, so it's never seen, and nothing can
+        /// reach it. With <paramref name="terrain"/>, the surface rises into hills.
         /// </summary>
         public static Mesh BuildShell(IcoSphere ico, float radius, float thickness, IList<HoleCut> holes, ShellTerrain terrain = null)
         {
@@ -80,14 +81,13 @@ namespace SphereDescent
             }
 
             float innerRadius = radius - thickness;
-            var verts = new List<Vector3>(vCount * 2 + boundary.Count * 4);
+            var verts = new List<Vector3>(vCount + boundary.Count * 4);
             var normals = new List<Vector3>(verts.Capacity);
             for (int v = 0; v < vCount; v++)
             {
                 verts.Add(dirs[v] * (terrain != null ? terrain.SurfaceRadius(dirs[v]) : radius));
                 normals.Add(dirs[v]);
             }
-            for (int v = 0; v < vCount; v++) { verts.Add(dirs[v] * innerRadius); normals.Add(-dirs[v]); }
             if (terrain != null)
             {
                 // Hillsides lean, so outer normals come from the surrounding triangles (area weighted).
@@ -103,17 +103,10 @@ namespace SphereDescent
                     if (sum[v] != Vector3.zero) normals[v] = sum[v].normalized;
             }
 
-            var indices = new List<int>(kept.Count * 2 + boundary.Count * 6);
-            for (int i = 0; i < kept.Count; i += 3)
-            {
-                indices.Add(kept[i]); indices.Add(kept[i + 1]); indices.Add(kept[i + 2]);
-            }
-            for (int i = 0; i < kept.Count; i += 3)
-            {
-                indices.Add(kept[i] + vCount); indices.Add(kept[i + 2] + vCount); indices.Add(kept[i + 1] + vCount);
-            }
+            var indices = new List<int>(kept.Count + boundary.Count * 6);
+            indices.AddRange(kept);
 
-            // Rims: quads joining outer and inner boundary edges, facing into the hole.
+            // Rims: quads hanging down from the boundary edges, facing into the hole.
             foreach (var (a, b, third) in boundary)
             {
                 Vector3 ao = verts[a], bo = verts[b];
@@ -335,6 +328,23 @@ namespace SphereDescent
             foreach (var v in verts) uvs.Add(new Vector2(Ground(v), 0f));
             mesh.SetUVs(0, uvs);
             return mesh;
+        }
+
+        /// <summary>Flat disc in the local XZ plane facing +Y, centered on the origin.</summary>
+        public static Mesh BuildDisc(float radius, int segments = 32)
+        {
+            var verts = new List<Vector3> { Vector3.zero };
+            var normals = new List<Vector3> { Vector3.up };
+            var indices = new List<int>();
+            for (int i = 0; i < segments; i++)
+            {
+                float a = i / (float)segments * Mathf.PI * 2f;
+                verts.Add(new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * radius);
+                normals.Add(Vector3.up);
+                // Clockwise seen from above, so the disc faces +Y.
+                indices.Add(0); indices.Add(1 + (i + 1) % segments); indices.Add(1 + i);
+            }
+            return MakeMesh("Disc", verts, normals, indices);
         }
 
         /// <summary>Open tube along local +Y from 0 to <paramref name="height"/>; UV y runs 0 at the base to 1 at the top.</summary>
