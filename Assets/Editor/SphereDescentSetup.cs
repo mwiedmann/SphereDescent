@@ -30,6 +30,7 @@ namespace SphereDescent.EditorTools
                 ringDrop = SaveMaterial("HoleRingDrop", LevelMaterials.MakeEmissive(new Color(1f, 0.45f, 0.05f), 1.8f)),
                 exit = SaveMaterial("Exit", LevelMaterials.MakeEmissive(new Color(1f, 0.85f, 0.2f), 3f)),
                 beam = SaveMaterial("LightBeam", LevelMaterials.MakeBeam()),
+                spot = SaveMaterial("Spotlight", new Material(Shader.Find(LevelMaterials.SpotShaderName))),
             };
 
             var sky = SaveMaterial("Sky", new Material(Shader.Find("SphereDescent/SynthwaveSky")));
@@ -213,6 +214,18 @@ namespace SphereDescent.EditorTools
                         if (g.Shell == mine.Shell && Vector3.Angle(mine.Direction, layout.Grids[g.Shell].CellCenters[g.SwitchCell]) * Mathf.Deg2Rad
                             * settings.shellRadii[g.Shell] < 1.3f + settings.mineRadius + MazeLayout.MinePassage)
                             problems.Append($" a mine crowds the laser switch in section {g.Section + 1};");
+                // Camera runs: at least one doorway in each must be unavoidable. Count how many are.
+                var cameraSections = new System.Text.StringBuilder();
+                for (int i = 0; i < layout.Sections.Count; i++)
+                {
+                    var cams = layout.Cameras.FindAll(c => c.Section == i);
+                    if (cams.Count == 0) continue;
+                    var sec = layout.Sections[i];
+                    int unavoidable = cams.FindAll(c => !layout.Reachable(i, sec.EntryCell, c.Edge).ContainsKey(sec.ExitCell)).Count;
+                    if (unavoidable == 0) problems.Append($" cameras in section {i + 1} can all be walked around;");
+                    if (layout.LaserGates.Exists(g => g.Section == i)) problems.Append($" section {i + 1} has a gate and cameras;");
+                    cameraSections.Append($" {i + 1}:{cams.Count}({unavoidable} must-cross)");
+                }
                 var gateSections = new System.Text.StringBuilder();
                 foreach (var g in layout.LaserGates) gateSections.Append(' ').Append(g.Section + 1);
 
@@ -228,7 +241,7 @@ namespace SphereDescent.EditorTools
                 if (problems.Length > 0) failures++;
                 string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
                              $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
-                             $" laser gates in sections{gateSections} ({spurs} switches in side spurs);" +
+                             $" laser gates in sections{gateSections} ({spurs} switches in side spurs); cameras (section:count) {cameraSections};" +
                              $" mines per section:{mineCounts} ({wallMines} by walls; gap {minGap:F1}, other mines to wall {minWall:F1}, wall mines to wall max {maxWallMineGap:F2}, hole {minHole:F1})" +
                              (problems.Length > 0 ? " PROBLEMS:" + problems : "");
 

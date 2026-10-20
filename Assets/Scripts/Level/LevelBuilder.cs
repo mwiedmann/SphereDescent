@@ -103,6 +103,7 @@ namespace SphereDescent
 
             CreateMines(level, layout, s, terrains, layerRoots, mats.beam);
             CreateLaserGates(level, layout, s, layerRoots, zones, mats.beam);
+            CreateCameras(level, layout, s, terrains, layerRoots, mats);
 
             // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
@@ -143,6 +144,14 @@ namespace SphereDescent
                 float halfWidth = Vector3.Angle(edge.P0, edge.P1) * Mathf.Deg2Rad * s.shellRadii[g.Shell] * 0.5f;
                 terrains[g.Shell].AddFlatSpot(edge.P0 + edge.P1, halfWidth + 1.5f, Fade(g.Shell));
                 terrains[g.Shell].AddFlatSpot(layout.Grids[g.Shell].CellCenters[g.SwitchCell], 2.5f, Fade(g.Shell));
+            }
+            // So does the ground a camera's spotlight sweeps: a hill would hide the ball from the light, or
+            // put the light pool in the air.
+            foreach (var c in layout.Cameras)
+            {
+                var edge = layout.Grids[c.Shell].Edges[c.Edge];
+                float halfWidth = Vector3.Angle(edge.P0, edge.P1) * Mathf.Deg2Rad * s.shellRadii[c.Shell] * 0.5f;
+                terrains[c.Shell].AddFlatSpot(edge.P0 + edge.P1, Mathf.Max(halfWidth, s.spotReach) + s.spotRadius + 0.5f, Fade(c.Shell));
             }
             return terrains;
         }
@@ -254,6 +263,12 @@ namespace SphereDescent
             var metalMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
             var ringMesh = level.Own(MeshBuilders.BuildTorus(1.05f, 0.07f, 40, 8));
             var glowMesh = level.Own(MeshBuilders.BuildBeam(0.5f, 1f, 12));
+            var holeMesh = level.Own(MeshBuilders.BuildDisc(0.1f, 16));
+            var emberMesh = level.Own(MeshBuilders.BuildDisc(0.05f, 12));
+            var holeMat = level.Own(LevelMaterials.MakeBlack());
+            var emberMat = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.02f, 0.01f), 1.8f));
+            // The walls were just built; make their colliders findable for the raycasts that place the holes.
+            Physics.SyncTransforms();
             const float coreWidth = 0.05f, glowWidth = 0.1f;
 
             foreach (var g in layout.LaserGates)
@@ -291,10 +306,28 @@ namespace SphereDescent
                     glow.SetPositionAndRotation(from, Quaternion.FromToRotation(Vector3.up, to - from));
                     glow.localScale = new Vector3(glowWidth, Vector3.Distance(from, to), glowWidth);
                 }
+                // The holes each laser shoots out of, where it meets the wall at either end of the doorway: a
+                // dark hole with a faint red glow inside, which stays when the lasers are switched off.
+                void Hole(Vector3 from, Vector3 toward)
+                {
+                    foreach (var hit in Physics.RaycastAll(from, toward - from, Vector3.Distance(from, toward) + 0.5f))
+                    {
+                        if (hit.collider.name != "Walls") continue;
+                        Quaternion facing = Quaternion.FromToRotation(Vector3.up, hit.normal);
+                        var hole = CreateMeshObject(go.transform, "Laser Hole", holeMesh, holeMat, false, ShadowCastingMode.Off);
+                        hole.transform.SetPositionAndRotation(hit.point + hit.normal * 0.01f, facing);
+                        var ember = CreateMeshObject(go.transform, "Laser Hole Glow", emberMesh, emberMat, false, ShadowCastingMode.Off);
+                        ember.transform.SetPositionAndRotation(hit.point + hit.normal * 0.015f, facing);
+                        return;
+                    }
+                }
                 for (int row = 0; row < s.laserRows; row++)
                 {
                     float h = Mathf.Lerp(0.3f, s.wallHeight - 0.3f, row / (float)Mathf.Max(1, s.laserRows - 1));
-                    Beam(a + edge.P0 * h, b + edge.P1 * h);
+                    Vector3 from = a + edge.P0 * h, to = b + edge.P1 * h, mid = (from + to) * 0.5f;
+                    Beam(from, to);
+                    Hole(mid, from);
+                    Hole(mid, to);
                 }
 
                 var field = go.AddComponent<BoxCollider>();
@@ -335,6 +368,90 @@ namespace SphereDescent
                 sw.armed = armedMat;
                 sw.disarmed = disarmedMat;
                 sw.warningColor = warning;
+            }
+        }
+
+        /// <summary>
+        /// Security cameras: a thin pole standing on a wall beside the doorway, topped by a dark camera body
+        /// with a glowing lens that turns to follow its spotlight. The light is faked: a glowing pool on the
+        /// ground and a faint cone from the lens, cheaper than a real light and visible on any floor. The
+        /// laser it fires starts hidden.
+        /// </summary>
+        static void CreateCameras(LevelInstance level, MazeLayout layout, LevelSettings s, ShellTerrain[] terrains,
+            Transform[] layerRoots, LevelMaterials mats)
+        {
+            if (layout.Cameras.Count == 0) return;
+            var metal = level.Own(LevelMaterials.MakeMetal(new Color(0.07f, 0.07f, 0.08f), 0.8f, 0.6f));
+            var lensMat = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.9f, 0.6f), 2.5f));
+            var laserMat = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.05f, 0.02f), 6f));
+            var discMesh = level.Own(MeshBuilders.BuildDisc(1f, 40));
+            var coneMesh = level.Own(MeshBuilders.BuildCone());
+
+            foreach (var c in layout.Cameras)
+            {
+                var root = layerRoots[c.Shell];
+                float radius = s.shellRadii[c.Shell];
+                var door = layout.Grids[c.Shell].Edges[c.Edge];
+                Vector3 center = (door.P0 + door.P1).normalized;
+                Vector3 across = Vector3.ProjectOnPlane(door.P1 - door.P0, center).normalized;
+                float halfWidth = Vector3.Angle(door.P0, door.P1) * Mathf.Deg2Rad * radius * 0.5f;
+
+                // Pole on top of the wall.
+                var go = new GameObject("Security Camera");
+                go.transform.SetParent(root, false);
+                float wallTop = terrains[c.Shell].SurfaceRadius(c.Mount) + s.wallHeight;
+                go.transform.SetPositionAndRotation(c.Mount * wallTop, Quaternion.FromToRotation(Vector3.up, c.Mount));
+                var pole = Part(go.transform, PrimitiveType.Cylinder, "Pole", metal);
+                pole.localPosition = new Vector3(0f, s.cameraPoleHeight * 0.5f - 0.1f, 0f);
+                pole.localScale = new Vector3(0.12f, s.cameraPoleHeight * 0.5f, 0.12f);
+
+                // The camera itself, which turns to look at its spot: a body, a hood over the front, a lens.
+                var head = new GameObject("Head").transform;
+                head.SetParent(go.transform, false);
+                head.localPosition = new Vector3(0f, s.cameraPoleHeight + 0.2f, 0f);
+                var body = Part(head, PrimitiveType.Cube, "Body", metal);
+                body.localScale = new Vector3(0.45f, 0.4f, 0.85f);
+                var hood = Part(head, PrimitiveType.Cube, "Hood", metal);
+                hood.localPosition = new Vector3(0f, 0.24f, 0.2f);
+                hood.localScale = new Vector3(0.55f, 0.06f, 0.75f);
+                var lensRing = Part(head, PrimitiveType.Cylinder, "Lens", lensMat);
+                lensRing.localPosition = new Vector3(0f, 0f, 0.43f);
+                lensRing.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                lensRing.localScale = new Vector3(0.28f, 0.03f, 0.28f);
+                var lens = new GameObject("Lens Point").transform;
+                lens.SetParent(head, false);
+                lens.localPosition = new Vector3(0f, 0f, 0.47f);
+
+                // Its light: a pool on the ground and a faint cone, each with its own material so it can turn red.
+                var spotMat = level.Own(new Material(mats.spot));
+                var spot = CreateMeshObject(root, "Spotlight", discMesh, spotMat, false, ShadowCastingMode.Off).transform;
+                spot.localScale = Vector3.one * s.spotRadius;
+                var coneMat = level.Own(BeamMaterial(mats.beam, Color.white, 1f));
+                coneMat.SetFloat("_BandStrength", 0f);
+                var cone = CreateMeshObject(root, "Light Cone", coneMesh, coneMat, false, ShadowCastingMode.Off).transform;
+
+                var laser = Part(root, PrimitiveType.Cylinder, "Camera Laser", laserMat);
+
+                var cam = go.AddComponent<SecurityCamera>();
+                cam.head = head;
+                cam.lens = lens;
+                cam.spot = spot;
+                cam.cone = cone;
+                cam.laser = laser;
+                cam.spotMaterial = spotMat;
+                cam.coneMaterial = coneMat;
+                cam.center = center;
+                cam.across = across;
+                cam.along = Vector3.Cross(center, across);
+                cam.groundRadius = radius;
+                cam.layer = c.Shell;
+                // Swing nearly wall to wall across the doorway, and into the cells either side.
+                cam.sweepAcross = Mathf.Max(0f, halfWidth - 1f);
+                cam.sweepAlong = s.spotReach;
+                cam.period = s.spotPeriod;
+                cam.phase = c.Phase;
+                cam.pattern = c.Pattern;
+                cam.spotRadius = s.spotRadius;
             }
         }
 

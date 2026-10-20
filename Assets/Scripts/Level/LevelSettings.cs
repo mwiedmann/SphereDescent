@@ -52,17 +52,22 @@ namespace SphereDescent
         [Tooltip("Mine groups along the route of each section (the stretch between two holes or pads). 0 = no mines.")]
         public int mineGroupsMin = 4;
         public int mineGroupsMax = 6;
+        [Tooltip("Mines in each group, all told. One goes beside each wall of the group's cell first (so walls can't be " +
+                 "hugged past it); the rest are laid out evenly in the middle (2 = a pair, 3 = a triangle, ...). " +
+                 "Mines that don't fit their cell are left out.")]
+        public int mineGroupSizeMin = 5;
+        public int mineGroupSizeMax = 6;
         [Tooltip("Distance between neighboring mines in a group (centers). The ball is 1 unit across.")]
         public float mineSpacing = 5f;
         [Tooltip("Mine radius. The ball's radius is 0.5.")]
         public float mineRadius = 0.8f;
         [Tooltip("How far a mine sticks up out of the ground.")]
         public float mineHeight = 0.2f;
-        [Tooltip("Each group also gets a mine beside every wall of its cell, this far from the wall. Keep it under " +
-                 "the ball's width (1) so the wall can't be hugged past the group.")]
+        [Tooltip("How far the mines beside walls sit from the wall. Keep it under the ball's width (1) so the wall " +
+                 "can't be hugged past the group.")]
         public float mineWallGap = 0.35f;
         [Tooltip("How many of the innermost (smallest) shells get one mine group fewer per section, and one mine " +
-                 "fewer in each group (not counting the mines by the walls).")]
+                 "fewer in each group (never fewer than one).")]
         public int fewerMinesInnermost = 2;
 
         [Header("Laser gates")]
@@ -72,6 +77,20 @@ namespace SphereDescent
         [Tooltip("Lasers in a gate, spread from near the ground to just under the wall tops. Keep the gaps between " +
                  "them under the ball's width (1): with 4-unit walls that's at least 5.")]
         public int laserRows = 7;
+
+        [Header("Security cameras")]
+        [Tooltip("A security camera on every Nth section, starting with the second (2 = sections 2, 4, 6, ...). 0 = none.")]
+        public int cameraEvery = 2;
+        [Tooltip("Cameras in each run, one per doorway along the route, alternating sides of the passage.")]
+        public int camerasPerGroup = 3;
+        [Tooltip("Radius of the camera's spotlight on the ground. The ball is 1 across.")]
+        public float spotRadius = 2.2f;
+        [Tooltip("Seconds for a spotlight to go once through its search pattern.")]
+        public float spotPeriod = 5f;
+        [Tooltip("How far the spotlight swings into the cells on either side of the doorway.")]
+        public float spotReach = 3f;
+        [Tooltip("How high the camera's pole rises above the wall it stands on.")]
+        public float cameraPoleHeight = 3f;
 
         [Header("Orientation")]
         [Tooltip("How high the light beam over the current section's hole or boost pad rises into the sky.")]

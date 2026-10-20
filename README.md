@@ -19,6 +19,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Climbing up.** Some sections end at a cyan boost pad. Roll onto it and it launches you up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
 - **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them. Weave between them or jump over them: touching one blows you up and sends you back to where you last arrived on that sphere.
 - **Laser gates.** Every other section has a gate of lasers across a doorway you can't get around. Find the pad nearby on your side, usually down a short side path: it pulses red while the lasers are on and turns green when you roll over it, switching them off. Touching the lasers blows you up like a mine.
+- **Security cameras.** The other sections have a run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own pattern (a figure-8, a circle, or darting from side to side and holding). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
 | Section end: a hole to drop through | Section end: a boost pad to climb |
@@ -79,7 +80,8 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Side Lane Chance:** how wide sections are, and how many alternative routes they have.
 - **Main Path Cut Chance:** how often the main path is walled off, forcing a detour.
 - **Laser gates:** how often (every Nth section) and how many lasers each gate has.
-- **Mines:** groups per section, spacing, size, the gap left beside walls, and how many of the smallest spheres get fewer.
+- **Security cameras:** how often, how many per run, and the spotlight's size, speed and reach.
+- **Mines:** groups per section, mines per group (the ones beside the walls count too), spacing, size, the gap left beside walls, and how many of the smallest spheres get fewer.
 - **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **beam height**, and the **Base Seed**.
 
 The ball's speed, jump height and gravity are set on the `BallController`, and the camera's distance, pitch and follow behavior on the `OrbitCamera`.

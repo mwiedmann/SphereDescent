@@ -439,9 +439,21 @@ MonoBehaviour:
     hillFlatMargin: 3
     mineGroupsMin: 4
     mineGroupsMax: 6
+    mineGroupSizeMin: 5
+    mineGroupSizeMax: 6
     mineSpacing: 5
     mineRadius: 0.8
     mineHeight: 0.2
+    mineWallGap: 0.35
+    fewerMinesInnermost: 2
+    laserGateEvery: 2
+    laserRows: 7
+    cameraEvery: 2
+    camerasPerGroup: 3
+    spotRadius: 2.2
+    spotPeriod: 5
+    spotReach: 3
+    cameraPoleHeight: 3
     beamHeight: 100
     shellMeshSubdivisions: 6
     coreMeshSubdivisions: 5
@@ -454,6 +466,7 @@ MonoBehaviour:
     ringDrop: {fileID: 2100000, guid: e43ca400bf9ed4d68ac1eec30340d439, type: 2}
     exit: {fileID: 2100000, guid: e1c7a22fe90fa4969b50ff8386c2e313, type: 2}
     beam: {fileID: 2100000, guid: dc0c2fbbf0454fbc899b50aeaf5fd6bb, type: 2}
+    spot: {fileID: 2100000, guid: dfc69de9d5514985810f0d456a761aa9, type: 2}
   skyColor: {r: 0.08, g: 0.02, b: 0.16, a: 1}
   baseSeed: 1337
   startWorld: 1

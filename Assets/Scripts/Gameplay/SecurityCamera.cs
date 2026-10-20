@@ -1,0 +1,146 @@
+using System.Collections;
+using UnityEngine;
+
+namespace SphereDescent
+{
+    /// <summary>How a camera's spotlight searches its doorway.</summary>
+    public enum SweepPattern
+    {
+        FigureEight, // swings across the doorway, looping into the cells either side
+        Orbit,       // circles the doorway in an oval
+        Scan,        // darts between the left, middle and right of the doorway, holding at each
+    }
+
+    /// <summary>
+    /// A camera on a pole above a wall, sweeping a spotlight across a doorway in one of a few patterns. If the ball is
+    /// caught in the light, the spot turns red and locks on, and a moment later the camera fires a laser
+    /// that blows the ball up.
+    /// </summary>
+    public class SecurityCamera : MonoBehaviour
+    {
+        [Header("Parts")]
+        public Transform head;
+        public Transform lens;
+        public Transform spot;
+        public Transform cone;
+        public Transform laser;
+        public Material spotMaterial, coneMaterial;
+
+        [Header("Sweep")]
+        [HideInInspector] public Vector3 center, across, along;
+        [HideInInspector] public float groundRadius;
+        [HideInInspector] public int layer;
+        public SweepPattern pattern;
+        public float sweepAcross = 4f;
+        public float sweepAlong = 3f;
+        public float period = 5f;
+        public float phase;
+        public float spotRadius = 2.2f;
+
+        [Header("Look")]
+        public Color searchColor = new Color(1f, 0.92f, 0.7f);
+        public Color alertColor = new Color(1f, 0.05f, 0.02f);
+        public float spotIntensity = 1f, coneIntensity = 0.25f;
+        [Tooltip("Seconds between being spotted and the laser firing.")]
+        public float lockOnTime = 0.25f;
+        public float laserTime = 0.25f;
+
+        BallController ball;
+        bool firing;
+        Vector3 aim;
+
+        void Start()
+        {
+            SetColor(searchColor);
+            if (laser != null) laser.gameObject.SetActive(false);
+        }
+
+        void Update()
+        {
+            if (ball == null) ball = FindAnyObjectByType<BallController>();
+
+            if (!firing)
+            {
+                Vector2 p = Sweep(Mathf.Repeat(Time.time / period + phase, 1f));
+                aim = (center * groundRadius + across * (sweepAcross * p.x) + along * (sweepAlong * p.y)).normalized * groundRadius;
+
+                if (ball != null && !ball.IsDestroyed && ball.CurrentLayer == layer &&
+                    Vector3.Angle(ball.transform.position, aim) * Mathf.Deg2Rad * groundRadius < spotRadius)
+                    StartCoroutine(Fire());
+            }
+            else if (ball != null && !ball.IsDestroyed)
+            {
+                // Locked on: the light follows the ball.
+                aim = ball.transform.position.normalized * groundRadius;
+            }
+            Aim();
+        }
+
+        /// <summary>Where the spot is at time <paramref name="u"/> (0-1 through one period), as fractions of the sweep's reach across and along.</summary>
+        Vector2 Sweep(float u)
+        {
+            float t = u * Mathf.PI * 2f;
+            switch (pattern)
+            {
+                case SweepPattern.Orbit:
+                    return new Vector2(Mathf.Cos(t), Mathf.Sin(t));
+                case SweepPattern.Scan:
+                {
+                    // Left, middle, right, middle: a quick eased move to each, then a hold.
+                    float[] stops = { -1f, 0f, 1f, 0f };
+                    float step = u * stops.Length;
+                    int i = Mathf.FloorToInt(step) % stops.Length;
+                    float move = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((step - Mathf.Floor(step)) / 0.35f));
+                    return new Vector2(Mathf.Lerp(stops[(i + stops.Length - 1) % stops.Length], stops[i], move), 0f);
+                }
+                default:
+                    return new Vector2(Mathf.Sin(t), Mathf.Sin(2f * t));
+            }
+        }
+
+        void Aim()
+        {
+            Vector3 up = aim.normalized;
+            spot.SetPositionAndRotation(aim + up * 0.04f, Quaternion.FromToRotation(Vector3.up, up));
+            head.rotation = Quaternion.LookRotation(aim - head.position, transform.up);
+            Vector3 toSpot = aim - lens.position;
+            cone.SetPositionAndRotation(lens.position, Quaternion.LookRotation(toSpot, transform.up));
+            cone.localScale = new Vector3(spotRadius, spotRadius, toSpot.magnitude);
+        }
+
+        IEnumerator Fire()
+        {
+            firing = true;
+            SetColor(alertColor);
+            yield return new WaitForSeconds(lockOnTime);
+            if (ball != null && !ball.IsDestroyed)
+            {
+                Vector3 from = lens.position, to = ball.transform.position;
+                laser.gameObject.SetActive(true);
+                laser.SetPositionAndRotation((from + to) * 0.5f, Quaternion.FromToRotation(Vector3.up, to - from));
+                laser.localScale = new Vector3(0.12f, Vector3.Distance(from, to) * 0.5f, 0.12f);
+                ball.HitHazard();
+                yield return new WaitForSeconds(laserTime);
+                laser.gameObject.SetActive(false);
+            }
+            // Keep glaring until the ball is back, then go back to searching.
+            while (ball != null && ball.IsDestroyed) yield return null;
+            SetColor(searchColor);
+            firing = false;
+        }
+
+        void SetColor(Color c)
+        {
+            if (spotMaterial != null)
+            {
+                spotMaterial.SetColor("_Color", c);
+                spotMaterial.SetFloat("_Intensity", spotIntensity);
+            }
+            if (coneMaterial != null)
+            {
+                coneMaterial.SetColor("_Color", c);
+                coneMaterial.SetFloat("_Intensity", coneIntensity);
+            }
+        }
+    }
+}

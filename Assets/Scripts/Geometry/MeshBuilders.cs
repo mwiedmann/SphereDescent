@@ -330,21 +330,53 @@ namespace SphereDescent
             return mesh;
         }
 
-        /// <summary>Flat disc in the local XZ plane facing +Y, centered on the origin.</summary>
+        /// <summary>Flat disc in the local XZ plane facing +Y, centered on the origin. UVs run 0-1 across it.</summary>
         public static Mesh BuildDisc(float radius, int segments = 32)
         {
             var verts = new List<Vector3> { Vector3.zero };
             var normals = new List<Vector3> { Vector3.up };
+            var uvs = new List<Vector2> { new Vector2(0.5f, 0.5f) };
             var indices = new List<int>();
             for (int i = 0; i < segments; i++)
             {
                 float a = i / (float)segments * Mathf.PI * 2f;
                 verts.Add(new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * radius);
                 normals.Add(Vector3.up);
+                uvs.Add(new Vector2(0.5f + 0.5f * Mathf.Cos(a), 0.5f + 0.5f * Mathf.Sin(a)));
                 // Clockwise seen from above, so the disc faces +Y.
                 indices.Add(0); indices.Add(1 + (i + 1) % segments); indices.Add(1 + i);
             }
-            return MakeMesh("Disc", verts, normals, indices);
+            var mesh = MakeMesh("Disc", verts, normals, indices);
+            mesh.SetUVs(0, uvs);
+            return mesh;
+        }
+
+        /// <summary>
+        /// Open cone with its tip at the origin, widening along +Z to a circle of radius 1 at z = 1. UV y runs
+        /// 0 at the wide end to 1 at the tip. Scale it to aim and size it.
+        /// </summary>
+        public static Mesh BuildCone(int segments = 24)
+        {
+            var verts = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var indices = new List<int>();
+            for (int i = 0; i <= segments; i++)
+            {
+                float u = i / (float)segments;
+                Vector3 rim = new Vector3(Mathf.Cos(u * Mathf.PI * 2f), Mathf.Sin(u * Mathf.PI * 2f), 1f);
+                Vector3 n = new Vector3(rim.x, rim.y, -1f).normalized;
+                verts.Add(rim); normals.Add(n); uvs.Add(new Vector2(u, 0f));
+                verts.Add(Vector3.zero); normals.Add(n); uvs.Add(new Vector2(u, 1f));
+            }
+            for (int i = 0; i < segments; i++)
+            {
+                int a = i * 2;
+                indices.Add(a); indices.Add(a + 1); indices.Add(a + 2);
+            }
+            var mesh = MakeMesh("Cone", verts, normals, indices);
+            mesh.SetUVs(0, uvs);
+            return mesh;
         }
 
         /// <summary>Open tube along local +Y from 0 to <paramref name="height"/>; UV y runs 0 at the base to 1 at the top.</summary>

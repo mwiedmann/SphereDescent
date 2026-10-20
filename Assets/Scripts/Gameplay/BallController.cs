@@ -47,6 +47,8 @@ namespace SphereDescent
         public int CurrentLayer { get; private set; }
         public bool IsGrounded { get; private set; }
         public bool IsLaunching => launchPad != null;
+        /// <summary>True while blown up and waiting to reappear.</summary>
+        public bool IsDestroyed => exploding;
         public bool OnPad => pad != null && Time.time - padSeenAt < 0.15f;
         /// <summary>True while the player is pushing back (down), e.g. to back out of a dead end.</summary>
         public bool PushingBack => moveInput.y < -0.5f;

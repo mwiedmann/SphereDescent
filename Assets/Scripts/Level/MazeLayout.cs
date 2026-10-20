@@ -46,6 +46,17 @@ namespace SphereDescent
             public bool SwitchInSpur;  // the pad has its own dead-end side path
         }
 
+        public struct SecurityCamera
+        {
+            public int Shell;
+            public int Section;
+            public int Edge;           // the doorway its spotlight sweeps (an open edge every route must cross)
+            public int NearCell;       // the cell on the side you arrive from
+            public Vector3 Mount;      // unit direction of the pole's foot, on top of a wall beside the doorway
+            public float Phase;        // where in its sweep it starts (0-1)
+            public SweepPattern Pattern;
+        }
+
         // Clear space kept between any two mines, so the ball (1 unit across) can always roll between them.
         public const float MinePassage = 1.6f;
 
@@ -67,6 +78,7 @@ namespace SphereDescent
         public List<Section> Sections = new List<Section>();
         public List<Mine> Mines = new List<Mine>();
         public List<LaserGate> LaserGates = new List<LaserGate>();
+        public List<SecurityCamera> Cameras = new List<SecurityCamera>();
         public int StartCell;
         public int Seed;
         public int AttemptsUsed;
@@ -142,6 +154,7 @@ namespace SphereDescent
                 CarveFiller(layout.Grids[shell], layout.Region[shell], layout.Open[shell], rng);
             // Own random streams, so hazard settings never change the maze itself.
             PlaceLaserGates(layout, s, new Random(seed * 17 + 3));
+            PlaceCameras(layout, s, new Random(seed * 13 + 5));
             PlaceMines(layout, s, new Random(seed * 31 + 7));
             return layout;
         }
@@ -171,19 +184,8 @@ namespace SphereDescent
             var region = layout.Region[shell];
             var open = layout.Open[shell];
             var route = layout.Route(section);
-
-            // Doorways along the route, middle first, at least two cells from either end.
-            var candidates = new List<int>();
-            for (int k = 2; k + 3 < route.Count; k++) candidates.Add(k);
-            candidates.Sort((a, b) => Mathf.Abs(2 * a + 1 - route.Count).CompareTo(Mathf.Abs(2 * b + 1 - route.Count)));
-            foreach (int k in candidates)
+            foreach (var (near, edge, reach) in layout.Chokepoints(section))
             {
-                int near = route[k], far = route[k + 1];
-                int edge = grid.EdgeBetween(near, far);
-                // Cells reachable from the entry without going through this doorway.
-                var reach = layout.Reachable(section, sec.EntryCell, edge);
-                if (reach.ContainsKey(sec.ExitCell)) continue; // a side lane goes around it
-
                 var onRoute = new HashSet<int>(route);
                 int gateDist = reach[near];
                 // 1) A sealed-off filler cell beside the near side, close to the gate: carve it into a spur.
@@ -227,6 +229,126 @@ namespace SphereDescent
             return false;
         }
 
+        /// <summary>
+        /// A run of security cameras on the even-numbered sections (2nd, 4th, ...; with Camera Every = 2), one
+        /// per doorway over consecutive doorways along the route, each on a pole on top of a wall beside its
+        /// doorway, alternating sides. Each spotlight sweeps its own doorway. The run goes where the most of
+        /// its doorways are ones every route has to cross; a section with none passes its turn to the next.
+        /// </summary>
+        static void PlaceCameras(MazeLayout layout, LevelSettings s, Random rng)
+        {
+            if (s.cameraEvery <= 0) return;
+            int due = 1;
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                if (i < due || layout.LaserGates.Exists(g => g.Section == i)) continue;
+                if (TryPlaceCamera(layout, s, i, rng)) due = i + s.cameraEvery;
+            }
+        }
+
+        static bool TryPlaceCamera(MazeLayout layout, LevelSettings s, int section, Random rng)
+        {
+            var sec = layout.Sections[section];
+            int shell = sec.Shell;
+            var grid = layout.Grids[shell];
+            var route = layout.Route(section);
+            int count = Mathf.Max(1, s.camerasPerGroup);
+
+            // Which doorways along the route every route has to cross.
+            var choke = new bool[route.Count];
+            foreach (var (near, _, _) in layout.Chokepoints(section)) choke[route.IndexOf(near)] = true;
+
+            // A run of consecutive doorways, two cells clear of either end: the most must-cross doorways
+            // first, then nearest the middle of the route.
+            int bestStart = -1, bestScore = int.MinValue;
+            for (int k = 2; k + count + 2 < route.Count; k++)
+            {
+                int chokes = 0;
+                for (int j = 0; j < count; j++) if (choke[k + j]) chokes++;
+                if (chokes == 0) continue;
+                int score = chokes * 1000 - Mathf.Abs(2 * k + count - route.Count);
+                if (score > bestScore) { bestScore = score; bestStart = k; }
+            }
+            if (bestStart < 0) return false;
+
+            float phase = (float)rng.NextDouble();
+            // Each camera in the run searches its own way, in a shuffled order.
+            int firstPattern = rng.Next(3);
+            for (int j = 0; j < count; j++)
+            {
+                int near = route[bestStart + j], far = route[bestStart + j + 1];
+                // Alternate sides of the passage: left, right, left, ... as you travel through.
+                Vector3 travel = grid.CellCenters[far] - grid.CellCenters[near];
+                Vector3 mount = CameraMount(layout, s, shell, near, far, travel, leftSide: j % 2 == 0);
+                if (mount == Vector3.zero) continue;
+                layout.Cameras.Add(new SecurityCamera
+                {
+                    Shell = shell, Section = section, Edge = grid.EdgeBetween(near, far), NearCell = near,
+                    Mount = mount,
+                    // Out of step with each other, so the run has a rhythm to read rather than one gap.
+                    Phase = Mathf.Repeat(phase + j / (float)count, 1f),
+                    Pattern = (SweepPattern)((firstPattern + j) % 3),
+                });
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Where a camera pole goes for a doorway: on a wall of either cell that meets the doorway at one of
+        /// its ends, a little way along it from that end. Prefers the end on the requested side of the passage
+        /// (seen travelling from <paramref name="near"/> to <paramref name="far"/>), else takes the other.
+        /// Zero if neither end has a wall to stand on.
+        /// </summary>
+        static Vector3 CameraMount(MazeLayout layout, LevelSettings s, int shell, int near, int far, Vector3 travel, bool leftSide)
+        {
+            var grid = layout.Grids[shell];
+            float radius = s.shellRadii[shell];
+            var door = grid.Edges[grid.EdgeBetween(near, far)];
+            Vector3 up = (door.P0 + door.P1).normalized;
+            Vector3 left = Vector3.Cross(travel, up);
+            Vector3 preferred = Vector3.zero, fallback = Vector3.zero;
+            foreach (int cell in new[] { near, far })
+                foreach (int nb in grid.Neighbors[cell])
+                {
+                    int e = grid.EdgeBetween(cell, nb);
+                    if (layout.Open[shell][e]) continue;
+                    var wall = grid.Edges[e];
+                    Vector3 corner, other;
+                    if (wall.P0 == door.P0 || wall.P0 == door.P1) { corner = wall.P0; other = wall.P1; }
+                    else if (wall.P1 == door.P0 || wall.P1 == door.P1) { corner = wall.P1; other = wall.P0; }
+                    else continue;
+                    float length = Vector3.Angle(corner, other) * Mathf.Deg2Rad * radius;
+                    Vector3 mount = Vector3.Slerp(corner, other, Mathf.Min(0.4f, 1.5f / length)).normalized;
+                    bool onLeft = Vector3.Dot(corner - up, left) > 0f;
+                    if (onLeft == leftSide) { if (preferred == Vector3.zero) preferred = mount; }
+                    else if (fallback == Vector3.zero) fallback = mount;
+                }
+            return preferred != Vector3.zero ? preferred : fallback;
+        }
+
+        /// <summary>
+        /// Doorways along a section's route that every route through it has to cross (side lanes don't go
+        /// around them), middle of the route first, at least two cells from either end. Each comes with the
+        /// cell on the near side and the steps to every cell reachable from the entry without crossing it.
+        /// </summary>
+        public List<(int near, int edge, Dictionary<int, int> reach)> Chokepoints(int section)
+        {
+            var sec = Sections[section];
+            var grid = Grids[sec.Shell];
+            var route = Route(section);
+            var order = new List<int>();
+            for (int k = 2; k + 3 < route.Count; k++) order.Add(k);
+            order.Sort((a, b) => Mathf.Abs(2 * a + 1 - route.Count).CompareTo(Mathf.Abs(2 * b + 1 - route.Count)));
+            var result = new List<(int, int, Dictionary<int, int>)>();
+            foreach (int k in order)
+            {
+                int edge = grid.EdgeBetween(route[k], route[k + 1]);
+                var reach = Reachable(section, sec.EntryCell, edge);
+                if (!reach.ContainsKey(sec.ExitCell)) result.Add((route[k], edge, reach));
+            }
+            return result;
+        }
+
         /// <summary>Steps from <paramref name="from"/> to every cell of a section reachable without crossing <paramref name="blockedEdge"/>.</summary>
         public Dictionary<int, int> Reachable(int section, int from, int blockedEdge = -1)
         {
@@ -249,12 +371,15 @@ namespace SphereDescent
             return dist;
         }
 
-        /// <summary>Cells a mine group shouldn't use: either side of a laser gate, and its switch.</summary>
-        bool ReservedForGate(int shell, int cell)
+        /// <summary>Cells a mine group shouldn't use: either side of a laser gate or camera doorway, and gate switches.</summary>
+        bool ReservedForHazard(int shell, int cell)
         {
             var grid = Grids[shell];
             foreach (var g in LaserGates)
                 if (g.Shell == shell && (cell == g.SwitchCell || cell == grid.Edges[g.Edge].A || cell == grid.Edges[g.Edge].B))
+                    return true;
+            foreach (var c in Cameras)
+                if (c.Shell == shell && (cell == grid.Edges[c.Edge].A || cell == grid.Edges[c.Edge].B))
                     return true;
             return false;
         }
@@ -280,27 +405,46 @@ namespace SphereDescent
                 int fewer = shell >= layout.ShellCount - s.fewerMinesInnermost ? 1 : 0;
                 int groups = rng.Next(s.mineGroupsMin, s.mineGroupsMax + 1) - fewer;
                 groups = Mathf.Min(groups, (last - first) / 2 + 1);
+                var used = new List<int>();
+                // A cell can hold a group if it's clear of laser gates, their switches and camera doorways, and
+                // doesn't touch another group's cell (so groups never run together).
+                bool Usable(int cell)
+                {
+                    if (layout.ReservedForHazard(shell, cell)) return false;
+                    foreach (int u in used)
+                        if (u == cell || System.Array.IndexOf(grid.Neighbors[u], cell) >= 0) return false;
+                    return true;
+                }
                 for (int g = 0; g < groups; g++)
                 {
-                    // One group per equal slice of the stretch, somewhere in that slice.
+                    // One group per equal slice of the stretch, somewhere in that slice: a random spot, or the
+                    // next usable one after it. A slice with no usable cell gets no group.
                     int lo = first + (last - first + 1) * g / groups;
                     int hi = first + (last - first + 1) * (g + 1) / groups - 1;
                     hi = Mathf.Max(lo, hi);
                     int at = rng.Next(lo, hi + 1);
-                    // Keep laser gates and their switches clear; try the rest of the slice.
-                    for (int tries = 0; tries <= hi - lo && layout.ReservedForGate(shell, route[at]); tries++)
+                    for (int tries = 0; tries <= hi - lo && !Usable(route[at]); tries++)
                         at = lo + (at - lo + 1) % (hi - lo + 1);
                     int cell = route[at];
-                    if (layout.ReservedForGate(shell, cell)) continue;
-                    PlaceGroup(layout, s, rng, shell, i, cell, radius, fewer);
-                    PlaceWallMines(layout, s, shell, i, cell, radius);
+                    if (!Usable(cell)) continue;
+                    used.Add(cell);
+                    // Group Size counts every mine: the ones beside the walls first, the rest in the middle.
+                    int sizeMin = Mathf.Max(1, s.mineGroupSizeMin);
+                    int size = Mathf.Max(1, rng.Next(sizeMin, Mathf.Max(sizeMin, s.mineGroupSizeMax) + 1) - fewer);
+                    int byWalls = PlaceWallMines(layout, s, rng, shell, i, cell, radius, size);
+                    PlaceGroup(layout, s, rng, shell, i, cell, radius, size - byWalls);
                 }
             }
         }
 
+        /// <summary>
+        /// The middle of a mine group: <paramref name="count"/> mines evenly around a ring, neighbors Mine
+        /// Spacing apart (2 are a pair, 3 a triangle, 4 a square; a lone mine sits in the middle).
+        /// </summary>
         static void PlaceGroup(MazeLayout layout, LevelSettings s, Random rng, int shell, int section, int cell, float radius,
-            int fewer)
+            int count)
         {
+            if (count <= 0) return;
             Vector3 center = layout.Grids[shell].CellCenters[cell];
             // Tangent frame at the cell center, turned to a random angle.
             Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
@@ -311,9 +455,7 @@ namespace SphereDescent
             float shift = (float)rng.NextDouble() * 1.5f, shiftAngle = (float)rng.NextDouble() * Mathf.PI * 2f;
             Vector2 offset = new Vector2(Mathf.Cos(shiftAngle), Mathf.Sin(shiftAngle)) * shift;
 
-            // 2 mines: a pair; 3: a triangle; 4: a square. Neighbors are Mine Spacing apart.
-            int count = rng.Next(3, 5) - fewer;
-            float ring = s.mineSpacing / (2f * Mathf.Sin(Mathf.PI / count));
+            float ring = count == 1 ? 0f : s.mineSpacing / (2f * Mathf.Sin(Mathf.PI / count));
             Vector3 Spot(int k, Vector2 shiftBy)
             {
                 float a = k * Mathf.PI * 2f / count;
@@ -364,20 +506,26 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// One mine just off each wall of the group's cell, too close to the wall for the ball to squeeze past,
-        /// so you can't skirt the group by hugging a wall. Each starts at the middle of its wall and slides
-        /// along it until it leaves room to roll between it and every other mine on the shell.
+        /// A mine just off each wall of the group's cell (up to <paramref name="max"/> of them, walls picked at
+        /// random), too close to the wall for the ball to squeeze past, so you can't skirt the group by hugging
+        /// that wall. Each starts at the middle of its wall and slides along it until it leaves room to roll
+        /// between it and every other mine on the shell. Returns how many it placed.
         /// </summary>
-        static void PlaceWallMines(MazeLayout layout, LevelSettings s, int shell, int section, int cell, float radius)
+        static int PlaceWallMines(MazeLayout layout, LevelSettings s, Random rng, int shell, int section, int cell, float radius, int max)
         {
             var grid = layout.Grids[shell];
             Vector3 center = grid.CellCenters[cell] * radius;
             float inset = s.wallThickness * 0.5f + s.mineWallGap + s.mineRadius;
             float[] along = { 0.5f, 0.35f, 0.65f, 0.22f, 0.78f };
+            var walls = new List<int>();
             foreach (int nb in grid.Neighbors[cell])
+                if (!layout.Open[shell][grid.EdgeBetween(cell, nb)]) walls.Add(grid.EdgeBetween(cell, nb));
+            Shuffle(walls, rng);
+            int placed = 0;
+            foreach (int wallEdge in walls)
             {
-                var edge = grid.Edges[grid.EdgeBetween(cell, nb)];
-                if (layout.Open[shell][grid.EdgeBetween(cell, nb)]) continue;
+                if (placed >= max) break;
+                var edge = grid.Edges[wallEdge];
                 foreach (float t in along)
                 {
                     Vector3 onWall = Vector3.Slerp(edge.P0, edge.P1, t) * radius;
@@ -386,9 +534,11 @@ namespace SphereDescent
                     // Its own wall is Mine Wall Gap away; this just keeps it off the next wall at a corner.
                     if (!MineFits(layout, s, shell, cell, dir, radius, Mathf.Min(0.3f, s.mineWallGap) - 0.02f)) continue;
                     layout.Mines.Add(new Mine { Shell = shell, Section = section, Direction = dir, NearWall = true });
+                    placed++;
                     break;
                 }
             }
+            return placed;
         }
 
         /// <summary>The shortest route through a section, entry to exit, as cells on its shell.</summary>
