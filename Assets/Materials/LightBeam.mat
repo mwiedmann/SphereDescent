@@ -26,6 +26,7 @@ Material:
     m_Ints: []
     m_Floats:
     - _BandSpeed: 1.5
+    - _BandStrength: 0.2
     - _FadeStart: 0.3
     - _Intensity: 1.6
     m_Colors:

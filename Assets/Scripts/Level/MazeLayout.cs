@@ -36,6 +36,16 @@ namespace SphereDescent
             public bool NearWall;      // set just off a wall, so the wall can't be hugged past the group
         }
 
+        public struct LaserGate
+        {
+            public int Shell;
+            public int Section;
+            public int Edge;           // the doorway the lasers fill (an open edge every route must cross)
+            public int EntrySideCell;  // the cell on the side you arrive from
+            public int SwitchCell;     // where the pad that turns the lasers off sits (on the entry side)
+            public bool SwitchInSpur;  // the pad has its own dead-end side path
+        }
+
         // Clear space kept between any two mines, so the ball (1 unit across) can always roll between them.
         public const float MinePassage = 1.6f;
 
@@ -56,6 +66,7 @@ namespace SphereDescent
         public List<Hole> Holes = new List<Hole>();
         public List<Section> Sections = new List<Section>();
         public List<Mine> Mines = new List<Mine>();
+        public List<LaserGate> LaserGates = new List<LaserGate>();
         public int StartCell;
         public int Seed;
         public int AttemptsUsed;
@@ -129,9 +140,123 @@ namespace SphereDescent
 
             for (int shell = 0; shell < L; shell++)
                 CarveFiller(layout.Grids[shell], layout.Region[shell], layout.Open[shell], rng);
-            // Own random stream, so mine settings never change the maze itself.
+            // Own random streams, so hazard settings never change the maze itself.
+            PlaceLaserGates(layout, s, new Random(seed * 17 + 3));
             PlaceMines(layout, s, new Random(seed * 31 + 7));
             return layout;
+        }
+
+        /// <summary>
+        /// A laser gate on the odd-numbered sections (1st, 3rd, ...; with Laser Gate Every = 2): lasers fill a doorway that every route through the section
+        /// has to cross, and a pad on the near side turns them off. The pad goes down its own short dead-end
+        /// side path when there's a sealed-off cell beside the section to carve one into; otherwise in a side
+        /// lane, or failing that on the route. A section that has no such doorway passes its turn to the next.
+        /// </summary>
+        static void PlaceLaserGates(MazeLayout layout, LevelSettings s, Random rng)
+        {
+            if (s.laserGateEvery <= 0) return;
+            int due = 0;
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                if (i < due) continue;
+                if (TryPlaceLaserGate(layout, i, rng)) due = i + s.laserGateEvery;
+            }
+        }
+
+        static bool TryPlaceLaserGate(MazeLayout layout, int section, Random rng)
+        {
+            var sec = layout.Sections[section];
+            int shell = sec.Shell;
+            var grid = layout.Grids[shell];
+            var region = layout.Region[shell];
+            var open = layout.Open[shell];
+            var route = layout.Route(section);
+
+            // Doorways along the route, middle first, at least two cells from either end.
+            var candidates = new List<int>();
+            for (int k = 2; k + 3 < route.Count; k++) candidates.Add(k);
+            candidates.Sort((a, b) => Mathf.Abs(2 * a + 1 - route.Count).CompareTo(Mathf.Abs(2 * b + 1 - route.Count)));
+            foreach (int k in candidates)
+            {
+                int near = route[k], far = route[k + 1];
+                int edge = grid.EdgeBetween(near, far);
+                // Cells reachable from the entry without going through this doorway.
+                var reach = layout.Reachable(section, sec.EntryCell, edge);
+                if (reach.ContainsKey(sec.ExitCell)) continue; // a side lane goes around it
+
+                var onRoute = new HashSet<int>(route);
+                int gateDist = reach[near];
+                // 1) A sealed-off filler cell beside the near side, close to the gate: carve it into a spur.
+                int best = -1, bestScore = int.MaxValue, bestFrom = -1;
+                foreach (var kv in reach)
+                {
+                    int c = kv.Key;
+                    if (c == sec.EntryCell || Mathf.Abs(kv.Value - gateDist) > 3) continue;
+                    foreach (int nb in grid.Neighbors[c])
+                    {
+                        if (region[nb] != -1) continue;
+                        int score = Mathf.Abs(kv.Value - gateDist) * 10 + rng.Next(5);
+                        if (score < bestScore) { bestScore = score; best = nb; bestFrom = c; }
+                    }
+                }
+                bool spur = best >= 0;
+                if (spur)
+                {
+                    // Seal it off from the filler maze and open it onto the section.
+                    foreach (int nb in grid.Neighbors[best]) open[grid.EdgeBetween(best, nb)] = false;
+                    open[grid.EdgeBetween(best, bestFrom)] = true;
+                    region[best] = section;
+                }
+                else
+                {
+                    // 2) A side-lane cell on the near side, nearest the gate; 3) any near-side cell but the entry.
+                    foreach (var kv in reach)
+                    {
+                        if (kv.Key == sec.EntryCell || kv.Key == near) continue;
+                        int score = Mathf.Abs(kv.Value - gateDist) + (onRoute.Contains(kv.Key) ? 100 : 0);
+                        if (score < bestScore) { bestScore = score; best = kv.Key; }
+                    }
+                    if (best < 0) continue;
+                }
+                layout.LaserGates.Add(new LaserGate
+                {
+                    Shell = shell, Section = section, Edge = edge, EntrySideCell = near, SwitchCell = best, SwitchInSpur = spur,
+                });
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Steps from <paramref name="from"/> to every cell of a section reachable without crossing <paramref name="blockedEdge"/>.</summary>
+        public Dictionary<int, int> Reachable(int section, int from, int blockedEdge = -1)
+        {
+            int shell = Sections[section].Shell;
+            var grid = Grids[shell];
+            var dist = new Dictionary<int, int> { [from] = 0 };
+            var queue = new Queue<int>();
+            queue.Enqueue(from);
+            while (queue.Count > 0)
+            {
+                int cur = queue.Dequeue();
+                foreach (int nb in grid.Neighbors[cur])
+                {
+                    int e = grid.EdgeBetween(cur, nb);
+                    if (e == blockedEdge || dist.ContainsKey(nb) || Region[shell][nb] != section || !Open[shell][e]) continue;
+                    dist[nb] = dist[cur] + 1;
+                    queue.Enqueue(nb);
+                }
+            }
+            return dist;
+        }
+
+        /// <summary>Cells a mine group shouldn't use: either side of a laser gate, and its switch.</summary>
+        bool ReservedForGate(int shell, int cell)
+        {
+            var grid = Grids[shell];
+            foreach (var g in LaserGates)
+                if (g.Shell == shell && (cell == g.SwitchCell || cell == grid.Edges[g.Edge].A || cell == grid.Edges[g.Edge].B))
+                    return true;
+            return false;
         }
 
         /// <summary>
@@ -160,7 +285,13 @@ namespace SphereDescent
                     // One group per equal slice of the stretch, somewhere in that slice.
                     int lo = first + (last - first + 1) * g / groups;
                     int hi = first + (last - first + 1) * (g + 1) / groups - 1;
-                    int cell = route[rng.Next(lo, Mathf.Max(lo, hi) + 1)];
+                    hi = Mathf.Max(lo, hi);
+                    int at = rng.Next(lo, hi + 1);
+                    // Keep laser gates and their switches clear; try the rest of the slice.
+                    for (int tries = 0; tries <= hi - lo && layout.ReservedForGate(shell, route[at]); tries++)
+                        at = lo + (at - lo + 1) % (hi - lo + 1);
+                    int cell = route[at];
+                    if (layout.ReservedForGate(shell, cell)) continue;
                     PlaceGroup(layout, s, rng, shell, i, cell, radius, fewer);
                     PlaceWallMines(layout, s, shell, i, cell, radius);
                 }

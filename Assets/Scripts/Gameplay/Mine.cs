@@ -37,7 +37,7 @@ namespace SphereDescent
         void OnTriggerEnter(Collider other)
         {
             if (other.attachedRigidbody != null && other.attachedRigidbody.TryGetComponent(out BallController ball))
-                ball.HitMine(transform.position);
+                ball.HitHazard();
         }
     }
 }

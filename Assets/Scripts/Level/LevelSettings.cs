@@ -65,6 +65,14 @@ namespace SphereDescent
                  "fewer in each group (not counting the mines by the walls).")]
         public int fewerMinesInnermost = 2;
 
+        [Header("Laser gates")]
+        [Tooltip("A laser gate on every Nth section, starting with the first (2 = sections 1, 3, 5, ...). The pad that " +
+                 "turns it off is on the near side. 0 = none.")]
+        public int laserGateEvery = 2;
+        [Tooltip("Lasers in a gate, spread from near the ground to just under the wall tops. Keep the gaps between " +
+                 "them under the ball's width (1): with 4-unit walls that's at least 5.")]
+        public int laserRows = 7;
+
         [Header("Orientation")]
         [Tooltip("How high the light beam over the current section's hole or boost pad rises into the sky.")]
         public float beamHeight = 100f;

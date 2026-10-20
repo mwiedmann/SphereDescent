@@ -102,6 +102,7 @@ namespace SphereDescent
             }
 
             CreateMines(level, layout, s, terrains, layerRoots, mats.beam);
+            CreateLaserGates(level, layout, s, layerRoots, zones, mats.beam);
 
             // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
@@ -133,6 +134,15 @@ namespace SphereDescent
                 // the ball from running up a hill and rolling back into the hole.
                 terrains[h.Shell].AddFlatSpot(h.Direction, h.TwoWay ? flat + 4f : flat, Fade(h.Shell));
                 if (h.Shell + 1 < layout.ShellCount) terrains[h.Shell + 1].AddFlatSpot(h.Direction, flat, Fade(h.Shell + 1));
+            }
+            // Laser gates stand on flat ground, so no hill lifts the ball over (or tucks it under) the lasers,
+            // and so do their switch pads.
+            foreach (var g in layout.LaserGates)
+            {
+                var edge = layout.Grids[g.Shell].Edges[g.Edge];
+                float halfWidth = Vector3.Angle(edge.P0, edge.P1) * Mathf.Deg2Rad * s.shellRadii[g.Shell] * 0.5f;
+                terrains[g.Shell].AddFlatSpot(edge.P0 + edge.P1, halfWidth + 1.5f, Fade(g.Shell));
+                terrains[g.Shell].AddFlatSpot(layout.Grids[g.Shell].CellCenters[g.SwitchCell], 2.5f, Fade(g.Shell));
             }
             return terrains;
         }
@@ -225,6 +235,107 @@ namespace SphereDescent
             mesh.CombineMeshes(parts.ToArray(), true, true);
             foreach (var t in temps) Object.DestroyImmediate(t);
             return mesh;
+        }
+
+        /// <summary>
+        /// Laser gates: horizontal lasers stacked from near the ground to just under the wall tops (too close
+        /// together to slip between, too high to jump over), filling the doorway between its two walls. Each is
+        /// a white-hot core inside a thin glow in the color opposite the local zone's, so it stands out from the
+        /// neon floor and walls. A trigger across the doorway catches the ball. Their switch pads: a metal disc
+        /// with a ring and center pulsing warning red, turning green once rolled over.
+        /// </summary>
+        static void CreateLaserGates(LevelInstance level, MazeLayout layout, LevelSettings s, Transform[] layerRoots,
+            ZoneMap zones, Material glowTemplate)
+        {
+            if (layout.LaserGates.Count == 0) return;
+            var offColor = new Color(0.05f, 1f, 0.2f);
+            var warning = new Color(1f, 0.04f, 0.02f);
+            var disarmedMat = level.Own(LevelMaterials.MakeEmissive(offColor, 1.4f));
+            var metalMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
+            var ringMesh = level.Own(MeshBuilders.BuildTorus(1.05f, 0.07f, 40, 8));
+            var glowMesh = level.Own(MeshBuilders.BuildBeam(0.5f, 1f, 12));
+            const float coreWidth = 0.05f, glowWidth = 0.1f;
+
+            foreach (var g in layout.LaserGates)
+            {
+                float radius = s.shellRadii[g.Shell];
+                var grid = layout.Grids[g.Shell];
+                var edge = grid.Edges[g.Edge];
+                Vector3 a = edge.P0 * radius, b = edge.P1 * radius;
+                Vector3 up = (edge.P0 + edge.P1).normalized;
+                Vector3 along = (b - a).normalized;
+                float length = Vector3.Distance(a, b);
+
+                var go = new GameObject("Laser Gate");
+                go.transform.SetParent(layerRoots[g.Shell], false);
+                go.transform.SetPositionAndRotation(up * radius, Quaternion.LookRotation(along, up));
+                var lasers = new GameObject("Lasers").transform;
+                lasers.SetParent(go.transform, false);
+
+                // The opposite hue to the zone it stands in, but never green: green means a switched-off gate.
+                Color.RGBToHSV(zones.Colors[zones.ZoneAt(up * radius)], out float hue, out _, out _);
+                float laserHue = Mathf.Repeat(hue + 0.5f, 1f);
+                if (Mathf.Abs(laserHue - 0.33f) < 0.12f) laserHue = 0.5f;
+                Color laserColor = Color.HSVToRGB(laserHue, 1f, 1f);
+                Color coreColor = Color.Lerp(laserColor, Color.white, 0.55f);
+                var coreMat = level.Own(LevelMaterials.MakeEmissive(coreColor, 4f));
+                var glowMat = level.Own(BeamMaterial(glowTemplate, laserColor, 1f));
+                glowMat.SetFloat("_BandStrength", 0f);
+
+                void Beam(Vector3 from, Vector3 to)
+                {
+                    var core = Part(lasers, PrimitiveType.Cylinder, "Laser", coreMat);
+                    core.SetPositionAndRotation((from + to) * 0.5f, Quaternion.FromToRotation(Vector3.up, to - from));
+                    core.localScale = new Vector3(coreWidth, Vector3.Distance(from, to) * 0.5f, coreWidth);
+                    var glow = CreateMeshObject(lasers, "Laser Glow", glowMesh, glowMat, false, ShadowCastingMode.Off).transform;
+                    glow.SetPositionAndRotation(from, Quaternion.FromToRotation(Vector3.up, to - from));
+                    glow.localScale = new Vector3(glowWidth, Vector3.Distance(from, to), glowWidth);
+                }
+                for (int row = 0; row < s.laserRows; row++)
+                {
+                    float h = Mathf.Lerp(0.3f, s.wallHeight - 0.3f, row / (float)Mathf.Max(1, s.laserRows - 1));
+                    Beam(a + edge.P0 * h, b + edge.P1 * h);
+                }
+
+                var field = go.AddComponent<BoxCollider>();
+                field.isTrigger = true;
+                field.center = new Vector3(0f, s.wallHeight * 0.5f, 0f);
+                field.size = new Vector3(0.35f, s.wallHeight, length);
+
+                var gate = go.AddComponent<LaserGate>();
+                gate.lasers = lasers.gameObject;
+                gate.field = field;
+                gate.coreMaterial = coreMat;
+                gate.glowMaterial = glowMat;
+                gate.coreColor = coreColor;
+
+                // The switch pad, with its own warning material so it can pulse.
+                var armedMat = level.Own(LevelMaterials.MakeEmissive(warning, 1.5f));
+                Vector3 dir = grid.CellCenters[g.SwitchCell];
+                var pad = new GameObject("Laser Switch");
+                pad.transform.SetParent(layerRoots[g.Shell], false);
+                pad.transform.SetPositionAndRotation(dir * radius, Quaternion.FromToRotation(Vector3.up, dir));
+                var disc = Part(pad.transform, PrimitiveType.Cylinder, "Base", metalMat);
+                disc.localPosition = new Vector3(0f, -0.12f, 0f);
+                disc.localScale = new Vector3(2.6f, 0.2f, 2.6f);
+                var ring = CreateMeshObject(pad.transform, "Ring", ringMesh, armedMat, false, ShadowCastingMode.Off);
+                ring.transform.localPosition = new Vector3(0f, 0.08f, 0f);
+                var light = Part(pad.transform, PrimitiveType.Cylinder, "Light", armedMat);
+                light.localPosition = new Vector3(0f, 0.06f, 0f);
+                light.localScale = new Vector3(1.1f, 0.03f, 1.1f);
+
+                var trigger = pad.AddComponent<SphereCollider>();
+                trigger.isTrigger = true;
+                trigger.radius = 1.2f;
+                trigger.center = new Vector3(0f, 0.3f, 0f);
+
+                var sw = pad.AddComponent<LaserSwitch>();
+                sw.gate = gate;
+                sw.indicators = new[] { ring.GetComponent<Renderer>(), light.GetComponent<Renderer>() };
+                sw.armed = armedMat;
+                sw.disarmed = disarmedMat;
+                sw.warningColor = warning;
+            }
         }
 
         static Transform Part(Transform parent, PrimitiveType type, string name, Material mat)

@@ -156,7 +156,8 @@ namespace SphereDescent.EditorTools
                         int r = layout.Region[sh][c];
                         if (r < 0) continue;
                         var sec = layout.Sections[r];
-                        if (c != sec.EntryCell && c != sec.ExitCell && layout.Openings(sh, c) < 2) deadEnds++;
+                        if (c != sec.EntryCell && c != sec.ExitCell && layout.Openings(sh, c) < 2 &&
+                            !layout.LaserGates.Exists(g => g.Shell == sh && g.SwitchCell == c && g.SwitchInSpur)) deadEnds++;
                     }
                 if (deadEnds > 0) problems.Append($" {deadEnds} dead ends;");
 
@@ -196,6 +197,25 @@ namespace SphereDescent.EditorTools
                 if (maxWallMineGap >= 1f) problems.Append($" a wall mine leaves {maxWallMineGap:F2} to squeeze past;");
                 if (minWall < 0.5f) problems.Append($" a mine {minWall:F2} from a wall;");
                 if (minHole < 2f) problems.Append($" a mine {minHole:F2} from a hole or pad;");
+                // Laser gates: every route crosses the doorway, and the switch is reachable on the near side.
+                int spurs = 0;
+                foreach (var g in layout.LaserGates)
+                {
+                    var sec = layout.Sections[g.Section];
+                    var near = layout.Reachable(g.Section, sec.EntryCell, g.Edge);
+                    if (near.ContainsKey(sec.ExitCell)) problems.Append($" laser gate in section {g.Section + 1} can be walked around;");
+                    if (!near.ContainsKey(g.SwitchCell)) problems.Append($" laser switch in section {g.Section + 1} is behind its gate;");
+                    if (g.SwitchCell == sec.EntryCell) problems.Append($" laser switch in section {g.Section + 1} is on the landing spot;");
+                    if (g.SwitchInSpur) spurs++;
+                }
+                foreach (var mine in layout.Mines)
+                    foreach (var g in layout.LaserGates)
+                        if (g.Shell == mine.Shell && Vector3.Angle(mine.Direction, layout.Grids[g.Shell].CellCenters[g.SwitchCell]) * Mathf.Deg2Rad
+                            * settings.shellRadii[g.Shell] < 1.3f + settings.mineRadius + MazeLayout.MinePassage)
+                            problems.Append($" a mine crowds the laser switch in section {g.Section + 1};");
+                var gateSections = new System.Text.StringBuilder();
+                foreach (var g in layout.LaserGates) gateSections.Append(' ').Append(g.Section + 1);
+
                 var mineCounts = new System.Text.StringBuilder();
                 foreach (int c in perSection) mineCounts.Append(' ').Append(c);
 
@@ -208,6 +228,7 @@ namespace SphereDescent.EditorTools
                 if (problems.Length > 0) failures++;
                 string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
                              $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
+                             $" laser gates in sections{gateSections} ({spurs} switches in side spurs);" +
                              $" mines per section:{mineCounts} ({wallMines} by walls; gap {minGap:F1}, other mines to wall {minWall:F1}, wall mines to wall max {maxWallMineGap:F2}, hole {minHole:F1})" +
                              (problems.Length > 0 ? " PROBLEMS:" + problems : "");
 

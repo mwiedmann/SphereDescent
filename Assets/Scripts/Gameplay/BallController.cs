@@ -255,8 +255,8 @@ namespace SphereDescent
             checkpointLayer = layer;
         }
 
-        /// <summary>Blown up by a mine: vanish in a fireball, then reappear at the checkpoint.</summary>
-        public void HitMine(Vector3 minePosition)
+        /// <summary>Blown up by a mine or lasers: vanish in a fireball, then reappear at the checkpoint.</summary>
+        public void HitHazard()
         {
             if (exploding || frozen) return;
             StartCoroutine(Explode());

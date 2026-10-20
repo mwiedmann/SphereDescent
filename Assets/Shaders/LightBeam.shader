@@ -10,6 +10,7 @@ Shader "SphereDescent/LightBeam"
         _Intensity ("Intensity", Float) = 1.6
         _FadeStart ("Fade Start (fraction of height)", Range(0, 1)) = 0.3
         _BandSpeed ("Band Speed", Float) = 1.5
+        _BandStrength ("Band Strength", Range(0, 1)) = 0.2
     }
     SubShader
     {
@@ -34,6 +35,7 @@ Shader "SphereDescent/LightBeam"
                 float _Intensity;
                 float _FadeStart;
                 float _BandSpeed;
+                float _BandStrength;
             CBUFFER_END
 
             struct Attributes
@@ -71,7 +73,7 @@ Shader "SphereDescent/LightBeam"
                 float core = facing * facing;
                 float h = i.uv.y;
                 float fade = (1.0 - smoothstep(_FadeStart, 1.0, h)) * smoothstep(0.0, 0.04, h);
-                float bands = 0.8 + 0.2 * sin(h * 60.0 - _Time.y * _BandSpeed * 6.0);
+                float bands = 1.0 - _BandStrength + _BandStrength * sin(h * 60.0 - _Time.y * _BandSpeed * 6.0);
                 float3 color = _Color.rgb * _Intensity * core * fade * bands;
                 // Additive: fog fades the beam toward black (nothing added) rather than toward the fog color.
                 color = MixFogColor(color, float3(0, 0, 0), i.fogFactor);
