@@ -211,6 +211,8 @@ namespace SphereDescent
         {
             ball = CreateBall(materials.ball);
             ball.DroppedThrough += OnDroppedThrough;
+            ball.Respawned += FaceTheWayOn;
+            ball.LandedOnNewLayer += TurnTheWayOn;
             ball.Launched += OnLaunched;
 
             cam = Camera.main;
@@ -248,7 +250,7 @@ namespace SphereDescent
 
             ball.level = level;
             ball.Teleport(level.SpawnPosition);
-            orbit.Snap();
+            FaceTheWayOn();
             ShowMessage(styles != null && styles.Length > 1 ? $"World {world}: {worldStyle.name}" : $"World {world}", 3f);
         }
 
@@ -258,6 +260,22 @@ namespace SphereDescent
         {
             score += cube.points;
             if (cube.isSuper) ShowMessage($"Super cube! +{cube.points}", 1.5f);
+        }
+
+        /// <summary>Points the camera the way the route goes on from where the ball is (at a world's start and on respawn).</summary>
+        void FaceTheWayOn()
+        {
+            if (level == null || ball == null) return;
+            Vector3 pos = ball.transform.position;
+            orbit.Snap(level.Layout.RouteDirectionAt(level.LayerAt(pos.magnitude), pos));
+        }
+
+        /// <summary>After landing on a new layer, swings the camera round to face the way the route goes on.</summary>
+        void TurnTheWayOn()
+        {
+            if (level == null || ball == null) return;
+            Vector3 pos = ball.transform.position;
+            orbit.TurnTo(level.Layout.RouteDirectionAt(level.LayerAt(pos.magnitude), pos));
         }
 
         /// <summary>Seals the hole the ball just fell through.</summary>

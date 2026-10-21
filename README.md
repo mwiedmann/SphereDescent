@@ -14,13 +14,14 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 
 ![A whole world seen from space](Docs/screenshots/planet.png)
 
-- **Sections.** A world is a chain of short maze sections, each taking around a minute. A section has a main path with side lanes that branch off and rejoin it. There are several routes but no dead ends, and every route leads to the same spot.
+- **Sections.** A world is a chain of maze sections, each taking a couple of minutes. A section has a main path with side lanes that branch off and rejoin it. There are several routes but no dead ends, and every route leads to the same spot.
+- **Checkpoints.** Halfway along each section is a large checkpoint pad marked with a flag. Roll over it and it lights up green: if you're blown up after that, you come back there instead of at the start of the section.
 - **Dropping down.** Most sections end at a hole marked with a glowing ring. Roll into it to fall to the next section on the shell below.
 - **Climbing up.** Some sections end at a cyan boost pad. Roll onto it and it launches you up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
 - **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them. Weave between them or jump over them: touching one blows you up and sends you back to where you last arrived on that sphere.
 - **Laser gates.** Every other section has a gate of lasers across a doorway you can't get around. Find the pad marked with a key nearby on your side, usually down a short side path: it pulses red while the lasers are on and turns green when you roll over it, switching them off. Touching the lasers blows you up like a mine.
 - **Security cameras.** The other sections have a run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own quick, steady pattern (a figure-8, a loop, or a wobbling side-to-side sweep). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
-- **Energy cubes.** Each section has 10 glowing cubes to collect: half along the main route, half tucked away down side lanes and around corners. Roll through one for a point. One hidden cube per section is a larger magenta super cube worth 5. Your score is on the HUD.
+- **Energy cubes.** Each half of a section, before and after its checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for a point. The most hidden cube in each half is a larger magenta super cube worth 5. Your score is on the HUD.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
 | Section end: a hole to drop through | Section end: a boost pad to climb |
@@ -28,6 +29,8 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 | ![A hole at the end of a section](Docs/screenshots/drop_hole.png) | ![A boost pad under a hole in the shell above](Docs/screenshots/boost_pad.png) |
 
 ![Landing on the gold core completes the world](Docs/screenshots/core.png)
+
+![A checkpoint pad lit up after rolling over it, with a floor arrow pointing on](Docs/screenshots/checkpoint.png)
 
 | Mines along the route | A laser gate across a doorway | The pad that switches it off |
 |---|---|---|
@@ -37,7 +40,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 |---|---|
 | ![Cameras on poles above the walls, sweeping spotlights across the passage](Docs/screenshots/security_cameras.png) | ![A camera locked on and firing its laser at the ball](Docs/screenshots/camera_caught.png) |
 
-To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. The HUD shows the world, section, layer and zone you're in.
+To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in.
 
 ## Look
 
@@ -95,7 +98,9 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Section Length Min / Max:** the length of each section's main path, in maze cells.
 - **Side Lane Chance:** how wide sections are, and how many alternative routes they have.
 - **Main Path Cut Chance:** how often the main path is walled off, forcing a detour.
-- **Energy cubes:** how many per section, how many are hidden, points, and size.
+- **Checkpoints:** on or off, and the pad's size.
+- **Arrows:** how often a floor arrow appears along the route.
+- **Energy cubes:** how many per half section, how many are hidden, points, and size.
 - **Laser gates:** how often (every Nth section) and how many lasers each gate has.
 - **Security cameras:** how often, how many per run, and the spotlight's size, speed and reach.
 - **Mines:** groups per section, mines per group (the ones beside the walls count too), size, the gap left beside walls, and how many of the smallest spheres get fewer.

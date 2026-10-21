@@ -424,8 +424,8 @@ MonoBehaviour:
     shellThickness: 1
     cellSpacing: 16
     climbsPerWorld: 3
-    sectionLengthMin: 11
-    sectionLengthMax: 19
+    sectionLengthMin: 17
+    sectionLengthMax: 29
     sideLaneChance: 0.5
     mainPathCutChance: 0.35
     wallHeight: 4
@@ -439,12 +439,14 @@ MonoBehaviour:
     hillFlatMargin: 3
     mineGroupsMin: 3
     mineGroupsMax: 5
-    mineGroupSizeMin: 8
-    mineGroupSizeMax: 9
+    mineGroupSizeMin: 6
+    mineGroupSizeMax: 7
     mineRadius: 0.8
     mineHeight: 0.2
     mineWallGap: 0.35
     fewerMinesInnermost: 2
+    innermostGroupSizeCut: 1
+    innermostMineGap: 2.4
     laserGateEvery: 2
     laserRows: 7
     cameraEvery: 2
@@ -453,6 +455,15 @@ MonoBehaviour:
     spotPeriod: 3.75
     spotReach: 3
     cameraPoleHeight: 3
+    cubesPerHalfLeg: 7
+    hiddenCubeShare: 0.5
+    cubePoints: 1
+    superCubePoints: 5
+    cubeSize: 0.5
+    cubeCoreSize: 0.08
+    checkpoints: 1
+    checkpointRadius: 2.8
+    arrowEvery: 4
     beamHeight: 100
     shellMeshSubdivisions: 6
     coreMeshSubdivisions: 5
@@ -471,6 +482,113 @@ MonoBehaviour:
   startWorld: 1
   worldTransitionDelay: 2.5
   sun: {fileID: 1079440027}
+  styles:
+  - name: Synthwave
+    zones:
+    - name: Crimson
+      color: {r: 1, g: 0.1, b: 0.25, a: 1}
+    - name: Amber
+      color: {r: 1, g: 0.5, b: 0.05, a: 1}
+    - name: Gold
+      color: {r: 1, g: 0.85, b: 0.1, a: 1}
+    - name: Lime
+      color: {r: 0.6, g: 1, b: 0.1, a: 1}
+    - name: Jade
+      color: {r: 0.05, g: 1, b: 0.45, a: 1}
+    - name: Teal
+      color: {r: 0, g: 0.95, b: 0.9, a: 1}
+    - name: Azure
+      color: {r: 0.1, g: 0.6, b: 1, a: 1}
+    - name: Cobalt
+      color: {r: 0.3, g: 0.3, b: 1, a: 1}
+    - name: Violet
+      color: {r: 0.65, g: 0.2, b: 1, a: 1}
+    - name: Magenta
+      color: {r: 1, g: 0.15, b: 0.85, a: 1}
+    - name: Coral
+      color: {r: 1, g: 0.45, b: 0.4, a: 1}
+    - name: Ice
+      color: {r: 0.75, g: 0.9, b: 1, a: 1}
+    darkColor: {r: 0.035, g: 0.025, b: 0.07, a: 1}
+    groundZoneMix: 0.6
+    wallZoneMix: 0.9
+    glowIntensity: 1.8
+    patternStrength: 1
+    caustics: 0
+    causticScale: 6
+    skyTop: {r: 0.03, g: 0.01, b: 0.1, a: 1}
+    skyMid: {r: 0.22, g: 0.04, b: 0.36, a: 1}
+    skyHorizon: {r: 1, g: 0.25, b: 0.55, a: 1}
+    skyBelow: {r: 0.06, g: 0.01, b: 0.12, a: 1}
+    sunSize: 0.22
+    sunGlow: 1.6
+    sunTop: {r: 1, g: 0.85, b: 0.25, a: 1}
+    sunBottom: {r: 1, g: 0.2, b: 0.6, a: 1}
+    starDensity: 0.004
+    starDrift: 0
+    lightRays: 0
+    innerBackground: {r: 0, g: 0, b: 0, a: 1}
+    sunLight: {r: 1, g: 0.85, b: 0.95, a: 1}
+    sunLightIntensity: 1
+    ambientLight: {r: 0.32, g: 0.24, b: 0.42, a: 1}
+    fogDensity: 0
+    fogColor: {r: 0, g: 0, b: 0, a: 1}
+    floatingSpecks: 0
+    speckColor: {r: 0.7, g: 0.9, b: 1, a: 0.6}
+  - name: Deep Sea
+    zones:
+    - name: Lagoon
+      color: {r: 0, g: 0.85, b: 0.8, a: 1}
+    - name: Jellyfish
+      color: {r: 1, g: 0.35, b: 0.8, a: 1}
+    - name: Plankton
+      color: {r: 0.35, g: 1, b: 0.45, a: 1}
+    - name: Anemone
+      color: {r: 0.85, g: 0.3, b: 1, a: 1}
+    - name: Lantern
+      color: {r: 0.85, g: 1, b: 0.25, a: 1}
+    - name: Abyss
+      color: {r: 0.15, g: 0.45, b: 1, a: 1}
+    - name: Coral
+      color: {r: 1, g: 0.45, b: 0.35, a: 1}
+    - name: Seafoam
+      color: {r: 0.55, g: 1, b: 0.85, a: 1}
+    - name: Kelp
+      color: {r: 0.55, g: 0.8, b: 0.15, a: 1}
+    - name: Pearl
+      color: {r: 0.85, g: 0.9, b: 1, a: 1}
+    - name: Urchin
+      color: {r: 0.55, g: 0.35, b: 1, a: 1}
+    - name: Reef
+      color: {r: 1, g: 0.65, b: 0.2, a: 1}
+    darkColor: {r: 0.01, g: 0.04, b: 0.07, a: 1}
+    groundZoneMix: 0.35
+    wallZoneMix: 0.5
+    glowIntensity: 1.3
+    patternStrength: 0.35
+    caustics: 1
+    causticScale: 7
+    skyTop: {r: 0.05, g: 0.3, b: 0.4, a: 1}
+    skyMid: {r: 0.01, g: 0.1, b: 0.18, a: 1}
+    skyHorizon: {r: 0.01, g: 0.05, b: 0.1, a: 1}
+    skyBelow: {r: 0, g: 0.01, b: 0.03, a: 1}
+    sunSize: 0
+    sunGlow: 0
+    sunTop: {r: 0.6, g: 0.95, b: 1, a: 1}
+    sunBottom: {r: 0.1, g: 0.5, b: 0.7, a: 1}
+    starDensity: 0.006
+    starDrift: 0.02
+    lightRays: 0.6
+    innerBackground: {r: 0, g: 0.015, b: 0.03, a: 1}
+    sunLight: {r: 0.55, g: 0.85, b: 0.95, a: 1}
+    sunLightIntensity: 0.8
+    ambientLight: {r: 0.08, g: 0.2, b: 0.26, a: 1}
+    fogDensity: 0.009
+    fogColor: {r: 0.01, g: 0.06, b: 0.1, a: 1}
+    floatingSpecks: 400
+    speckColor: {r: 0.7, g: 0.95, b: 1, a: 0.55}
+  styleMenu: 1
+  maxMenuWorld: 20
 --- !u!4 &1658379801
 Transform:
   m_ObjectHideFlags: 0

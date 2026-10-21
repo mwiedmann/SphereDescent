@@ -20,8 +20,8 @@ namespace SphereDescent
         public int climbsPerWorld = 3;
         [Tooltip("Length of each section's main path in maze cells (about Cell Spacing units each). " +
                  "Every section ends at a hole down or a boost pad up.")]
-        public int sectionLengthMin = 11;
-        public int sectionLengthMax = 19;
+        public int sectionLengthMin = 17;
+        public int sectionLengthMax = 29;
         [Tooltip("How often a cell beside the main path becomes part of a side lane. Higher = wider sections with more alternative routes.")]
         [Range(0f, 1f)] public float sideLaneChance = 0.5f;
         [Tooltip("How often a step of the main path is walled off, so the route has to detour through a side lane.")]
@@ -55,8 +55,8 @@ namespace SphereDescent
         [Tooltip("Mines in each group, all told. One goes beside each wall of the group's cell first (so walls can't be " +
                  "hugged past it); the rest spread evenly over the cell, each in its most open spot, always leaving " +
                  "room to roll between. More mines = narrower ways through. Mines that don't fit are left out.")]
-        public int mineGroupSizeMin = 8;
-        public int mineGroupSizeMax = 9;
+        public int mineGroupSizeMin = 6;
+        public int mineGroupSizeMax = 7;
         [Tooltip("Mine radius. The ball's radius is 0.5.")]
         public float mineRadius = 0.8f;
         [Tooltip("How far a mine sticks up out of the ground.")]
@@ -68,7 +68,7 @@ namespace SphereDescent
                  "groups, and more room between mines.")]
         public int fewerMinesInnermost = 2;
         [Tooltip("On those shells, how many fewer mines each group gets (never fewer than one).")]
-        public int innermostGroupSizeCut = 3;
+        public int innermostGroupSizeCut = 1;
         [Tooltip("On those shells, the clear space left between mines (elsewhere it's 1.6; the ball is 1 across).")]
         public float innermostMineGap = 2.4f;
 
@@ -95,17 +95,29 @@ namespace SphereDescent
         public float cameraPoleHeight = 3f;
 
         [Header("Energy cubes")]
-        [Tooltip("Cubes to collect on each section (the stretch between two holes or pads). 0 = none.")]
-        public int cubesPerLeg = 10;
-        [Tooltip("Share of them tucked away off the main route, down side lanes and around corners.")]
+        [Tooltip("Cubes to collect on each half of a section (before and after its checkpoint), counting the half's " +
+                 "one super cube. 0 = none.")]
+        public int cubesPerHalfLeg = 7;
+        [Tooltip("Share of the ordinary cubes tucked away off the main route, down side lanes and around corners " +
+                 "(the super cube is always hidden).")]
         [Range(0f, 1f)] public float hiddenCubeShare = 0.5f;
-        [Tooltip("Points for a cube, and for the one super cube hidden on each section.")]
+        [Tooltip("Points for a cube, and for each half's super cube.")]
         public int cubePoints = 1;
         public int superCubePoints = 5;
         [Tooltip("Edge length of a cube's glowing outline (the ball is 1 across). The super cube is larger.")]
         public float cubeSize = 0.5f;
         [Tooltip("Size of the bright point glowing at the heart of each cube.")]
         public float cubeCoreSize = 0.08f;
+
+        [Header("Checkpoints")]
+        [Tooltip("A checkpoint pad halfway along each section: once you've rolled over it, dying sends you back there.")]
+        public bool checkpoints = true;
+        public float checkpointRadius = 2.8f;
+
+        [Header("Arrows")]
+        [Tooltip("An arrow on the floor on about every Nth cell along each section's route, pointing the way (plus " +
+                 "one at each checkpoint). 0 = none.")]
+        public int arrowEvery = 4;
 
         [Header("Orientation")]
         [Tooltip("How high the light beam over the current section's hole or boost pad rises into the sky.")]

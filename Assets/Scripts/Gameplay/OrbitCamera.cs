@@ -40,6 +40,9 @@ namespace SphereDescent
         Vector3 up = Vector3.up;
         Vector3 forward = Vector3.forward;
         float currentDistance;
+        Vector3 turnTo;     // heading being turned toward, while turnLeft > 0
+        float turnLeft;
+        bool holdUntilSteered; // after a turn, keep that heading until the player steers
         Rigidbody targetBody;
         BallController targetBall;
 
@@ -57,7 +60,26 @@ namespace SphereDescent
             if (forward.sqrMagnitude < 0.01f) forward = Vector3.ProjectOnPlane(Vector3.right, up);
             forward.Normalize();
             currentDistance = distance;
+            turnLeft = 0f;
+            holdUntilSteered = false;
             Tick(0f);
+        }
+
+        /// <summary>Re-orients instantly behind the target, looking along <paramref name="facing"/>.</summary>
+        public void Snap(Vector3 facing)
+        {
+            if (target == null) return;
+            if (facing.sqrMagnitude > 1e-8f) transform.rotation = Quaternion.LookRotation(facing, target.position.normalized);
+            Snap();
+        }
+
+        /// <summary>Swings smoothly around to look along <paramref name="facing"/> over a moment (e.g. after landing).</summary>
+        public void TurnTo(Vector3 facing, float seconds = 0.45f)
+        {
+            if (facing.sqrMagnitude < 1e-8f) return;
+            turnTo = facing.normalized;
+            turnLeft = seconds;
+            holdUntilSteered = true;
         }
 
         void LateUpdate() => Tick(Time.deltaTime);
@@ -80,7 +102,16 @@ namespace SphereDescent
             bool mouseActive = Cursor.lockState == CursorLockMode.Locked;
             Vector2 look = GameInput.Look(mouseActive, mouseSensitivity, keyTurnSpeed);
             forward = Quaternion.AngleAxis(look.x, up) * forward;
-            if (followMovement) FollowMovement(dt);
+            if (turnLeft > 0f)
+            {
+                // Ease the rest of the way in proportion to the time left, so it arrives exactly on time.
+                Vector3 goal = Vector3.ProjectOnPlane(turnTo, up).normalized;
+                forward = Vector3.Slerp(forward, goal, turnLeft <= dt ? 1f : dt / turnLeft);
+                forward = Vector3.ProjectOnPlane(forward, up).normalized;
+                turnLeft -= dt;
+            }
+            else if (followMovement) FollowMovement(dt);
+            if (holdUntilSteered && targetBall != null && targetBall.Steering) holdUntilSteered = false;
             pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
 
             Vector3 right = Vector3.Cross(up, forward);
@@ -108,6 +139,9 @@ namespace SphereDescent
                 targetBall = target.GetComponent<BallController>();
             }
             if (targetBody == null) return;
+            // Just turned to face somewhere (e.g. the way on after landing): leftover momentum shouldn't swing
+            // the camera away again before the player has steered.
+            if (holdUntilSteered && (targetBall == null || !targetBall.Steering)) return;
             Vector3 moving = Vector3.ProjectOnPlane(targetBody.linearVelocity, up);
             float speed = moving.magnitude;
             if (speed < followMinSpeed) return;

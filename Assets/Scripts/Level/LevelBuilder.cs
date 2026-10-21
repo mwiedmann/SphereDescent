@@ -120,6 +120,8 @@ namespace SphereDescent
             CreateLaserGates(level, layout, s, layerRoots, zones, mats.beam);
             CreateCameras(level, layout, s, terrains, layerRoots, mats);
             CreateCubes(level, layout, s, terrains, layerRoots, mats.spot);
+            CreateCheckpoints(level, layout, s, layerRoots);
+            CreateArrows(level, layout, s, terrains, layerRoots);
 
             // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
@@ -161,6 +163,11 @@ namespace SphereDescent
                 terrains[g.Shell].AddFlatSpot(edge.P0 + edge.P1, halfWidth + 1.5f, Fade(g.Shell));
                 terrains[g.Shell].AddFlatSpot(layout.Grids[g.Shell].CellCenters[g.SwitchCell], 2.5f, Fade(g.Shell));
             }
+            foreach (var c in layout.Checkpoints)
+                terrains[c.Shell].AddFlatSpot(c.Direction, s.checkpointRadius + 0.8f, Fade(c.Shell));
+            // Arrows lie flat on the floor.
+            foreach (var a in layout.Arrows)
+                terrains[a.Shell].AddFlatSpot(a.Direction, 1.8f, Fade(a.Shell));
             // So does the ground a camera's spotlight sweeps: a hill would hide the ball from the light, or
             // put the light pool in the air.
             foreach (var c in layout.Cameras)
@@ -550,7 +557,8 @@ namespace SphereDescent
                 var trigger = go.AddComponent<SphereCollider>();
                 trigger.isTrigger = true;
                 trigger.center = new Vector3(0f, lift, 0f);
-                trigger.radius = Mathf.Max(0.45f, size * 0.75f);
+                // A little generous, so cubes are easy to grab.
+                trigger.radius = Mathf.Max(0.45f, size * 0.75f) * 1.25f;
 
                 var cube = go.AddComponent<EnergyCube>();
                 cube.visual = visual;
@@ -578,6 +586,132 @@ namespace SphereDescent
                         parts.Add(new CombineInstance { mesh = box, transform = Matrix4x4.TRS(pos, Quaternion.identity, scale) });
                     }
             var mesh = new Mesh { name = "Cube Frame" };
+            mesh.CombineMeshes(parts.ToArray(), true, true);
+            Object.DestroyImmediate(temp);
+            return mesh;
+        }
+
+        /// <summary>
+        /// Checkpoint pads: a wide metal disc with an outer ring, an inner ring and a flag symbol in the middle,
+        /// all dim white until reached, then bright green.
+        /// </summary>
+        static void CreateCheckpoints(LevelInstance level, MazeLayout layout, LevelSettings s, Transform[] layerRoots)
+        {
+            if (layout.Checkpoints.Count == 0) return;
+            var metal = level.Own(LevelMaterials.MakeMetal(new Color(0.08f, 0.08f, 0.09f), 0.8f, 0.5f));
+            var inactive = level.Own(LevelMaterials.MakeEmissive(new Color(0.75f, 0.8f, 0.9f), 0.7f));
+            var active = level.Own(LevelMaterials.MakeEmissive(new Color(0.25f, 1f, 0.05f), 1.5f));
+            float r = s.checkpointRadius;
+            var outer = level.Own(MeshBuilders.BuildTorus(r * 0.92f, 0.1f, 56, 8));
+            var inner = level.Own(MeshBuilders.BuildTorus(r * 0.62f, 0.06f, 48, 8));
+            var flag = level.Own(FlagMesh(r * 0.5f));
+            foreach (var c in layout.Checkpoints)
+            {
+                var go = new GameObject("Checkpoint");
+                go.transform.SetParent(layerRoots[c.Shell], false);
+                go.transform.SetPositionAndRotation(c.Direction * s.shellRadii[c.Shell], Quaternion.FromToRotation(Vector3.up, c.Direction));
+                var disc = Part(go.transform, PrimitiveType.Cylinder, "Base", metal);
+                disc.localPosition = new Vector3(0f, -0.12f, 0f);
+                disc.localScale = new Vector3(r * 2f, 0.2f, r * 2f);
+                var ring = CreateMeshObject(go.transform, "Ring", outer, inactive, false, ShadowCastingMode.Off);
+                ring.transform.localPosition = new Vector3(0f, 0.08f, 0f);
+                var ring2 = CreateMeshObject(go.transform, "Inner Ring", inner, inactive, false, ShadowCastingMode.Off);
+                ring2.transform.localPosition = new Vector3(0f, 0.06f, 0f);
+                var mark = CreateMeshObject(go.transform, "Flag", flag, inactive, false, ShadowCastingMode.Off);
+                mark.transform.localPosition = new Vector3(0f, 0.06f, 0f);
+
+                var trigger = go.AddComponent<SphereCollider>();
+                trigger.isTrigger = true;
+                trigger.radius = r * 0.8f;
+                trigger.center = new Vector3(0f, 0.4f, 0f);
+
+                var pad = go.AddComponent<CheckpointPad>();
+                pad.indicators = new[] { ring.GetComponent<Renderer>(), ring2.GetComponent<Renderer>(), mark.GetComponent<Renderer>() };
+                pad.inactive = inactive;
+                pad.active = active;
+                pad.pulseRing = ring.transform;
+            }
+        }
+
+        /// <summary>Floor arrows: a broad, softly glowing arrow lying flat, pointing the way.</summary>
+        static void CreateArrows(LevelInstance level, MazeLayout layout, LevelSettings s, ShellTerrain[] terrains, Transform[] layerRoots)
+        {
+            if (layout.Arrows.Count == 0) return;
+            var mat = level.Own(LevelMaterials.MakeEmissive(new Color(0.85f, 0.9f, 1f), 0.55f));
+            var mesh = level.Own(ArrowMesh());
+            foreach (var a in layout.Arrows)
+            {
+                var arrow = CreateMeshObject(layerRoots[a.Shell], "Arrow", mesh, mat, false, ShadowCastingMode.Off);
+                arrow.transform.SetPositionAndRotation(a.Direction * (terrains[a.Shell].SurfaceRadius(a.Direction) + 0.03f),
+                    Quaternion.LookRotation(a.Pointing, a.Direction));
+            }
+        }
+
+        /// <summary>
+        /// A flat arrow in the local XZ plane pointing along +Z, about 2.6 long: one solid shape (shaft and head
+        /// sharing their corners, so there are no seams), with a thin rim down to the floor.
+        /// </summary>
+        static Mesh ArrowMesh()
+        {
+            const float shaft = 0.24f, head = 0.75f, tail = -1.3f, neck = 0.15f, tip = 1.3f, thick = 0.04f;
+            // Outline, counterclockwise seen from above.
+            var outline = new[]
+            {
+                new Vector3(-shaft, 0f, tail), new Vector3(shaft, 0f, tail), new Vector3(shaft, 0f, neck),
+                new Vector3(head, 0f, neck), new Vector3(0f, 0f, tip), new Vector3(-head, 0f, neck), new Vector3(-shaft, 0f, neck),
+            };
+            var verts = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var indices = new List<int>();
+            foreach (var p in outline) { verts.Add(p + Vector3.up * thick); normals.Add(Vector3.up); }
+            // Top: the shaft as two triangles, the head as three, all on the outline's own corners.
+            int[] top = { 0, 2, 1, 0, 6, 2, 6, 4, 2, 2, 4, 3, 6, 5, 4 };
+            indices.AddRange(top);
+            // Rim: a thin wall around the edge, so it reads as one raised piece from low angles too.
+            for (int k = 0; k < outline.Length; k++)
+            {
+                Vector3 a = outline[k], b = outline[(k + 1) % outline.Length];
+                Vector3 n = Vector3.Cross(Vector3.up, b - a).normalized * -1f;
+                int v = verts.Count;
+                verts.Add(a); verts.Add(b); verts.Add(b + Vector3.up * thick); verts.Add(a + Vector3.up * thick);
+                normals.Add(n); normals.Add(n); normals.Add(n); normals.Add(n);
+                indices.Add(v); indices.Add(v + 2); indices.Add(v + 1);
+                indices.Add(v); indices.Add(v + 3); indices.Add(v + 2);
+            }
+            var mesh = new Mesh { name = "Arrow" };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(indices, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>A flat flag symbol in the local XZ plane, about <paramref name="size"/> tall along Z: a pole and a pennant.</summary>
+        static Mesh FlagMesh(float size)
+        {
+            var temp = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var box = temp.GetComponent<MeshFilter>().sharedMesh;
+            const float h = 0.05f;
+            float pole = size * 1.6f;
+            var parts = new System.Collections.Generic.List<CombineInstance>
+            {
+                new CombineInstance { mesh = box, transform = Matrix4x4.TRS(new Vector3(-size * 0.45f, 0f, 0f), Quaternion.identity, new Vector3(0.12f, h, pole)) },
+            };
+            // The pennant: a stack of bars narrowing toward its tip, so it reads as a triangle.
+            const int bars = 7;
+            float top = pole * 0.5f, depth = size * 0.75f;
+            for (int i = 0; i < bars; i++)
+            {
+                float f = (i + 0.5f) / bars;
+                float length = size * 1.05f * (1f - Mathf.Abs(f - 0.5f) * 2f) + 0.08f;
+                float z = top - f * depth;
+                parts.Add(new CombineInstance
+                {
+                    mesh = box,
+                    transform = Matrix4x4.TRS(new Vector3(-size * 0.45f + length * 0.5f, 0f, z), Quaternion.identity, new Vector3(length, h, depth / bars * 1.02f)),
+                });
+            }
+            var mesh = new Mesh { name = "Flag" };
             mesh.CombineMeshes(parts.ToArray(), true, true);
             Object.DestroyImmediate(temp);
             return mesh;

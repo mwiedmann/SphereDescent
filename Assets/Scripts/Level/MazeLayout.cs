@@ -88,6 +88,24 @@ namespace SphereDescent
         public List<LaserGate> LaserGates = new List<LaserGate>();
         public List<SecurityCamera> Cameras = new List<SecurityCamera>();
         public List<Cube> Cubes = new List<Cube>();
+        public List<Checkpoint> Checkpoints = new List<Checkpoint>();
+        public List<Arrow> Arrows = new List<Arrow>();
+
+        public struct Arrow
+        {
+            public int Shell;
+            public Vector3 Direction;  // unit direction of where it lies
+            public Vector3 Pointing;   // unit tangent it points along
+        }
+
+        public struct Checkpoint
+        {
+            public int Shell;
+            public int Section;
+            public int Cell;
+            public int RouteIndex;     // position along the section's route
+            public Vector3 Direction;  // unit direction of the pad's center
+        }
 
         public struct Cube
         {
@@ -174,8 +192,10 @@ namespace SphereDescent
             // Own random streams, so hazard settings never change the maze itself.
             PlaceLaserGates(layout, s, new Random(seed * 17 + 3));
             PlaceCameras(layout, s, new Random(seed * 13 + 5));
+            PlaceCheckpoints(layout, s);
             PlaceMines(layout, s, new Random(seed * 31 + 7));
             PlaceCubes(layout, s, new Random(seed * 7 + 11));
+            PlaceArrows(layout, s);
             return layout;
         }
 
@@ -347,15 +367,44 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// Energy cubes on each section. Some are spread evenly along the main route (skipping the cells where
-        /// you arrive and leave); the rest are hidden in side-lane cells, the ones farthest off the route first,
-        /// tucked against the wall that faces away from the route so they only show once you look around the
-        /// corner. The most hidden one is the super cube. Side lanes are part of the section, so every cube can
-        /// be reached; cubes keep clear of mines and walls.
+        /// A checkpoint on each section: on the route cell nearest its middle that's clear of laser gates and
+        /// camera doorways (mines are placed later and keep clear of it). Sections too short to have a middle
+        /// apart from their ends get none.
+        /// </summary>
+        static void PlaceCheckpoints(MazeLayout layout, LevelSettings s)
+        {
+            if (!s.checkpoints) return;
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                int shell = layout.Sections[i].Shell;
+                var route = layout.Route(i);
+                int best = -1;
+                for (int k = 2; k < route.Count - 2; k++)
+                {
+                    if (layout.ReservedForHazard(shell, route[k])) continue;
+                    if (best < 0 || Mathf.Abs(2 * k - route.Count) < Mathf.Abs(2 * best - route.Count)) best = k;
+                }
+                if (best < 0) continue;
+                layout.Checkpoints.Add(new Checkpoint
+                {
+                    Shell = shell, Section = i, Cell = route[best], RouteIndex = best,
+                    Direction = layout.Grids[shell].CellCenters[route[best]],
+                });
+            }
+        }
+
+        /// <summary>
+        /// Energy cubes on each section, placed separately in the halves before and after its checkpoint (the
+        /// whole section is one half if it has no checkpoint). In each half some are spread evenly along the
+        /// main route (skipping where you arrive and leave, and the checkpoint); the rest are hidden in side-lane
+        /// cells branching off that half, the ones farthest off the route first, tucked against the wall that
+        /// faces away from the route so they only show once you look around the corner. The most hidden one is
+        /// the half's super cube. Side lanes are part of the section, so every cube can be reached; cubes keep
+        /// clear of mines, walls, holes and the checkpoint.
         /// </summary>
         static void PlaceCubes(MazeLayout layout, LevelSettings s, Random rng)
         {
-            if (s.cubesPerLeg <= 0) return;
+            if (s.cubesPerHalfLeg <= 0) return;
             for (int i = 0; i < layout.Sections.Count; i++)
             {
                 var sec = layout.Sections[i];
@@ -363,13 +412,14 @@ namespace SphereDescent
                 var grid = layout.Grids[shell];
                 float radius = s.shellRadii[shell];
                 var route = layout.Route(i);
-                var onRoute = new HashSet<int>(route);
-                int hiddenWanted = Mathf.RoundToInt(s.cubesPerLeg * s.hiddenCubeShare);
+                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i);
+                int split = checkpoint >= 0 ? layout.Checkpoints[checkpoint].RouteIndex : -1;
 
-                // Side cells, by how many steps they are off the route (farthest first).
+                // Every cell of the section: how many steps off the route, and which route cell it branches from.
                 var offRoute = new Dictionary<int, int>();
+                var branch = new Dictionary<int, int>();
                 var queue = new Queue<int>();
-                foreach (int c in route) { offRoute[c] = 0; queue.Enqueue(c); }
+                for (int k = 0; k < route.Count; k++) { offRoute[route[k]] = 0; branch[route[k]] = k; queue.Enqueue(route[k]); }
                 while (queue.Count > 0)
                 {
                     int cur = queue.Dequeue();
@@ -377,71 +427,171 @@ namespace SphereDescent
                     {
                         if (offRoute.ContainsKey(nb) || layout.Region[shell][nb] != i || !layout.Open[shell][grid.EdgeBetween(cur, nb)]) continue;
                         offRoute[nb] = offRoute[cur] + 1;
+                        branch[nb] = branch[cur];
                         queue.Enqueue(nb);
                     }
                 }
-                var side = new List<int>();
-                foreach (var kv in offRoute) if (kv.Value > 0 && !layout.ReservedForHazard(shell, kv.Key)) side.Add(kv.Key);
-                side.Sort((a, b) => offRoute[b] != offRoute[a] ? offRoute[b].CompareTo(offRoute[a]) : rng.Next(3) - 1);
 
-                int placedHidden = 0;
-                foreach (int cell in side)
-                {
-                    if (placedHidden >= hiddenWanted) break;
-                    // The cell this side cell is entered from (one step closer to the route).
-                    int from = -1;
-                    foreach (int nb in grid.Neighbors[cell])
-                        if (offRoute.TryGetValue(nb, out int d) && d == offRoute[cell] - 1 && layout.Open[shell][grid.EdgeBetween(cell, nb)]) from = nb;
-                    if (from < 0) continue;
-                    // Tuck it against the closed wall farthest from where you come in.
-                    Vector3 best = Vector3.zero;
-                    float bestFar = -1f;
-                    foreach (int nb in grid.Neighbors[cell])
-                    {
-                        int e = grid.EdgeBetween(cell, nb);
-                        if (layout.Open[shell][e]) continue;
-                        Vector3 mid = (grid.Edges[e].P0 + grid.Edges[e].P1).normalized;
-                        float far = Vector3.Angle(mid, grid.CellCenters[from]);
-                        if (far <= bestFar) continue;
-                        Vector3 inward = Vector3.ProjectOnPlane(grid.CellCenters[cell] - mid, mid).normalized;
-                        Vector3 spot = (mid * radius + inward * (s.wallThickness * 0.5f + 1.6f)).normalized;
-                        if (!CubeFits(layout, s, shell, spot, radius)) continue;
-                        bestFar = far; best = spot;
-                    }
-                    if (best == Vector3.zero)
-                    {
-                        Vector3 center = grid.CellCenters[cell];
-                        if (!CubeFits(layout, s, shell, center, radius)) continue;
-                        best = center;
-                    }
-                    layout.Cubes.Add(new Cube { Shell = shell, Section = i, Cell = cell, Direction = best, Hidden = true, Super = placedHidden == 0 });
-                    placedHidden++;
-                }
+                // Cells holding a mine group: no cubes in among the mines.
+                var mined = new HashSet<int>();
+                foreach (var (mineSection, mineCell) in layout.MineGroups) if (mineSection == i) mined.Add(mineCell);
 
-                // The rest along the route, evenly spaced, nudged around anything in the way.
-                int routeWanted = s.cubesPerLeg - placedHidden;
-                int first = 1, last = route.Count - 2;
-                for (int n = 0; n < routeWanted && last >= first; n++)
+                var halves = split > 0 ? new[] { (1, split - 1), (split + 1, route.Count - 2) } : new[] { (1, route.Count - 2) };
+                foreach (var (from, to) in halves)
                 {
-                    int at = first + (int)((last - first + 1) * (n + 0.5f) / routeWanted);
-                    int cell = route[Mathf.Clamp(at, first, last)];
-                    Vector3 center = grid.CellCenters[cell];
-                    Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
-                    Vector3 y = Vector3.Cross(center, x);
-                    for (int tries = 0; tries < 30; tries++)
+                    bool InHalf(int routeIndex) => routeIndex >= from - 1 && routeIndex <= to + 1;
+                    int hiddenWanted = Mathf.RoundToInt((s.cubesPerHalfLeg - 1) * s.hiddenCubeShare) + 1; // + the super cube
+                    var side = new List<int>();
+                    foreach (var kv in offRoute)
+                        if (kv.Value > 0 && InHalf(branch[kv.Key]) && !layout.ReservedForHazard(shell, kv.Key) && !mined.Contains(kv.Key))
+                            side.Add(kv.Key);
+                    side.Sort((a, b) => offRoute[b] != offRoute[a] ? offRoute[b].CompareTo(offRoute[a]) : rng.Next(3) - 1);
+
+                    int placedHidden = 0, firstOfHalf = layout.Cubes.Count;
+                    foreach (int cell in side)
                     {
-                        float a = (float)rng.NextDouble() * Mathf.PI * 2f, d = tries == 0 ? 0f : (float)rng.NextDouble() * s.cellSpacing * 0.35f;
-                        Vector3 spot = (center * radius + (x * Mathf.Cos(a) + y * Mathf.Sin(a)) * d).normalized;
-                        if (grid.NearestCell(spot) != cell || !CubeFits(layout, s, shell, spot, radius)) continue;
-                        layout.Cubes.Add(new Cube { Shell = shell, Section = i, Cell = cell, Direction = spot });
-                        break;
+                        if (placedHidden >= hiddenWanted) break;
+                        // The cell this side cell is entered from (one step closer to the route).
+                        int entry = -1;
+                        foreach (int nb in grid.Neighbors[cell])
+                            if (offRoute.TryGetValue(nb, out int d) && d == offRoute[cell] - 1 && layout.Open[shell][grid.EdgeBetween(cell, nb)]) entry = nb;
+                        if (entry < 0) continue;
+                        // On the far side of the cell from where you come in, toward its farthest wall, but well off it.
+                        Vector3 best = Vector3.zero;
+                        float bestFar = -1f;
+                        foreach (int nb in grid.Neighbors[cell])
+                        {
+                            int e = grid.EdgeBetween(cell, nb);
+                            if (layout.Open[shell][e]) continue;
+                            Vector3 mid = (grid.Edges[e].P0 + grid.Edges[e].P1).normalized;
+                            float far = Vector3.Angle(mid, grid.CellCenters[entry]);
+                            if (far <= bestFar) continue;
+                            Vector3 inward = Vector3.ProjectOnPlane(grid.CellCenters[cell] - mid, mid).normalized;
+                            Vector3 spot = (mid * radius + inward * (s.wallThickness * 0.5f + s.cellSpacing * 0.28f)).normalized;
+                            if (!CubeFits(layout, s, shell, spot, radius)) continue;
+                            bestFar = far; best = spot;
+                        }
+                        if (best == Vector3.zero)
+                        {
+                            Vector3 center = grid.CellCenters[cell];
+                            if (!CubeFits(layout, s, shell, center, radius)) continue;
+                            best = center;
+                        }
+                        layout.Cubes.Add(new Cube { Shell = shell, Section = i, Cell = cell, Direction = best, Hidden = true, Super = placedHidden == 0 });
+                        placedHidden++;
+                    }
+
+                    // The rest along this half of the route, evenly spaced, in the middle of the passage. A spot
+                    // that's mined or otherwise taken moves to the nearest free route cell in the half.
+                    int routeWanted = s.cubesPerHalfLeg - placedHidden;
+                    for (int n = 0; n < routeWanted && to >= from; n++)
+                    {
+                        int at = Mathf.Clamp(from + (int)((to - from + 1) * (n + 0.5f) / routeWanted), from, to);
+                        for (int step = 0; step <= to - from; step++)
+                        {
+                            int k = at + ((step & 1) == 0 ? step / 2 : -(step + 1) / 2);
+                            if (k < from || k > to || mined.Contains(route[k])) continue;
+                            if (TryPlaceInMiddle(layout, s, rng, shell, i, route[k], radius)) break;
+                        }
+                    }
+                    // No side lane to hide one in: the last cube on this half's route becomes its super cube instead.
+                    if (placedHidden == 0 && layout.Cubes.Count > firstOfHalf)
+                    {
+                        var c = layout.Cubes[layout.Cubes.Count - 1];
+                        c.Super = true;
+                        layout.Cubes[layout.Cubes.Count - 1] = c;
                     }
                 }
-                // No side lanes to hide one in: the last cube on the route becomes the super cube instead.
-                if (placedHidden == 0)
-                    for (int k = layout.Cubes.Count - 1; k >= 0; k--)
-                        if (layout.Cubes[k].Section == i) { var c = layout.Cubes[k]; c.Super = true; layout.Cubes[k] = c; break; }
             }
+        }
+
+        /// <summary>
+        /// Arrows on the floor hinting which way to go: on about every Nth cell of each section's route (not
+        /// the first, skipping cells with mines or hazards), pointing to the next cell along it. Each
+        /// checkpoint gets one just past its pad, pointing on.
+        /// </summary>
+        static void PlaceArrows(MazeLayout layout, LevelSettings s)
+        {
+            if (s.arrowEvery <= 0) return;
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                int shell = layout.Sections[i].Shell;
+                var grid = layout.Grids[shell];
+                float radius = s.shellRadii[shell];
+                var route = layout.Route(i);
+                var mined = new HashSet<int>();
+                foreach (var (mineSection, mineCell) in layout.MineGroups) if (mineSection == i) mined.Add(mineCell);
+                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i);
+                int checkpointAt = checkpoint >= 0 ? layout.Checkpoints[checkpoint].RouteIndex : -1;
+
+                void Add(Vector3 at, int toward)
+                {
+                    at = at.normalized;
+                    Vector3 pointing = Vector3.ProjectOnPlane(grid.CellCenters[toward] - at, at).normalized;
+                    layout.Arrows.Add(new Arrow { Shell = shell, Direction = at, Pointing = pointing });
+                }
+
+                int next = 1;
+                for (int k = 1; k < route.Count - 1; k++)
+                {
+                    if (k == checkpointAt)
+                    {
+                        // Just past the pad's edge, toward the next cell.
+                        Vector3 c = grid.CellCenters[route[k]];
+                        Vector3 on = Vector3.ProjectOnPlane(grid.CellCenters[route[k + 1]] - c, c).normalized;
+                        Add(c * radius + on * (s.checkpointRadius + 1.6f), route[k + 1]);
+                        next = k + s.arrowEvery;
+                        continue;
+                    }
+                    if (k < next || mined.Contains(route[k]) || layout.ReservedForHazard(shell, route[k]) ||
+                        Mathf.Abs(k - checkpointAt) < 2) continue;
+                    Add(grid.CellCenters[route[k]], route[k + 1]);
+                    next = k + s.arrowEvery;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Which way the route goes on from a position: toward the next cell along its section's route after
+        /// the route cell nearest to it. Zero if the position isn't in a section.
+        /// </summary>
+        public Vector3 RouteDirectionAt(int shell, Vector3 position)
+        {
+            int section = SectionAt(shell, position);
+            if (section < 0) return Vector3.zero;
+            var grid = Grids[shell];
+            var route = Route(section);
+            Vector3 up = position.normalized;
+            int nearest = 0;
+            float best = float.MaxValue;
+            for (int k = 0; k < route.Count; k++)
+            {
+                float a = Vector3.Angle(grid.CellCenters[route[k]], up);
+                if (a < best) { best = a; nearest = k; }
+            }
+            // Toward the cell after the nearest one, or along the route's last step at its end.
+            Vector3 target = nearest + 1 < route.Count ? grid.CellCenters[route[nearest + 1]]
+                : Holes[section].Direction;
+            Vector3 dir = Vector3.ProjectOnPlane(target - up, up);
+            return dir.sqrMagnitude > 1e-8f ? dir.normalized : Vector3.zero;
+        }
+
+        /// <summary>A cube near the middle of a cell (its center, or close by if something's in the way).</summary>
+        static bool TryPlaceInMiddle(MazeLayout layout, LevelSettings s, Random rng, int shell, int section, int cell, float radius)
+        {
+            var grid = layout.Grids[shell];
+            Vector3 center = grid.CellCenters[cell];
+            Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 y = Vector3.Cross(center, x);
+            for (int tries = 0; tries < 16; tries++)
+            {
+                float a = (float)rng.NextDouble() * Mathf.PI * 2f, d = tries == 0 ? 0f : (float)rng.NextDouble() * 1.5f;
+                Vector3 spot = (center * radius + (x * Mathf.Cos(a) + y * Mathf.Sin(a)) * d).normalized;
+                if (!CubeFits(layout, s, shell, spot, radius)) continue;
+                layout.Cubes.Add(new Cube { Shell = shell, Section = section, Cell = cell, Direction = spot });
+                return true;
+            }
+            return false;
         }
 
         /// <summary>A cube here can be collected without touching a mine or squeezing against a wall, and isn't on another cube.</summary>
@@ -449,7 +599,7 @@ namespace SphereDescent
         {
             Vector3 p = dir * radius;
             foreach (var m in layout.Mines)
-                if (m.Shell == shell && Vector3.Distance(m.Direction * radius, p) < s.mineRadius + 1.6f) return false;
+                if (m.Shell == shell && Vector3.Distance(m.Direction * radius, p) < s.mineRadius + 3f) return false;
             foreach (var c in layout.Cubes)
                 if (c.Shell == shell && Vector3.Distance(c.Direction * radius, p) < 3f) return false;
             var grid = layout.Grids[shell];
@@ -463,7 +613,9 @@ namespace SphereDescent
                     float t = Mathf.Clamp01(Vector3.Dot(p - a0, a1 - a0) / (a1 - a0).sqrMagnitude);
                     if (Vector3.Distance(p, a0 + (a1 - a0) * t) < s.wallThickness * 0.5f + 0.8f) return false;
                 }
-            // Clear of holes and pads too.
+            // Clear of checkpoint pads, holes and pads too.
+            foreach (var c in layout.Checkpoints)
+                if (c.Shell == shell && Vector3.Angle(c.Direction, dir) * Mathf.Deg2Rad * radius < s.checkpointRadius + 1.5f) return false;
             foreach (var h in layout.Holes)
                 if ((h.Shell == shell || h.Shell + 1 == shell) && Vector3.Angle(h.Direction, dir) * Mathf.Deg2Rad * radius < s.HoleRadius(layout.Grids[h.Shell], h.Shell) + 1.5f)
                     return false;
@@ -515,7 +667,7 @@ namespace SphereDescent
             return dist;
         }
 
-        /// <summary>Cells a mine group shouldn't use: either side of a laser gate or camera doorway, and gate switches.</summary>
+        /// <summary>Cells a mine group shouldn't use: either side of a laser gate or camera doorway, gate switches, and checkpoints.</summary>
         bool ReservedForHazard(int shell, int cell)
         {
             var grid = Grids[shell];
@@ -525,6 +677,8 @@ namespace SphereDescent
             foreach (var c in Cameras)
                 if (c.Shell == shell && (cell == grid.Edges[c.Edge].A || cell == grid.Edges[c.Edge].B))
                     return true;
+            foreach (var c in Checkpoints)
+                if (c.Shell == shell && cell == c.Cell) return true;
             return false;
         }
 
@@ -739,9 +893,11 @@ namespace SphereDescent
             for (int i = 0; i < L - 1 + climbs; i++) moves.Add(1);
             for (int i = 0; i < climbs; i++) moves.Add(-1);
 
+            // Sections a shell has room for: each takes up to about twice its main path in cells (the path plus
+            // side lanes); a layout that still doesn't fit is retried.
             var capacity = new int[L];
             for (int k = 0; k < L; k++)
-                capacity[k] = Mathf.Max(1, Mathf.FloorToInt(grids[k].CellCount / (s.sectionLengthMax * 3f)));
+                capacity[k] = Mathf.Max(1, Mathf.FloorToInt(grids[k].CellCount / (s.sectionLengthMax * 2f)));
 
             var plan = new int[moves.Count + 1];
             var visits = new int[L];

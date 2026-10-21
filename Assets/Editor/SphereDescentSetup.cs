@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -121,7 +122,8 @@ namespace SphereDescent.EditorTools
             int failures = 0;
             var allRoutes = new System.Collections.Generic.List<int>();
             var groupOpenings = new System.Collections.Generic.List<float>();
-            int allCubes = 0, allHidden = 0, totalSections = 0;
+            int allCubes = 0, allHidden = 0, totalSections = 0, arrowsTotal = 0;
+            var routeOffsets = new System.Collections.Generic.List<float>();
             var openingsByShell = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<float>>();
             var minesByShell = new System.Collections.Generic.Dictionary<int, (int groups, int mines)>();
             for (int world = 1; world <= 8; world++)
@@ -229,12 +231,44 @@ namespace SphereDescent.EditorTools
                 {
                     var cubes = layout.Cubes.FindAll(c => c.Section == i);
                     int hidden = cubes.FindAll(c => c.Hidden).Count, supers = cubes.FindAll(c => c.Super).Count;
-                    if (supers != 1 && settings.cubesPerLeg > 0) problems.Append($" section {i + 1} has {supers} super cubes;");
+                    int halves = layout.Checkpoints.Exists(c => c.Section == i) ? 2 : 1;
+                    if (supers != halves && settings.cubesPerHalfLeg > 0) problems.Append($" section {i + 1} has {supers} super cubes;");
                     foreach (var c in cubes)
+                    {
                         if (layout.Region[c.Shell][c.Cell] != i) problems.Append($" a cube in section {i + 1} is outside it;");
+                        if (layout.MineGroups.Exists(g => g.section == i && g.cell == c.Cell)) problems.Append($" a cube among mines in section {i + 1};");
+                        float r = settings.shellRadii[c.Shell];
+                        foreach (var m in layout.Mines)
+                            if (m.Shell == c.Shell && Vector3.Distance(m.Direction * r, c.Direction * r) < settings.mineRadius + 2.9f)
+                                problems.Append($" a cube right by a mine in section {i + 1};");
+                        if (!c.Hidden) routeOffsets.Add(Vector3.Angle(c.Direction, layout.Grids[c.Shell].CellCenters[c.Cell]) * Mathf.Deg2Rad * r);
+                    }
                     cubeCounts.Append($" {cubes.Count}({hidden})");
                     allCubes += cubes.Count; allHidden += hidden; totalSections++;
                 }
+                // Checkpoints: one per section, on its route near the middle, and not on a hazard.
+                int checkpoints = 0;
+                foreach (var cp in layout.Checkpoints)
+                {
+                    var route = layout.Route(cp.Section);
+                    float along = route.IndexOf(cp.Cell) / (float)(route.Count - 1);
+                    if (along < 0.3f || along > 0.7f) problems.Append($" checkpoint in section {cp.Section + 1} is {along:P0} along its route;");
+                    foreach (var m in layout.Mines)
+                        if (m.Shell == cp.Shell && Vector3.Angle(m.Direction, cp.Direction) * Mathf.Deg2Rad * settings.shellRadii[cp.Shell] <
+                            settings.checkpointRadius + settings.mineRadius + 1f)
+                            problems.Append($" a mine on the checkpoint in section {cp.Section + 1};");
+                    checkpoints++;
+                }
+                if (settings.checkpoints && checkpoints < layout.Sections.Count) problems.Append($" only {checkpoints} checkpoints;");
+                // Arrows: one by each checkpoint, pointing along the route away from it.
+                foreach (var cp in layout.Checkpoints)
+                {
+                    float r = settings.shellRadii[cp.Shell];
+                    bool found = layout.Arrows.Exists(ar => ar.Shell == cp.Shell &&
+                        Vector3.Angle(ar.Direction, cp.Direction) * Mathf.Deg2Rad * r < settings.checkpointRadius + 3f);
+                    if (!found) problems.Append($" no arrow by the checkpoint in section {cp.Section + 1};");
+                }
+                arrowsTotal += layout.Arrows.Count;
                 var cameraSections = new System.Text.StringBuilder();
                 for (int i = 0; i < layout.Sections.Count; i++)
                 {
@@ -301,7 +335,9 @@ namespace SphereDescent.EditorTools
                 Debug.Log($"[Validate] shortest route per section (cells): min {allRoutes[0]}, median {allRoutes[allRoutes.Count / 2]}, " +
                           $"max {allRoutes[allRoutes.Count - 1]}; about {settings.cellSpacing:F1} units per cell");
             if (totalSections > 0)
-                Debug.Log($"[Validate] cubes: {allCubes / (float)totalSections:F1} per section on average, {allHidden / (float)totalSections:F1} of them hidden");
+                Debug.Log($"[Validate] cubes: {allCubes / (float)totalSections:F1} per section on average, {allHidden / (float)totalSections:F1} of them hidden; " +
+                          $"route cubes at most {(routeOffsets.Count > 0 ? routeOffsets.Max() : 0f):F1} from their cell's middle; " +
+                          $"{arrowsTotal / (float)totalSections:F1} arrows per section");
             groupOpenings.Sort();
             if (groupOpenings.Count > 0)
                 Debug.Log($"[Validate] mine groups: {groupOpenings.Count}; widest ball that could roll through a group: " +
@@ -832,7 +868,9 @@ namespace SphereDescent.EditorTools
                 Vector3 behind = Vector3.ProjectOnPlane(g0.CellCenters[route0[k - 1]] - c, c).normalized;
                 if (Vector3.Dot(ahead, -behind) > 0.9f) { at = k; break; }
             }
-            GameView("gameplay", 0, g0.CellCenters[route0[at]], g0.CellCenters[route0[at + 1]], orbit.pitch);
+            // A third of the way to the next cell, so the ball isn't sitting on a floor arrow.
+            Vector3 rolling = Vector3.Slerp(g0.CellCenters[route0[at]], g0.CellCenters[route0[at + 1]], 0.35f);
+            GameView("gameplay", 0, rolling, g0.CellCenters[route0[at + 1]], orbit.pitch);
 
             // Approaching the hole at the end of the first section.
             var drop = layout.Holes[0];
@@ -909,6 +947,23 @@ namespace SphereDescent.EditorTools
                 Render("laser_pad", padBall, padEye, Quaternion.LookRotation(pad * r - padEye, pad), g.Shell);
             }
 
+            // A checkpoint just reached, with its arrow pointing on along the route.
+            if (layout.Checkpoints.Count > 0)
+            {
+                var cp = layout.Checkpoints[0];
+                var grid = layout.Grids[cp.Shell];
+                var route = Route(cp.Section);
+                foreach (var pad in level.GetComponentsInChildren<CheckpointPad>())
+                    if (Vector3.Angle(pad.transform.position, cp.Direction) < 0.01f)
+                        foreach (var x in pad.indicators) x.sharedMaterial = pad.active;
+                float r = Ground(cp.Shell, cp.Direction);
+                Vector3 back = Vector3.ProjectOnPlane(grid.CellCenters[route[cp.RouteIndex - 1]] - cp.Direction, cp.Direction).normalized;
+                Vector3 onPad = (cp.Direction * r + back * 0.8f).normalized * (r + 0.5f);
+                Vector3 cpEye = cp.Direction * (r + 6.5f) + back * 9f;
+                level.SetBeamSection(cp.Section);
+                Render("checkpoint", onPad, cpEye, Quaternion.LookRotation(cp.Direction * r - back * 2f - cpEye, cp.Direction), cp.Shell);
+            }
+
             // A run of security cameras sweeping their doorways, and one catching the ball.
             if (layout.Cameras.Count > 0)
             {
@@ -952,7 +1007,7 @@ namespace SphereDescent.EditorTools
                 innerBackground = deepSea.innerBackground;
                 level.SetBeamSection(0);
                 // Lower pitch than the gameplay shot, so the water sky and its light shafts show.
-                GameView("deep_sea", 0, g0.CellCenters[route0[at]], g0.CellCenters[route0[at + 1]], orbit.pitch - 16f);
+                GameView("deep_sea", 0, rolling, g0.CellCenters[route0[at + 1]], orbit.pitch - 16f);
             }
 
             Object.DestroyImmediate(ball);

@@ -56,6 +56,8 @@ namespace SphereDescent
         public bool OnPad => pad != null && Time.time - padSeenAt < 0.15f;
         /// <summary>True while the player is pushing back (down), e.g. to back out of a dead end.</summary>
         public bool PushingBack => moveInput.y < -0.5f;
+        /// <summary>True while the player is steering at all.</summary>
+        public bool Steering => moveInput.sqrMagnitude > 0.01f;
 
         Rigidbody rb;
         Vector2 moveInput;
@@ -113,7 +115,12 @@ namespace SphereDescent
             {
                 dropping = false;
                 lastGroundedAt = Time.time;
-                if (CurrentLayer != checkpointLayer) { checkpoint = pos; checkpointLayer = CurrentLayer; }
+                if (CurrentLayer != checkpointLayer)
+                {
+                    checkpoint = pos;
+                    checkpointLayer = CurrentLayer;
+                    LandedOnNewLayer?.Invoke();
+                }
             }
 
             rb.AddForce(-up * gravity, ForceMode.Acceleration);
@@ -259,11 +266,25 @@ namespace SphereDescent
             CurrentLayer = Mathf.Max(0, checkpointLayer);
         }
 
+        /// <summary>Makes this the place the ball comes back to on its current layer (a checkpoint pad).</summary>
+        public void SetCheckpoint(Vector3 position)
+        {
+            checkpoint = position;
+            checkpointLayer = CurrentLayer;
+        }
+
+        /// <summary>Sent when the ball first touches down on a layer after dropping through a hole or climbing.</summary>
+        public event System.Action LandedOnNewLayer;
+
+        /// <summary>Sent after the ball reappears at its checkpoint, so the camera can face the way on.</summary>
+        public event System.Action Respawned;
+
         public void RespawnAtCheckpoint()
         {
             int layer = checkpointLayer;
             Teleport(checkpoint + checkpoint.normalized * 0.5f);
             checkpointLayer = layer;
+            Respawned?.Invoke();
         }
 
         /// <summary>Blown up by a mine or lasers: vanish in a fireball, then reappear at the checkpoint.</summary>
