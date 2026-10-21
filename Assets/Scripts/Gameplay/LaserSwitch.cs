@@ -42,7 +42,10 @@ namespace SphereDescent
             if (other.attachedRigidbody == null || !other.attachedRigidbody.TryGetComponent(out BallController _)) return;
             pressed = true;
             foreach (var r in indicators) if (r != null) r.sharedMaterial = disarmed;
-            if (cable != null && cableTriangles != null && cableTriangles.Length > 0) StartCoroutine(LightCable());
+            // Run on the level, which is always on: the pad's chunk may be switched off as the ball follows the cable.
+            MonoBehaviour host = GetComponentInParent<LevelInstance>();
+            if (host == null) host = this;
+            if (cable != null && cableTriangles != null && cableTriangles.Length > 0) host.StartCoroutine(LightCable());
             else gate.Deactivate();
         }
 

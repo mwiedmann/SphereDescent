@@ -477,6 +477,58 @@ namespace SphereDescent
             normals[normals.Count - 1] = n3.normalized;
         }
 
+        /// <summary>
+        /// Splits a mesh into pieces by which of <paramref name="centers"/> (unit directions) each triangle's
+        /// middle lies nearest to, keeping vertex positions, normals and UVs exactly, so the pieces fit back
+        /// together seamlessly. Entries are null for centers with no triangles.
+        /// </summary>
+        public static Mesh[] SplitByDirection(Mesh mesh, Vector3[] centers, string name)
+        {
+            var verts = mesh.vertices;
+            var normals = mesh.normals;
+            var uvs = new List<Vector2>();
+            mesh.GetUVs(0, uvs);
+            var tris = mesh.triangles;
+            var pieceTris = new List<int>[centers.Length];
+            for (int t = 0; t < tris.Length; t += 3)
+            {
+                Vector3 mid = (verts[tris[t]] + verts[tris[t + 1]] + verts[tris[t + 2]]).normalized;
+                int best = 0;
+                float bestDot = -2f;
+                for (int c = 0; c < centers.Length; c++)
+                {
+                    float d = Vector3.Dot(mid, centers[c]);
+                    if (d > bestDot) { bestDot = d; best = c; }
+                }
+                (pieceTris[best] ??= new List<int>()).AddRange(new[] { tris[t], tris[t + 1], tris[t + 2] });
+            }
+            var pieces = new Mesh[centers.Length];
+            for (int c = 0; c < centers.Length; c++)
+            {
+                if (pieceTris[c] == null) continue;
+                var remap = new Dictionary<int, int>();
+                var pv = new List<Vector3>();
+                var pn = new List<Vector3>();
+                var pu = new List<Vector2>();
+                var pt = new List<int>(pieceTris[c].Count);
+                foreach (int v in pieceTris[c])
+                {
+                    if (!remap.TryGetValue(v, out int nv))
+                    {
+                        remap[v] = nv = pv.Count;
+                        pv.Add(verts[v]);
+                        pn.Add(normals[v]);
+                        if (uvs.Count > 0) pu.Add(uvs[v]);
+                    }
+                    pt.Add(nv);
+                }
+                var piece = MakeMesh(name, pv, pn, pt);
+                if (pu.Count > 0) piece.SetUVs(0, pu);
+                pieces[c] = piece;
+            }
+            return pieces;
+        }
+
         static Mesh MakeMesh(string name, List<Vector3> verts, List<Vector3> normals, List<int> indices)
         {
             var mesh = new Mesh { name = name, indexFormat = verts.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };

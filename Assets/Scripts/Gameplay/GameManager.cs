@@ -371,6 +371,7 @@ namespace SphereDescent
                 int cameraLayer = level.LayerAt(orbit.transform.position.magnitude);
                 int visibleLayer = Mathf.Max(ball.CurrentLayer, cameraLayer);
                 level.SetVisibleLayers(visibleLayer);
+                level.UpdateChunks(cam.transform.position);
                 // Below the surface the layers above are hidden, and the sky is plain black.
                 cam.clearFlags = visibleLayer > 0 ? CameraClearFlags.SolidColor : surfaceClearFlags;
                 cam.backgroundColor = visibleLayer > 0 ? (style != null ? style.innerBackground : Color.black) : skyColor;

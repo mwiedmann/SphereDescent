@@ -102,6 +102,33 @@ namespace SphereDescent
             shadowLayer = layer;
         }
 
+        (GameObject chunk, Vector3 center, int layer)[] chunks;
+        float chunkRange, otherLayerRange;
+
+        internal void RegisterChunks(List<(GameObject chunk, Vector3 center, int layer)> list, float range, float otherLayers)
+        {
+            chunks = list.ToArray();
+            chunkRange = range;
+            otherLayerRange = otherLayers;
+        }
+
+        /// <summary>
+        /// Switches on the chunks (floor, walls and everything in them) near the viewer and switches the rest
+        /// off. On the layer in view that's everything within sight; on the other layers (hidden anyway) just
+        /// the area right around the viewer, so whatever's under a hole or over a pad is ready when the ball
+        /// gets there. Physics colliders for the floor and walls are separate and always on.
+        /// </summary>
+        public void UpdateChunks(Vector3 viewer)
+        {
+            if (chunks == null) return;
+            float inView2 = chunkRange * chunkRange, other2 = otherLayerRange * otherLayerRange;
+            foreach (var (chunk, center, layer) in chunks)
+            {
+                bool near = (center - viewer).sqrMagnitude < (layer == visibleFocus ? inView2 : other2);
+                if (chunk.activeSelf != near) chunk.SetActive(near);
+            }
+        }
+
         internal void RegisterLayers(Transform[] layerRoots)
         {
             layerRenderers = new Renderer[layerRoots.Length][];

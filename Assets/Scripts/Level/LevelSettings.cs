@@ -127,6 +127,14 @@ namespace SphereDescent
         [Tooltip("How high the light beam over the current section's hole or boost pad rises into the sky.")]
         public float beamHeight = 100f;
 
+        [Header("Performance")]
+        [Tooltip("Each sphere is drawn in chunks about this many units across; only chunks near the camera are " +
+                 "switched on (along with the hazards and pickups in them).")]
+        public float chunkSize = 30f;
+        [Tooltip("How far from the camera a chunk's middle can be and still be switched on (plus half a chunk). " +
+                 "Too small and distant maze pops in.")]
+        public float chunkViewDistance = 75f;
+
         [Header("Mesh detail")]
         public int shellMeshSubdivisions = 6;
         public int coreMeshSubdivisions = 5;

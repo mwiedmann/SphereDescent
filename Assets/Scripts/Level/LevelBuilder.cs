@@ -39,6 +39,19 @@ namespace SphereDescent
             }
 
             var terrains = BuildTerrains(layout, s);
+            // Each shell is drawn in chunks; only those near the camera are switched on.
+            var chunkGrids = new SphereGrid[layout.ShellCount];
+            var chunkRoots = new Transform[layout.ShellCount][];
+            for (int shell = 0; shell < layout.ShellCount; shell++)
+            {
+                chunkGrids[shell] = SphereGrid.ForRadius(s.shellRadii[shell], s.chunkSize);
+                chunkRoots[shell] = new Transform[chunkGrids[shell].CellCount];
+                for (int c = 0; c < chunkRoots[shell].Length; c++)
+                {
+                    chunkRoots[shell][c] = new GameObject($"Chunk {c}").transform;
+                    chunkRoots[shell][c].SetParent(layerRoots[shell], false);
+                }
+            }
             for (int shell = 0; shell < layout.ShellCount; shell++)
             {
                 var grid = layout.Grids[shell];
@@ -54,8 +67,13 @@ namespace SphereDescent
 
                 var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 3f, style.groundZoneMix, style));
                 var shellMesh = level.Own(MeshBuilders.BuildShell(shellIco, radius, s.shellThickness, cuts, terrain));
-                // Shells don't cast shadows, otherwise the outer shell would plunge every inner layer into darkness.
-                CreateMeshObject(layerRoot, "Shell", shellMesh, groundMat, true, ShadowCastingMode.Off);
+                // Physics uses the whole shell (no seams to catch the ball); it's drawn in chunks. Shells don't cast
+                // shadows, otherwise the outer shell would plunge every inner layer into darkness.
+                AddCollider(layerRoot, "Shell", shellMesh);
+                var shellPieces = MeshBuilders.SplitByDirection(shellMesh, chunkGrids[shell].CellCenters, "Shell Chunk");
+                for (int c = 0; c < shellPieces.Length; c++)
+                    if (shellPieces[c] != null)
+                        CreateMeshObject(chunkRoots[shell][c], "Shell", level.Own(shellPieces[c]), groundMat, false, ShadowCastingMode.Off);
 
                 var walls = new List<(Vector3, Vector3)>();
                 for (int e = 0; e < grid.Edges.Length; e++)
@@ -67,8 +85,15 @@ namespace SphereDescent
                 wallMat.SetFloat("_WallHeight", s.wallHeight);
                 wallMat.SetFloat("_LineWidth", 0.025f); // thinner panel lines than the floor's
                 var wallMesh = level.Own(MeshBuilders.BuildWalls(walls, radius, s.wallHeight, s.wallThickness, terrain));
-                var wallObj = CreateMeshObject(layerRoot, "Walls", wallMesh, wallMat, true, ShadowCastingMode.On);
-                level.RegisterShadowCaster(shell, wallObj.GetComponent<MeshRenderer>());
+                AddCollider(layerRoot, "Walls", wallMesh);
+                // Cut from the finished walls, so the joints between pieces stay seamless.
+                var wallPieces = MeshBuilders.SplitByDirection(wallMesh, chunkGrids[shell].CellCenters, "Walls Chunk");
+                for (int c = 0; c < wallPieces.Length; c++)
+                {
+                    if (wallPieces[c] == null) continue;
+                    var piece = CreateMeshObject(chunkRoots[shell][c], "Walls", level.Own(wallPieces[c]), wallMat, false, ShadowCastingMode.On);
+                    level.RegisterShadowCaster(shell, piece.GetComponent<MeshRenderer>());
+                }
 
                 // Glowing rings mark holes: cyan = you can come back up through it, orange = one-way drop.
                 var upRing = level.Own(MeshBuilders.BuildTorus(holeRadius + 0.3f, 0.18f));
@@ -129,6 +154,24 @@ namespace SphereDescent
             var coreMesh = level.Own(MeshBuilders.BuildSphere(IcoSphere.Get(s.coreMeshSubdivisions), s.coreRadius));
             CreateMeshObject(coreRoot, "Core (Exit)", coreMesh, coreMat, true, ShadowCastingMode.Off);
 
+            // Everything else on a shell (hazards, pickups, pads, rings) goes into the chunk it sits in, so it's
+            // switched off with it. Exit beams and cables stay out: they're meant to be seen from afar.
+            var chunks = new List<(GameObject chunk, Vector3 center, int layer)>();
+            for (int shell = 0; shell < layout.ShellCount; shell++)
+            {
+                var loose = new List<Transform>();
+                foreach (Transform child in layerRoots[shell])
+                    if (!child.name.StartsWith("Chunk ") && child.name != "Shell" && child.name != "Walls" &&
+                        child.name != "Light Beam" && child.name != "Cable")
+                        loose.Add(child);
+                foreach (var child in loose)
+                    child.SetParent(chunkRoots[shell][chunkGrids[shell].NearestCell(child.position.normalized)], true);
+                for (int c = 0; c < chunkRoots[shell].Length; c++)
+                    chunks.Add((chunkRoots[shell][c].gameObject, chunkGrids[shell].CellCenters[c] * s.shellRadii[shell], shell));
+            }
+            // Other layers: about a chunk around the viewer, reaching the next shell down (or up) from the camera.
+            float layerGap = s.ShellCount > 1 ? s.shellRadii[0] - s.shellRadii[1] : 14f;
+            level.RegisterChunks(chunks, s.chunkViewDistance + s.chunkSize * 0.75f, layerGap + 6f + s.chunkSize * 0.75f);
             level.RegisterLayers(layerRoots);
             return level;
         }
@@ -580,13 +623,14 @@ namespace SphereDescent
 
                 // Its light: a pool on the ground and a faint cone, each with its own material so it can turn red.
                 var spotMat = level.Own(new Material(mats.spot));
-                var spot = CreateMeshObject(root, "Spotlight", discMesh, spotMat, false, ShadowCastingMode.Off).transform;
+                // Its spot, cone and laser belong to the camera, so they're switched on and off with it.
+                var spot = CreateMeshObject(go.transform, "Spotlight", discMesh, spotMat, false, ShadowCastingMode.Off).transform;
                 spot.localScale = Vector3.one * s.spotRadius;
                 var coneMat = level.Own(BeamMaterial(mats.beam, Color.white, 1f));
                 coneMat.SetFloat("_BandStrength", 0f);
-                var cone = CreateMeshObject(root, "Light Cone", coneMesh, coneMat, false, ShadowCastingMode.Off).transform;
+                var cone = CreateMeshObject(go.transform, "Light Cone", coneMesh, coneMat, false, ShadowCastingMode.Off).transform;
 
-                var laser = Part(root, PrimitiveType.Cylinder, "Camera Laser", laserMat);
+                var laser = Part(go.transform, PrimitiveType.Cylinder, "Camera Laser", laserMat);
 
                 var cam = go.AddComponent<SecurityCamera>();
                 cam.head = head;
@@ -925,6 +969,14 @@ namespace SphereDescent
             m.SetColor("_Color", color);
             m.SetFloat("_FadeStart", fadeStart);
             return m;
+        }
+
+        /// <summary>An invisible object that only collides, with this mesh.</summary>
+        static void AddCollider(Transform parent, string name, Mesh mesh)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshCollider>().sharedMesh = mesh;
         }
 
         static GameObject CreateMeshObject(Transform parent, string name, Mesh mesh, Material mat, bool collider, ShadowCastingMode shadows)
