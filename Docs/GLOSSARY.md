@@ -50,7 +50,7 @@ The words we use when talking about Sphere Descent, and what each is called in t
 
 | Term | Meaning | In the code |
 |---|---|---|
-| **Major hazard** | A laser gate, camera run or acid pool: the big obstacles, each placed every few sections and staggered so they take turns. Mines are not major hazards; they're spread through every section. | `laserGateEvery`, `cameraEvery`, `acidPoolEvery`; their cells are `ReservedForHazard` |
+| **Major hazard** | A laser gate, camera run, acid pool or mortar: the big obstacles, two in each half section on the first two spheres and one on the innermost ones, never the same kind twice in a half, each kind used about equally. Mines are not major hazards; they're spread through every section. | `MazeLayout.MajorHazard`, `majorHazardsPerHalf` |
 | **Mine group** | A cluster of mines in one cell, including its **wall mines** (one beside each wall, so you can't hug the wall past). | `MineGroups`, `Mine.NearWall` |
 | **Laser gate** | Horizontal lasers filling a choke point. | `LaserGate` |
 | **Key pad** | The pad that switches a laser gate off, marked with a key, usually down a spur. | `LaserSwitch` |
@@ -59,6 +59,8 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | **Sweep pattern** | How a camera's **spotlight** moves: **figure-8**, **orbit** or **sweep**. | `SweepPattern` |
 | **Acid pool** | A cell on the route (entered through a choke point) sunk into a pit of acid; falling in destroys the ball. | `AcidPool`, `MazeLayout.AcidPools` |
 | **Bridge** | The narrow beam across an acid pool, from the doorway in to the doorway out, with a round landing where it bends. | `acidBridgeWidth` |
+| **Mortar** | A turret on top of a wall that lobs bombs at the ball while it's in range, aimed where the ball will be if it keeps rolling the same way. | `Mortar`, `MazeLayout.Mortars` |
+| **Bomb marker** | The flashing red circle where a mortar bomb will land; it's as wide as the blast. | `MortarBomb` |
 
 ## Pickups
 

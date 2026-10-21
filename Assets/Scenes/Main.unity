@@ -447,9 +447,14 @@ MonoBehaviour:
     fewerMinesInnermost: 2
     innermostGroupSizeCut: 1
     innermostMineGap: 2.4
-    laserGateEvery: 2
+    majorHazardsPerHalf: 2
+    fewerHazardsInnermost: 2
+    majorHazardsPerHalfInnermost: 1
+    laserGates: 1
+    securityCameras: 1
+    acidPools: 1
+    mortars: 1
     laserRows: 7
-    cameraEvery: 2
     camerasPerGroup: 3
     spotRadius: 2.2
     spotPeriod: 3.75
@@ -461,9 +466,11 @@ MonoBehaviour:
     superCubePoints: 5
     cubeSize: 0.5
     cubeCoreSize: 0.08
-    acidPoolEvery: 2
-    acidPoolFirstSection: 2
     acidBridgeWidth: 2.275
+    mortarRange: 18
+    mortarInterval: 1.5
+    mortarFlightTime: 1
+    mortarBlastRadius: 2.4
     checkpoints: 1
     checkpointRadius: 2.8
     arrowEvery: 4

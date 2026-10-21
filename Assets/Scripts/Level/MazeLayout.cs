@@ -58,6 +58,27 @@ namespace SphereDescent
             public SweepPattern Pattern;
         }
 
+        public struct Mortar
+        {
+            public int Shell;
+            public int Section;
+            public int Cell;           // the route cell it stands beside
+            public int RouteIndex;     // that cell's position along the section's route
+            public int Wall;           // the wall (a closed edge of that cell) it sits on top of
+            public Vector3 Mount;      // unit direction of its foot: the middle of that wall
+        }
+
+        /// <summary>The big obstacles, placed a few to each half section, as opposed to mines (which are everywhere).</summary>
+        public enum MajorHazard { LaserGate, CameraRun, AcidPool, Mortar }
+
+        public struct PlacedHazard
+        {
+            public int Section;
+            public int Half;           // 0 = before the checkpoint, 1 = after
+            public MajorHazard Type;
+            public int Start, End;     // the stretch of the section's route it takes up (route indices, inclusive)
+        }
+
         // Clear space kept between any two mines, so the ball (1 unit across) can always roll between them.
         // The innermost shells use their own, roomier gap (Innermost Mine Gap).
         public const float MinePassage = 1.6f;
@@ -91,6 +112,8 @@ namespace SphereDescent
         public List<Cube> Cubes = new List<Cube>();
         public List<Checkpoint> Checkpoints = new List<Checkpoint>();
         public List<AcidPool> AcidPools = new List<AcidPool>();
+        public List<Mortar> Mortars = new List<Mortar>();
+        public List<PlacedHazard> MajorHazards = new List<PlacedHazard>();
 
         public struct AcidPool
         {
@@ -201,9 +224,7 @@ namespace SphereDescent
             for (int shell = 0; shell < L; shell++)
                 CarveFiller(layout.Grids[shell], layout.Region[shell], layout.Open[shell], rng);
             // Own random streams, so hazard settings never change the maze itself.
-            PlaceLaserGates(layout, s, new Random(seed * 17 + 3));
-            PlaceCameras(layout, s, new Random(seed * 13 + 5));
-            PlaceAcidPools(layout, s);
+            PlaceMajorHazards(layout, s, new Random(seed * 17 + 3));
             PlaceCheckpoints(layout, s);
             PlaceMines(layout, s, new Random(seed * 31 + 7));
             PlaceSingleMines(layout, s, new Random(seed * 19 + 13));
@@ -212,41 +233,121 @@ namespace SphereDescent
             return layout;
         }
 
+        enum Prefer { Early, Late, Middle }
+
         /// <summary>
-        /// A laser gate on the odd-numbered sections (1st, 3rd, ...; with Laser Gate Every = 2): lasers fill a doorway that every route through the section
-        /// has to cross, and a pad on the near side turns them off. The pad goes down its own short dead-end
-        /// side path when there's a sealed-off cell beside the section to carve one into; otherwise in a side
-        /// lane, or failing that on the route. A section that has no such doorway passes its turn to the next.
+        /// Major hazards: each half of a section (before and after its checkpoint) gets Major Hazards Per Half
+        /// of them (fewer on the innermost spheres), never the same kind twice in one half. Each pick is the
+        /// kind used least so far in the world (ties broken at random) that fits, so every kind turns up about
+        /// equally often. A half's first hazard goes as early in it as it fits and a second as late, leaving
+        /// room between them; a lone one goes in the middle. Hazards stay two cells clear of a section's ends,
+        /// keep the middle cell free for the checkpoint, and leave at least one clear cell between each other.
         /// </summary>
-        static void PlaceLaserGates(MazeLayout layout, LevelSettings s, Random rng)
+        static void PlaceMajorHazards(MazeLayout layout, LevelSettings s, Random rng)
         {
-            if (s.laserGateEvery <= 0) return;
-            int due = 0;
+            var kinds = new List<MajorHazard>();
+            if (s.laserGates) kinds.Add(MajorHazard.LaserGate);
+            if (s.securityCameras) kinds.Add(MajorHazard.CameraRun);
+            if (s.acidPools) kinds.Add(MajorHazard.AcidPool);
+            if (s.mortars) kinds.Add(MajorHazard.Mortar);
+            if (kinds.Count == 0) return;
+            var used = new int[4];
             for (int i = 0; i < layout.Sections.Count; i++)
             {
-                if (i < due) continue;
-                if (TryPlaceLaserGate(layout, i, rng)) due = i + s.laserGateEvery;
+                int shell = layout.Sections[i].Shell;
+                var route = layout.Route(i);
+                int n = route.Count, mid = n / 2; // where the checkpoint goes
+                int perHalf = shell >= layout.ShellCount - s.fewerHazardsInnermost ? s.majorHazardsPerHalfInnermost : s.majorHazardsPerHalf;
+                for (int half = 0; half < 2; half++)
+                {
+                    int lo = half == 0 ? 2 : mid + 1, hi = half == 0 ? mid - 1 : n - 3;
+                    var here = new List<MajorHazard>();
+                    for (int slot = 0; slot < perHalf; slot++)
+                    {
+                        var prefer = perHalf == 1 ? Prefer.Middle : slot == 0 ? Prefer.Early : Prefer.Late;
+                        // Shuffled, then the least used first (the sort is stable, so ties stay shuffled).
+                        var order = new List<MajorHazard>();
+                        foreach (var k in kinds) if (!here.Contains(k)) order.Add(k);
+                        for (int j = order.Count - 1; j > 0; j--) { int r = rng.Next(j + 1); (order[j], order[r]) = (order[r], order[j]); }
+                        for (int j = 1; j < order.Count; j++)
+                            for (int m = j; m > 0 && used[(int)order[m - 1]] > used[(int)order[m]]; m--)
+                                (order[m], order[m - 1]) = (order[m - 1], order[m]);
+                        foreach (var kind in order)
+                        {
+                            int start, end;
+                            bool placed = kind switch
+                            {
+                                MajorHazard.LaserGate => TryPlaceLaserGate(layout, i, lo, hi, mid, prefer, rng, out start, out end),
+                                MajorHazard.CameraRun => TryPlaceCamera(layout, s, i, lo, hi, prefer, rng, out start, out end),
+                                MajorHazard.AcidPool => TryPlaceAcidPool(layout, i, lo, hi, prefer, rng, out start, out end),
+                                _ => TryPlaceMortar(layout, i, lo, hi, prefer, rng, out start, out end),
+                            };
+                            if (!placed) continue;
+                            used[(int)kind]++;
+                            here.Add(kind);
+                            layout.MajorHazards.Add(new PlacedHazard { Section = i, Half = half, Type = kind, Start = start, End = end });
+                            break;
+                        }
+                    }
+                }
             }
         }
 
-        static bool TryPlaceLaserGate(MazeLayout layout, int section, Random rng)
+        /// <summary>Whether route cells <paramref name="a"/> to <paramref name="b"/> keep a clear cell between them and every major hazard already in the section.</summary>
+        bool ClearOfMajorHazards(int section, int a, int b)
         {
+            foreach (var h in MajorHazards)
+                if (h.Section == section && a <= h.End + 1 && b >= h.Start - 1) return false;
+            return true;
+        }
+
+        /// <summary>Lower is better: how well a stretch of route from <paramref name="a"/> to <paramref name="b"/> suits the wanted spot in the window, with a little randomness.</summary>
+        static float PreferScore(Prefer prefer, int a, int b, int lo, int hi, Random rng)
+        {
+            float jitter = (float)rng.NextDouble() * 0.9f;
+            return prefer switch
+            {
+                Prefer.Early => a + jitter,
+                Prefer.Late => -b + jitter,
+                _ => Mathf.Abs(a + b - lo - hi) * 0.5f + jitter,
+            };
+        }
+
+        /// <summary>
+        /// A laser gate: lasers fill a doorway in the window that every route through the section has to cross,
+        /// and a pad on the near side turns them off. The pad goes down its own short dead-end side path when
+        /// there's a sealed-off cell beside the section to carve one into; otherwise in a side lane, or failing
+        /// that on the route.
+        /// </summary>
+        static bool TryPlaceLaserGate(MazeLayout layout, int section, int lo, int hi, int keepFree, Prefer prefer, Random rng,
+            out int start, out int end)
+        {
+            start = end = -1;
             var sec = layout.Sections[section];
             int shell = sec.Shell;
             var grid = layout.Grids[shell];
             var region = layout.Region[shell];
             var open = layout.Open[shell];
             var route = layout.Route(section);
+            var onRoute = new HashSet<int>(route);
+            var choices = new List<(float score, int k, int near, int edge, Dictionary<int, int> reach)>();
             foreach (var (near, edge, reach) in layout.Chokepoints(section))
             {
-                var onRoute = new HashSet<int>(route);
+                int k = route.IndexOf(near);
+                if (k < lo || k + 1 > hi || !layout.ClearOfMajorHazards(section, k, k + 1)) continue;
+                if (layout.ReservedForHazard(shell, route[k]) || layout.ReservedForHazard(shell, route[k + 1])) continue;
+                choices.Add((PreferScore(prefer, k, k + 1, lo, hi, rng), k, near, edge, reach));
+            }
+            choices.Sort((x, y) => x.score.CompareTo(y.score));
+            foreach (var (_, k, near, edge, reach) in choices)
+            {
                 int gateDist = reach[near];
                 // 1) A sealed-off filler cell beside the near side, close to the gate: carve it into a spur.
                 int best = -1, bestScore = int.MaxValue, bestFrom = -1;
                 foreach (var kv in reach)
                 {
                     int c = kv.Key;
-                    if (c == sec.EntryCell || Mathf.Abs(kv.Value - gateDist) > 3) continue;
+                    if (c == sec.EntryCell || Mathf.Abs(kv.Value - gateDist) > 3 || layout.ReservedForHazard(shell, c)) continue;
                     foreach (int nb in grid.Neighbors[c])
                     {
                         if (region[nb] != -1) continue;
@@ -264,10 +365,11 @@ namespace SphereDescent
                 }
                 else
                 {
-                    // 2) A side-lane cell on the near side, nearest the gate; 3) any near-side cell but the entry.
+                    // 2) A side-lane cell on the near side, nearest the gate; 3) any near-side cell but the entry,
+                    // other hazards and the checkpoint's cell.
                     foreach (var kv in reach)
                     {
-                        if (kv.Key == sec.EntryCell || kv.Key == near) continue;
+                        if (kv.Key == sec.EntryCell || kv.Key == near || kv.Key == route[keepFree] || layout.ReservedForHazard(shell, kv.Key)) continue;
                         int score = Mathf.Abs(kv.Value - gateDist) + (onRoute.Contains(kv.Key) ? 100 : 0);
                         if (score < bestScore) { bestScore = score; best = kv.Key; }
                     }
@@ -277,30 +379,21 @@ namespace SphereDescent
                 {
                     Shell = shell, Section = section, Edge = edge, EntrySideCell = near, SwitchCell = best, SwitchInSpur = spur,
                 });
+                start = k; end = k + 1;
                 return true;
             }
             return false;
         }
 
         /// <summary>
-        /// A run of security cameras on the even-numbered sections (2nd, 4th, ...; with Camera Every = 2), one
-        /// per doorway over consecutive doorways along the route, each on a pole on top of a wall beside its
-        /// doorway, alternating sides. Each spotlight sweeps its own doorway. The run goes where the most of
-        /// its doorways are ones every route has to cross; a section with none passes its turn to the next.
+        /// A run of security cameras, one per doorway over consecutive doorways along the route in the window,
+        /// each on a pole on top of a wall beside its doorway, alternating sides. Each spotlight sweeps its own
+        /// doorway. The run goes where the most of its doorways are ones every route has to cross (at least one).
         /// </summary>
-        static void PlaceCameras(MazeLayout layout, LevelSettings s, Random rng)
+        static bool TryPlaceCamera(MazeLayout layout, LevelSettings s, int section, int lo, int hi, Prefer prefer, Random rng,
+            out int start, out int end)
         {
-            if (s.cameraEvery <= 0) return;
-            int due = 1;
-            for (int i = 0; i < layout.Sections.Count; i++)
-            {
-                if (i < due || layout.LaserGates.Exists(g => g.Section == i)) continue;
-                if (TryPlaceCamera(layout, s, i, rng)) due = i + s.cameraEvery;
-            }
-        }
-
-        static bool TryPlaceCamera(MazeLayout layout, LevelSettings s, int section, Random rng)
-        {
+            start = end = -1;
             var sec = layout.Sections[section];
             int shell = sec.Shell;
             var grid = layout.Grids[shell];
@@ -311,16 +404,18 @@ namespace SphereDescent
             var choke = new bool[route.Count];
             foreach (var (near, _, _) in layout.Chokepoints(section)) choke[route.IndexOf(near)] = true;
 
-            // A run of consecutive doorways, two cells clear of either end: the most must-cross doorways
-            // first, then nearest the middle of the route.
-            int bestStart = -1, bestScore = int.MinValue;
-            for (int k = 2; k + count + 2 < route.Count; k++)
+            int bestStart = -1;
+            float bestScore = float.MaxValue;
+            for (int k = lo; k + count <= hi; k++)
             {
+                if (!layout.ClearOfMajorHazards(section, k, k + count)) continue;
                 int chokes = 0;
+                bool reserved = false;
                 for (int j = 0; j < count; j++) if (choke[k + j]) chokes++;
-                if (chokes == 0) continue;
-                int score = chokes * 1000 - Mathf.Abs(2 * k + count - route.Count);
-                if (score > bestScore) { bestScore = score; bestStart = k; }
+                for (int j = 0; j <= count; j++) reserved |= layout.ReservedForHazard(shell, route[k + j]);
+                if (chokes == 0 || reserved) continue;
+                float score = -chokes * 1000 + PreferScore(prefer, k, k + count, lo, hi, rng);
+                if (score < bestScore) { bestScore = score; bestStart = k; }
             }
             if (bestStart < 0) return false;
 
@@ -343,6 +438,7 @@ namespace SphereDescent
                     Pattern = (SweepPattern)((firstPattern + j) % 3),
                 });
             }
+            start = bestStart; end = bestStart + count;
             return true;
         }
 
@@ -380,64 +476,87 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// An acid pool on every Nth section (starting with Acid Pool First Section): a route cell every way
-        /// through has to enter, with just two openings (in and out), filled wall to wall with acid and crossed
-        /// by a thin bridge. Of the cells that qualify, it takes the one farthest along the route from the
-        /// section's laser gate or camera run (or, with neither, farthest from the middle, where the checkpoint
-        /// goes), so the big hazards are spread out. A section with no such cell passes its turn to the next.
+        /// An acid pool: a route cell in the window that every way through has to enter, with just two openings
+        /// (in and out), filled wall to wall with acid and crossed by a thin bridge. Cells whose doorways are
+        /// well apart are preferred, so the bridge doesn't fold back on itself.
         /// </summary>
-        static void PlaceAcidPools(MazeLayout layout, LevelSettings s)
+        static bool TryPlaceAcidPool(MazeLayout layout, int section, int lo, int hi, Prefer prefer, Random rng, out int start, out int end)
         {
-            if (s.acidPoolEvery <= 0) return;
-            int due = Mathf.Max(0, s.acidPoolFirstSection - 1);
-            for (int i = 0; i < layout.Sections.Count; i++)
-            {
-                if (i < due) continue;
-                if (TryPlaceAcidPool(layout, i)) due = i + s.acidPoolEvery;
-            }
-        }
-
-        static bool TryPlaceAcidPool(MazeLayout layout, int section)
-        {
+            start = end = -1;
             int shell = layout.Sections[section].Shell;
             var grid = layout.Grids[shell];
             var route = layout.Route(section);
-            // Where along the route the section's other big hazards are.
-            var others = new List<int>();
-            foreach (var g in layout.LaserGates) if (g.Section == section) others.Add(route.IndexOf(g.EntrySideCell));
-            foreach (var c in layout.Cameras) if (c.Section == section) others.Add(route.IndexOf(c.NearCell));
-
             int best = -1;
-            float bestScore = float.MinValue;
+            float bestScore = float.MaxValue;
             foreach (var (near, _, _) in layout.Chokepoints(section))
             {
                 int k = route.IndexOf(near) + 1; // every way through enters this cell
-                if (k < 2 || k > route.Count - 3) continue;
+                if (k - 1 < lo || k + 1 > hi || !layout.ClearOfMajorHazards(section, k - 1, k + 1)) continue;
                 int cell = route[k];
                 if (layout.Openings(shell, cell) != 2) continue;
                 if (layout.ReservedForHazard(shell, route[k - 1]) || layout.ReservedForHazard(shell, cell) ||
                     layout.ReservedForHazard(shell, route[k + 1])) continue;
-                float score;
-                if (others.Count > 0)
-                {
-                    score = int.MaxValue;
-                    foreach (int o in others) score = Mathf.Min(score, Mathf.Abs(k - o));
-                    if (score < 3) continue;
-                }
-                else score = Mathf.Abs(2 * k - route.Count) * 0.5f;
-                // Prefer doorways well apart, so the bridge doesn't fold back on itself.
                 Vector3 c0 = grid.CellCenters[cell];
                 float spread = Vector3.Angle(Vector3.ProjectOnPlane(grid.CellCenters[route[k - 1]] - c0, c0),
                     Vector3.ProjectOnPlane(grid.CellCenters[route[k + 1]] - c0, c0));
-                score += spread / 360f;
-                if (score > bestScore) { bestScore = score; best = k; }
+                float score = PreferScore(prefer, k - 1, k + 1, lo, hi, rng) - spread / 180f;
+                if (score < bestScore) { bestScore = score; best = k; }
             }
             if (best < 0) return false;
             layout.AcidPools.Add(new AcidPool
             {
                 Shell = shell, Section = section, Cell = route[best], From = route[best - 1], To = route[best + 1], RouteIndex = best,
             });
+            start = best - 1; end = best + 1;
             return true;
+        }
+
+        /// <summary>
+        /// A mortar on top of a wall beside a route cell in the window, on the side wall farthest from the
+        /// doorways the route uses, lobbing bombs at the ball while it's in range.
+        /// </summary>
+        static bool TryPlaceMortar(MazeLayout layout, int section, int lo, int hi, Prefer prefer, Random rng, out int start, out int end)
+        {
+            start = end = -1;
+            int shell = layout.Sections[section].Shell;
+            var grid = layout.Grids[shell];
+            var route = layout.Route(section);
+            int bestK = -1, bestWall = -1;
+            float bestScore = float.MaxValue;
+            for (int k = lo + 1; k + 1 <= hi; k++)
+            {
+                if (!layout.ClearOfMajorHazards(section, k - 1, k + 1) || layout.ReservedForHazard(shell, route[k])) continue;
+                int cell = route[k];
+                Vector3 inDoor = DoorMid(grid, cell, route[k - 1]), outDoor = DoorMid(grid, cell, route[k + 1]);
+                int wall = -1;
+                float far = 0f;
+                foreach (int nb in grid.Neighbors[cell])
+                {
+                    int e = grid.EdgeBetween(cell, nb);
+                    if (layout.Open[shell][e]) continue;
+                    Vector3 m = (grid.Edges[e].P0 + grid.Edges[e].P1).normalized;
+                    float d = Mathf.Min(Vector3.Angle(m, inDoor), Vector3.Angle(m, outDoor));
+                    if (d > far) { far = d; wall = e; }
+                }
+                if (wall < 0) continue;
+                float score = PreferScore(prefer, k - 1, k + 1, lo, hi, rng);
+                if (score < bestScore) { bestScore = score; bestK = k; bestWall = wall; }
+            }
+            if (bestK < 0) return false;
+            var w = grid.Edges[bestWall];
+            layout.Mortars.Add(new Mortar
+            {
+                Shell = shell, Section = section, Cell = route[bestK], RouteIndex = bestK, Wall = bestWall,
+                Mount = (w.P0 + w.P1).normalized,
+            });
+            start = bestK - 1; end = bestK + 1;
+            return true;
+        }
+
+        static Vector3 DoorMid(SphereGrid grid, int a, int b)
+        {
+            var e = grid.Edges[grid.EdgeBetween(a, b)];
+            return (e.P0 + e.P1).normalized;
         }
 
         /// <summary>
@@ -777,7 +896,7 @@ namespace SphereDescent
             return dist;
         }
 
-        /// <summary>Cells a mine group shouldn't use: either side of a laser gate or camera doorway, gate switches, and checkpoints.</summary>
+        /// <summary>Cells a mine group shouldn't use: either side of a laser gate or camera doorway, gate switches, checkpoints, acid pools (and the cells either side) and mortar cells.</summary>
         bool ReservedForHazard(int shell, int cell)
         {
             var grid = Grids[shell];
@@ -791,6 +910,8 @@ namespace SphereDescent
                 if (c.Shell == shell && cell == c.Cell) return true;
             foreach (var p in AcidPools)
                 if (p.Shell == shell && (cell == p.Cell || cell == p.From || cell == p.To)) return true;
+            foreach (var m in Mortars)
+                if (m.Shell == shell && cell == m.Cell) return true;
             return false;
         }
 
@@ -989,6 +1110,7 @@ namespace SphereDescent
         static bool MineFits(MazeLayout layout, LevelSettings s, int shell, int cell, Vector3 dir, float radius, float wallClearance)
         {
             Vector3 p = dir * radius;
+            if (NearHoleOrCheckpoint(layout, s, shell, dir, radius)) return false;
             float clear = 2f * s.mineRadius + layout.MineGap(s, shell);
             foreach (var other in layout.Mines)
                 if (other.Shell == shell && Vector3.Distance(other.Direction * radius, p) < clear) return false;

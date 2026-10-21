@@ -75,17 +75,25 @@ namespace SphereDescent
         [Tooltip("On those shells, the clear space left between mines (elsewhere it's 1.6; the ball is 1 across).")]
         public float innermostMineGap = 2.4f;
 
+        [Header("Major hazards")]
+        [Tooltip("Major hazards (laser gates, camera runs, acid pools, mortars) in each half of a section, before and " +
+                 "after its checkpoint. Never the same kind twice in a half, and each kind is used about equally often.")]
+        public int majorHazardsPerHalf = 2;
+        [Tooltip("How many of the innermost (smallest) spheres get fewer, since their sections are shorter.")]
+        public int fewerHazardsInnermost = 2;
+        [Tooltip("Major hazards in each half section on those innermost spheres.")]
+        public int majorHazardsPerHalfInnermost = 1;
+        public bool laserGates = true;
+        public bool securityCameras = true;
+        public bool acidPools = true;
+        public bool mortars = true;
+
         [Header("Laser gates")]
-        [Tooltip("A laser gate on every Nth section, starting with the first (2 = sections 1, 3, 5, ...). The pad that " +
-                 "turns it off is on the near side. 0 = none.")]
-        public int laserGateEvery = 2;
         [Tooltip("Lasers in a gate, spread from near the ground to just under the wall tops. Keep the gaps between " +
                  "them under the ball's width (1): with 4-unit walls that's at least 5.")]
         public int laserRows = 7;
 
         [Header("Security cameras")]
-        [Tooltip("A security camera on every Nth section, starting with the second (2 = sections 2, 4, 6, ...). 0 = none.")]
-        public int cameraEvery = 2;
         [Tooltip("Cameras in each run, one per doorway along the route, alternating sides of the passage.")]
         public int camerasPerGroup = 3;
         [Tooltip("Radius of the camera's spotlight on the ground. The ball is 1 across.")]
@@ -114,12 +122,18 @@ namespace SphereDescent
         public float cubeCoreSize = 0.08f;
 
         [Header("Acid pools")]
-        [Tooltip("An acid pool crossed by a thin bridge on every Nth section. 0 = none.")]
-        public int acidPoolEvery = 2;
-        [Tooltip("The first section with an acid pool (sections count from 1).")]
-        public int acidPoolFirstSection = 2;
         [Tooltip("Width of the bridge over the acid (the ball is 1 across).")]
         public float acidBridgeWidth = 2.275f;
+
+        [Header("Mortars")]
+        [Tooltip("How near (in units, from the mortar) the ball has to be for it to fire.")]
+        public float mortarRange = 18f;
+        [Tooltip("Seconds between shots while the ball is in range.")]
+        public float mortarInterval = 1.5f;
+        [Tooltip("Seconds a bomb is in the air. The mortar aims where the ball will be by then if it keeps rolling the same way.")]
+        public float mortarFlightTime = 1f;
+        [Tooltip("How near the bomb has to land to the ball to blow it up (from the ball's center). The ball is 1 across.")]
+        public float mortarBlastRadius = 2.4f;
 
         [Header("Checkpoints")]
         [Tooltip("A checkpoint pad halfway along each section: once you've rolled over it, dying sends you back there.")]

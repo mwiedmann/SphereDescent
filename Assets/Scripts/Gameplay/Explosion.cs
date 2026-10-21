@@ -13,13 +13,15 @@ namespace SphereDescent
         float age;
 
         /// <param name="glow">An additive glow material (the light beam's); a copy is tinted and faded.</param>
-        public static void Spawn(Vector3 position, Material glow, Color color)
+        /// <param name="size">How wide it swells.</param>
+        public static void Spawn(Vector3 position, Material glow, Color color, float size = 5f)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "Explosion";
             Destroy(go.GetComponent<Collider>());
             go.transform.position = position;
             var e = go.AddComponent<Explosion>();
+            e.maxSize = size;
             e.material = new Material(glow);
             e.material.SetColor("_Color", color);
             e.material.SetFloat("_FadeStart", 1f);

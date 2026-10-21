@@ -20,10 +20,12 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Checkpoints.** Halfway along each section is a large checkpoint pad marked with a flag. Roll over it and it lights up green: if you're blown up after that, you come back there instead of at the start of the section.
 - **Dropping down.** Most sections end at a hole marked with a glowing ring. Roll into it to fall to the next section on the shell below.
 - **Climbing up.** Some sections end at a cyan boost pad. Roll onto it and it launches you up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
+- **Major hazards.** Laser gates, security cameras, acid pools and mortars are the major hazards. Each half of a section, before and after its checkpoint, has two of them on the first two spheres and one on the smaller inner spheres, never two of the same kind in one half. Every kind turns up about equally often across a world.
 - **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them, and lone mines are scattered along the route and side lanes. Weave between them or jump over them: touching one blows you up and sends you back to your respawn point.
-- **Laser gates.** Every other section has a gate of lasers across a doorway you can't get around. Find the pad marked with a key nearby on your side, usually down a short side path: it pulses red while the lasers are on and turns green when you roll over it. A glowing cable then lights up along the floor from the pad to the gate, about as fast as you roll, and the lasers switch off when it reaches them. Touching the lasers blows you up like a mine.
-- **Security cameras.** The other sections have a run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own quick, steady pattern (a figure-8, a loop, or a wobbling side-to-side sweep). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
-- **Acid pools.** The camera sections also have an acid pool, placed as far along the route from the cameras as it can be: a doorway you have to pass through leads into a cell that's a pit of glowing green acid. A narrow metal bridge with bright yellow edges crosses it from one doorway to the other, sometimes bending in the middle. Roll across carefully: fall off and the acid destroys you.
+- **Laser gates.** A gate of lasers across a doorway you can't get around. Find the pad marked with a key nearby on your side, usually down a short side path: it pulses red while the lasers are on and turns green when you roll over it. A glowing cable then lights up along the floor from the pad to the gate, about as fast as you roll, and the lasers switch off when it reaches them. Touching the lasers blows you up like a mine.
+- **Security cameras.** A run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own quick, steady pattern (a figure-8, a loop, or a wobbling side-to-side sweep). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
+- **Acid pools.** A doorway you have to pass through leads into a cell that's a pit of glowing green acid. A narrow metal bridge with bright yellow edges crosses it from one doorway to the other, sometimes bending in the middle. Roll across carefully: fall off and the acid destroys you.
+- **Mortars.** A squat turret on top of a wall that lobs a bomb at you every second and a half while you're nearby. It aims where you'll be when the bomb lands if you keep rolling the same way, and a flashing red circle marks the spot. Keep changing direction or speed until you're out of range: a bomb landing near you blows you up.
 - **Energy cubes.** Each half of a section, before and after its checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for a point. The most hidden cube in each half is a larger magenta super cube worth 5. Your score is on the HUD.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
@@ -104,9 +106,11 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Checkpoints:** on or off, and the pad's size.
 - **Arrows:** how often a floor arrow appears along the route.
 - **Energy cubes:** how many per half section, how many are hidden, points, and size.
-- **Laser gates:** how often (every Nth section) and how many lasers each gate has.
-- **Security cameras:** how often, how many per run, and the spotlight's size, speed and reach.
-- **Acid pools:** how often (every Nth section), the first section with one, and the bridge's width.
+- **Major hazards:** how many per half section, how many of the innermost spheres get fewer (and how many they get), and switches to turn each kind on or off.
+- **Laser gates:** how many lasers each gate has.
+- **Security cameras:** how many per run, and the spotlight's size, speed and reach.
+- **Acid pools:** the bridge's width.
+- **Mortars:** range, time between shots, how long a bomb is in the air, and the blast radius.
 - **Mines:** groups per section, mines per group (the ones beside the walls count too), whether lone mines are scattered too, size, the gap left beside walls, and how many of the smallest spheres get fewer.
 - **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **beam height**, and the **Base Seed**.
 

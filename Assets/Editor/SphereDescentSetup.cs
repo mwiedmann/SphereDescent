@@ -123,7 +123,8 @@ namespace SphereDescent.EditorTools
             int failures = 0;
             var allRoutes = new System.Collections.Generic.List<int>();
             var groupOpenings = new System.Collections.Generic.List<float>();
-            int allCubes = 0, allHidden = 0, totalSections = 0, arrowsTotal = 0, singlesTotal = 0;
+            int allCubes = 0, allHidden = 0, totalSections = 0, arrowsTotal = 0, singlesTotal = 0, hazardSlots = 0, hazardShortfall = 0;
+            var allKindCounts = new int[4];
             var routeOffsets = new System.Collections.Generic.List<float>();
             var openingsByShell = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<float>>();
             var minesByShell = new System.Collections.Generic.Dictionary<int, (int groups, int mines)>();
@@ -271,7 +272,6 @@ namespace SphereDescent.EditorTools
                 }
                 arrowsTotal += layout.Arrows.Count;
                 // Acid pools: a two-opening cell every way through has to enter, nothing placed in it.
-                var poolSections = new System.Text.StringBuilder();
                 foreach (var pool in layout.AcidPools)
                 {
                     var sec = layout.Sections[pool.Section];
@@ -281,9 +281,7 @@ namespace SphereDescent.EditorTools
                         problems.Append($" acid pool in section {pool.Section + 1} can be walked around;");
                     if (layout.Cubes.Exists(c => c.Shell == pool.Shell && c.Cell == pool.Cell)) problems.Append($" a cube over acid in section {pool.Section + 1};");
                     if (layout.Mines.Exists(m => m.Shell == pool.Shell && g.NearestCell(m.Direction) == pool.Cell)) problems.Append($" a mine in acid in section {pool.Section + 1};");
-                    poolSections.Append(' ').Append(pool.Section + 1);
                 }
-                var cameraSections = new System.Text.StringBuilder();
                 for (int i = 0; i < layout.Sections.Count; i++)
                 {
                     var cams = layout.Cameras.FindAll(c => c.Section == i);
@@ -291,11 +289,48 @@ namespace SphereDescent.EditorTools
                     var sec = layout.Sections[i];
                     int unavoidable = cams.FindAll(c => !layout.Reachable(i, sec.EntryCell, c.Edge).ContainsKey(sec.ExitCell)).Count;
                     if (unavoidable == 0) problems.Append($" cameras in section {i + 1} can all be walked around;");
-                    if (layout.LaserGates.Exists(g => g.Section == i)) problems.Append($" section {i + 1} has a gate and cameras;");
-                    cameraSections.Append($" {i + 1}:{cams.Count}({unavoidable} must-cross)");
                 }
-                var gateSections = new System.Text.StringBuilder();
-                foreach (var g in layout.LaserGates) gateSections.Append(' ').Append(g.Section + 1);
+                // Mortars: on a wall of their route cell.
+                foreach (var m in layout.Mortars)
+                {
+                    var e = layout.Grids[m.Shell].Edges[m.Wall];
+                    if (layout.Open[m.Shell][m.Wall] || (e.A != m.Cell && e.B != m.Cell)) problems.Append($" mortar in section {m.Section + 1} isn't on its cell's wall;");
+                }
+                // Major hazards: the right number in each half section (shortfalls are counted, not failures),
+                // never the same kind twice in a half, apart from each other and the checkpoint, and each kind used
+                // about equally.
+                var hazardPlan = new System.Text.StringBuilder();
+                var kindCounts = new int[4];
+                for (int i = 0; i < layout.Sections.Count; i++)
+                {
+                    int shell = layout.Sections[i].Shell;
+                    int want = shell >= layout.ShellCount - settings.fewerHazardsInnermost ? settings.majorHazardsPerHalfInnermost : settings.majorHazardsPerHalf;
+                    bool hasCp = layout.Checkpoints.Exists(c => c.Section == i);
+                    var cp = layout.Checkpoints.Find(c => c.Section == i);
+                    hazardPlan.Append(' ').Append(i + 1).Append(':');
+                    for (int half = 0; half < 2; half++)
+                    {
+                        var hs = layout.MajorHazards.FindAll(h => h.Section == i && h.Half == half);
+                        hazardShortfall += Mathf.Max(0, want - hs.Count);
+                        hazardSlots += want;
+                        foreach (var h in hs)
+                        {
+                            kindCounts[(int)h.Type]++;
+                            if (hs.FindAll(o => o.Type == h.Type).Count > 1) problems.Append($" section {i + 1} half {half + 1} repeats a {h.Type};");
+                            if (hasCp && h.Start <= cp.RouteIndex && h.End >= cp.RouteIndex)
+                                problems.Append($" the checkpoint in section {i + 1} is on a {h.Type};");
+                            if (hasCp && (half == 0) != (cp.RouteIndex > h.End))
+                                problems.Append($" a {h.Type} in section {i + 1} is on the wrong side of the checkpoint;");
+                            foreach (var o in layout.MajorHazards)
+                                if (o.Section == i && !o.Equals(h) && h.Start <= o.End + 1 && h.End >= o.Start - 1)
+                                    problems.Append($" a {h.Type} and a {o.Type} crowd each other in section {i + 1};");
+                            hazardPlan.Append("GCAM"[(int)h.Type]);
+                        }
+                        if (half == 0) hazardPlan.Append('|');
+                    }
+                }
+                int kindMin = int.MaxValue, kindMax = 0;
+                for (int k = 0; k < 4; k++) { allKindCounts[k] += kindCounts[k]; kindMin = Mathf.Min(kindMin, kindCounts[k]); kindMax = Mathf.Max(kindMax, kindCounts[k]); }
 
                 // How easy each mine group is to get through: the widest ball that could roll across its cell,
                 // from the doorway the route comes in by to the one it leaves by.
@@ -324,7 +359,7 @@ namespace SphereDescent.EditorTools
                 string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
                              $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
                              $" cubes per section (hidden):{cubeCounts};" +
-                             $" laser gates in sections{gateSections} ({spurs} switches in side spurs); cameras (section:count) {cameraSections}; acid pools in sections{poolSections};" +
+                             $" major hazards (G gate, C cameras, A acid, M mortar; | = checkpoint){hazardPlan}; gates/cameras/acid/mortars {kindCounts[0]}/{kindCounts[1]}/{kindCounts[2]}/{kindCounts[3]} (spread {kindMax - kindMin}; {spurs} switches in side spurs);" +
                              $" mines per section:{mineCounts} ({wallMines} by walls; gap {minGap:F1}, other mines to wall {minWall:F1}, wall mines to wall max {maxWallMineGap:F2}, hole {minHole:F1})" +
                              (problems.Length > 0 ? " PROBLEMS:" + problems : "");
 
@@ -352,7 +387,8 @@ namespace SphereDescent.EditorTools
             if (totalSections > 0)
                 Debug.Log($"[Validate] cubes: {allCubes / (float)totalSections:F1} per section on average, {allHidden / (float)totalSections:F1} of them hidden; " +
                           $"route cubes at most {(routeOffsets.Count > 0 ? routeOffsets.Max() : 0f):F1} from their cell's middle; " +
-                          $"{arrowsTotal / (float)totalSections:F1} arrows per section; {singlesTotal / (float)totalSections:F1} single mines per section");
+                          $"{arrowsTotal / (float)totalSections:F1} arrows per section; {singlesTotal / (float)totalSections:F1} single mines per section; " +
+                          $"major hazards {hazardSlots - hazardShortfall}/{hazardSlots} placed, gates/cameras/acid/mortars {allKindCounts[0]}/{allKindCounts[1]}/{allKindCounts[2]}/{allKindCounts[3]}");
             groupOpenings.Sort();
             if (groupOpenings.Count > 0)
                 Debug.Log($"[Validate] mine groups: {groupOpenings.Count}; widest ball that could roll through a group: " +

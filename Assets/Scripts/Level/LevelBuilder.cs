@@ -174,6 +174,7 @@ namespace SphereDescent
             CreateCheckpoints(level, layout, s, layerRoots);
             CreateArrows(level, layout, s, terrains, layerRoots);
             CreateAcidPools(level, layout, s, layerRoots, mats);
+            CreateMortars(level, layout, s, terrains, layerRoots, mats);
 
             // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
@@ -1059,6 +1060,83 @@ namespace SphereDescent
                 pool.neighbors = System.Array.ConvertAll(grid.Neighbors[p.Cell], n => grid.CellCenters[n]);
                 pool.floorRadius = r;
                 pool.layer = p.Shell;
+            }
+        }
+
+        /// <summary>
+        /// Mortars: a squat dark turret on top of a wall with a red band round its base and a stubby barrel
+        /// pitched up, with a glowing orange mouth. Bombs and their landing markers go in the layer itself, so
+        /// they aren't switched off with the mortar's chunk.
+        /// </summary>
+        static void CreateMortars(LevelInstance level, MazeLayout layout, LevelSettings s, ShellTerrain[] terrains,
+            Transform[] layerRoots, LevelMaterials mats)
+        {
+            if (layout.Mortars.Count == 0) return;
+            var metal = level.Own(LevelMaterials.MakeMetal(new Color(0.08f, 0.08f, 0.09f), 0.8f, 0.55f));
+            var band = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.08f, 0.04f), 2.2f));
+            var mouth = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.5f, 0.1f), 3f));
+            var bombMat = level.Own(LevelMaterials.MakeMetal(new Color(0.05f, 0.05f, 0.05f), 0.6f, 0.7f));
+            var bombLight = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.1f, 0.05f), 8f));
+            var markerMat = level.Own(new Material(mats.spot));
+            markerMat.SetColor("_Color", new Color(1f, 0.08f, 0.04f));
+            markerMat.SetFloat("_Intensity", 1.6f);
+            var markerMesh = level.Own(MeshBuilders.BuildDisc(1f, 40));
+            var tmp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            var sphereMesh = tmp.GetComponent<MeshFilter>().sharedMesh;
+            Object.DestroyImmediate(tmp);
+
+            foreach (var m in layout.Mortars)
+            {
+                var go = new GameObject("Mortar");
+                go.transform.SetParent(layerRoots[m.Shell], false);
+                float wallTop = terrains[m.Shell].SurfaceRadius(m.Mount) + s.wallHeight;
+                go.transform.SetPositionAndRotation(m.Mount * wallTop, Quaternion.FromToRotation(Vector3.up, m.Mount));
+                go.transform.localScale = Vector3.one * 1.4f;
+
+                var foot = Part(go.transform, PrimitiveType.Cylinder, "Base", metal);
+                foot.localPosition = new Vector3(0f, 0.15f, 0f);
+                foot.localScale = new Vector3(1.2f, 0.15f, 1.2f);
+                var stripe = Part(go.transform, PrimitiveType.Cylinder, "Band", band);
+                stripe.localPosition = new Vector3(0f, 0.31f, 0f);
+                stripe.localScale = new Vector3(1.24f, 0.03f, 1.24f);
+
+                // The turret turns to face its target; the barrel is pitched up inside it.
+                var turret = new GameObject("Turret").transform;
+                turret.SetParent(go.transform, false);
+                turret.localPosition = new Vector3(0f, 0.3f, 0f);
+                var dome = Part(turret, PrimitiveType.Sphere, "Dome", metal);
+                dome.localPosition = new Vector3(0f, 0.1f, 0f);
+                dome.localScale = new Vector3(0.95f, 0.7f, 0.95f);
+                var barrel = new GameObject("Barrel").transform;
+                barrel.SetParent(turret, false);
+                barrel.localPosition = new Vector3(0f, 0.25f, 0f);
+                barrel.localRotation = Quaternion.Euler(35f, 0f, 0f);
+                var tube = Part(barrel, PrimitiveType.Cylinder, "Tube", metal);
+                tube.localPosition = new Vector3(0f, 0.5f, 0f);
+                tube.localScale = new Vector3(0.38f, 0.5f, 0.38f);
+                var lip = Part(barrel, PrimitiveType.Cylinder, "Mouth", mouth);
+                lip.localPosition = new Vector3(0f, 1.0f, 0f);
+                lip.localScale = new Vector3(0.44f, 0.04f, 0.44f);
+                var muzzle = new GameObject("Muzzle").transform;
+                muzzle.SetParent(barrel, false);
+                muzzle.localPosition = new Vector3(0f, 1.1f, 0f);
+
+                var mortar = go.AddComponent<Mortar>();
+                mortar.turret = turret;
+                mortar.barrel = barrel;
+                mortar.muzzle = muzzle;
+                mortar.bombParent = layerRoots[m.Shell];
+                mortar.bombMesh = sphereMesh;
+                mortar.markerMesh = markerMesh;
+                mortar.bombMaterial = bombMat;
+                mortar.bombLightMaterial = bombLight;
+                mortar.markerMaterial = markerMat;
+                mortar.glowMaterial = mats.beam;
+                mortar.layer = m.Shell;
+                mortar.range = s.mortarRange;
+                mortar.interval = s.mortarInterval;
+                mortar.flightTime = s.mortarFlightTime;
+                mortar.blastRadius = s.mortarBlastRadius;
             }
         }
 
