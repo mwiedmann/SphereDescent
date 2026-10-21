@@ -1,0 +1,66 @@
+# Glossary
+
+The words we use when talking about Sphere Descent, and what each is called in the code where that differs.
+
+## Structure
+
+| Term | Meaning | In the code |
+|---|---|---|
+| **World** | One full run, from the surface down to the core. Each world has a new maze. | `world` in `GameManager` |
+| **Sphere** | One walkable maze layer. There are four, from the **surface** inward. | *shell* (`shellRadii`); *layer* when the core is counted too |
+| **Core** | The gold sphere at the center. Landing anywhere on it finishes the world. | *core*, the last layer |
+| **Section** | The stretch of maze from where you arrive on a sphere (through a hole or off a pad) to the hole or pad that takes you to the next one. A world is a chain of them. | `MazeLayout.Section` |
+| **First half / second half** | The part of a section before or after its checkpoint. Cubes are placed per half. | `cubesPerHalfSection` |
+
+## Inside a section
+
+| Term | Meaning | In the code |
+|---|---|---|
+| **Cell** | One room of the maze grid, about 16 units across. Every sphere has its own grid. | `SphereGrid` cells |
+| **Doorway** | An opening between two neighbouring cells (a wall that isn't there). | an open edge (`Open[shell][edge]`) |
+| **Route** | The shortest way through a section, from where you arrive to its exit. | `MazeLayout.Route` |
+| **Side lane** | A branch off the route that rejoins it: another way through. | |
+| **Spur** | A short dead-end side path, such as the one leading to a laser gate's key pad. | `SwitchInSpur` |
+| **Choke point** | A doorway every way through the section has to cross. Laser gates and camera runs go on these. | `MazeLayout.Chokepoints` |
+| **Filler** | The sealed-off maze between sections, there to make every sphere look like a maze. You can't get into it. | `CarveFiller`, region `-1` |
+
+## Between spheres
+
+| Term | Meaning | In the code |
+|---|---|---|
+| **Drop hole** | An orange-ringed hole you fall through to the sphere below. | a hole with `TwoWay` false |
+| **Climb hole** | A cyan-ringed hole you come up through, above a boost pad. | a hole with `TwoWay` true |
+| **Boost pad** | Launches you up through the climb hole above it. | `BoostPad` |
+| **Landing spot** | Where you arrive on the next sphere. | the next section's `EntryCell` |
+| **Sealed** | A used hole or pad, covered with a black disc marked with a red X. | `LevelInstance.MarkUsed` |
+
+## Finding your way and starting over
+
+| Term | Meaning | In the code |
+|---|---|---|
+| **Spawn** | Where a world starts. | `SpawnPosition` |
+| **Checkpoint** | The flag pad halfway along each section. Turns green once reached. | `CheckpointPad` |
+| **Respawn point** | Where you come back after being blown up: the landing spot on that sphere, or its checkpoint once reached. | `checkpoint` in `BallController` |
+| **Zone** | One of the 12 named color regions on each sphere. They line up through every layer. | `ZoneMap` |
+| **Exit beam** | The column of light over the hole or pad that ends the section you're in. | light beams, `SetBeamSection` |
+| **Floor arrows** | Arrows on the floor every few cells pointing along the route. | `MazeLayout.Arrows` |
+| **Style** | The look of a world: Synthwave or Deep Sea. | `VisualStyle` |
+
+## Hazards
+
+| Term | Meaning | In the code |
+|---|---|---|
+| **Mine group** | A cluster of mines in one cell, including its **wall mines** (one beside each wall, so you can't hug the wall past). | `MineGroups`, `Mine.NearWall` |
+| **Laser gate** | Horizontal lasers filling a choke point. | `LaserGate` |
+| **Key pad** | The pad that switches a laser gate off, marked with a key, usually down a spur. | `LaserSwitch` |
+| **Cable** | The glowing line that lights up along the floor from the key pad to the gate; the lasers go off when it arrives. | the switch's cable mesh |
+| **Camera run** | Three security cameras in a row, on poles above the walls on alternating sides. | `SecurityCamera`, `camerasPerGroup` |
+| **Sweep pattern** | How a camera's **spotlight** moves: **figure-8**, **orbit** or **sweep**. | `SweepPattern` |
+
+## Pickups
+
+| Term | Meaning | In the code |
+|---|---|---|
+| **Energy cube** | A glowing gold cube worth 1 point. | `EnergyCube` |
+| **Super cube** | The larger magenta cube in each half of a section, worth 5. | `Cube.Super` |
+| **Route cube / hidden cube** | A cube in the middle of the route, or one tucked away down a side lane. | `Cube.Hidden` |

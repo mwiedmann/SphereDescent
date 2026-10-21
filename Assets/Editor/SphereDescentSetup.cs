@@ -232,7 +232,7 @@ namespace SphereDescent.EditorTools
                     var cubes = layout.Cubes.FindAll(c => c.Section == i);
                     int hidden = cubes.FindAll(c => c.Hidden).Count, supers = cubes.FindAll(c => c.Super).Count;
                     int halves = layout.Checkpoints.Exists(c => c.Section == i) ? 2 : 1;
-                    if (supers != halves && settings.cubesPerHalfLeg > 0) problems.Append($" section {i + 1} has {supers} super cubes;");
+                    if (supers != halves && settings.cubesPerHalfSection > 0) problems.Append($" section {i + 1} has {supers} super cubes;");
                     foreach (var c in cubes)
                     {
                         if (layout.Region[c.Shell][c.Cell] != i) problems.Append($" a cube in section {i + 1} is outside it;");

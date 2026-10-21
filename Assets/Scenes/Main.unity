@@ -455,7 +455,7 @@ MonoBehaviour:
     spotPeriod: 3.75
     spotReach: 3
     cameraPoleHeight: 3
-    cubesPerHalfLeg: 7
+    cubesPerHalfSection: 7
     hiddenCubeShare: 0.5
     cubePoints: 1
     superCubePoints: 5

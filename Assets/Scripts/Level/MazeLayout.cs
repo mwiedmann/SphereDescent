@@ -404,7 +404,7 @@ namespace SphereDescent
         /// </summary>
         static void PlaceCubes(MazeLayout layout, LevelSettings s, Random rng)
         {
-            if (s.cubesPerHalfLeg <= 0) return;
+            if (s.cubesPerHalfSection <= 0) return;
             for (int i = 0; i < layout.Sections.Count; i++)
             {
                 var sec = layout.Sections[i];
@@ -440,7 +440,7 @@ namespace SphereDescent
                 foreach (var (from, to) in halves)
                 {
                     bool InHalf(int routeIndex) => routeIndex >= from - 1 && routeIndex <= to + 1;
-                    int hiddenWanted = Mathf.RoundToInt((s.cubesPerHalfLeg - 1) * s.hiddenCubeShare) + 1; // + the super cube
+                    int hiddenWanted = Mathf.RoundToInt((s.cubesPerHalfSection - 1) * s.hiddenCubeShare) + 1; // + the super cube
                     var side = new List<int>();
                     foreach (var kv in offRoute)
                         if (kv.Value > 0 && InHalf(branch[kv.Key]) && !layout.ReservedForHazard(shell, kv.Key) && !mined.Contains(kv.Key))
@@ -483,7 +483,7 @@ namespace SphereDescent
 
                     // The rest along this half of the route, evenly spaced, in the middle of the passage. A spot
                     // that's mined or otherwise taken moves to the nearest free route cell in the half.
-                    int routeWanted = s.cubesPerHalfLeg - placedHidden;
+                    int routeWanted = s.cubesPerHalfSection - placedHidden;
                     for (int n = 0; n < routeWanted && to >= from; n++)
                     {
                         int at = Mathf.Clamp(from + (int)((to - from + 1) * (n + 0.5f) / routeWanted), from, to);

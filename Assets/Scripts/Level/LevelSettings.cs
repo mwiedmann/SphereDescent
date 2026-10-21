@@ -97,7 +97,8 @@ namespace SphereDescent
         [Header("Energy cubes")]
         [Tooltip("Cubes to collect on each half of a section (before and after its checkpoint), counting the half's " +
                  "one super cube. 0 = none.")]
-        public int cubesPerHalfLeg = 7;
+        [UnityEngine.Serialization.FormerlySerializedAs("cubesPerHalfLeg")]
+        public int cubesPerHalfSection = 7;
         [Tooltip("Share of the ordinary cubes tucked away off the main route, down side lanes and around corners " +
                  "(the super cube is always hidden).")]
         [Range(0f, 1f)] public float hiddenCubeShare = 0.5f;

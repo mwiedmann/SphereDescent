@@ -10,6 +10,8 @@ A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. 
 
 ## How it plays
 
+(The words used here, and what each is called in the code, are listed in the [glossary](Docs/GLOSSARY.md).)
+
 Each world is a set of nested spheres: a surface shell, three smaller shells inside it, and a solid core. Gravity always pulls toward the center, so you roll on the outside of whichever shell you're on.
 
 ![A whole world seen from space](Docs/screenshots/planet.png)
