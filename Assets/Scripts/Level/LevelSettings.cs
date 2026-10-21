@@ -88,7 +88,7 @@ namespace SphereDescent
         [Tooltip("Radius of the camera's spotlight on the ground. The ball is 1 across.")]
         public float spotRadius = 2.2f;
         [Tooltip("Seconds for a spotlight to go once through its search pattern.")]
-        public float spotPeriod = 5f;
+        public float spotPeriod = 3.75f;
         [Tooltip("How far the spotlight swings into the cells on either side of the doorway.")]
         public float spotReach = 3f;
         [Tooltip("How high the camera's pole rises above the wall it stands on.")]

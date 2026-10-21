@@ -450,7 +450,7 @@ MonoBehaviour:
     cameraEvery: 2
     camerasPerGroup: 3
     spotRadius: 2.2
-    spotPeriod: 5
+    spotPeriod: 3.75
     spotReach: 3
     cameraPoleHeight: 3
     beamHeight: 100

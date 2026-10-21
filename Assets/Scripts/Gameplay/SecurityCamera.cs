@@ -3,12 +3,12 @@ using UnityEngine;
 
 namespace SphereDescent
 {
-    /// <summary>How a camera's spotlight searches its doorway.</summary>
+    /// <summary>How a camera's spotlight searches its doorway. All keep moving at a steady clip; none stop.</summary>
     public enum SweepPattern
     {
         FigureEight, // swings across the doorway, looping into the cells either side
         Orbit,       // circles the doorway in an oval
-        Scan,        // darts between the left, middle and right of the doorway, holding at each
+        Sweep,       // swings from wall to wall across the doorway with a slight wobble
     }
 
     /// <summary>
@@ -110,15 +110,9 @@ namespace SphereDescent
             {
                 case SweepPattern.Orbit:
                     return new Vector2(Mathf.Cos(t), Mathf.Sin(t));
-                case SweepPattern.Scan:
-                {
-                    // Left, middle, right, middle: a quick eased move to each, then a hold.
-                    float[] stops = { -1f, 0f, 1f, 0f };
-                    float step = u * stops.Length;
-                    int i = Mathf.FloorToInt(step) % stops.Length;
-                    float move = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((step - Mathf.Floor(step)) / 0.35f));
-                    return new Vector2(Mathf.Lerp(stops[(i + stops.Length - 1) % stops.Length], stops[i], move), 0f);
-                }
+                case SweepPattern.Sweep:
+                    // The wobble is out of step with the swing, so the spot is still moving as it turns at a wall.
+                    return new Vector2(Mathf.Sin(t), 0.35f * Mathf.Cos(3f * t));
                 default:
                     return new Vector2(Mathf.Sin(t), Mathf.Sin(2f * t));
             }

@@ -227,6 +227,30 @@ namespace SphereDescent
             }
         }
 
+        /// <summary>
+        /// A flat key symbol in the local XZ plane, about 1.5 long along X: a ring for the bow, a shaft, and two
+        /// teeth hanging off the far end.
+        /// </summary>
+        static Mesh KeyMesh()
+        {
+            var temp = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var box = temp.GetComponent<MeshFilter>().sharedMesh;
+            var bow = MeshBuilders.BuildTorus(0.24f, 0.075f, 28, 8);
+            const float h = 0.05f;
+            var parts = new[]
+            {
+                new CombineInstance { mesh = bow, transform = Matrix4x4.TRS(new Vector3(-0.48f, 0f, 0f), Quaternion.identity, new Vector3(1f, h / 0.15f, 1f)) },
+                new CombineInstance { mesh = box, transform = Matrix4x4.TRS(new Vector3(0.18f, 0f, 0f), Quaternion.identity, new Vector3(0.9f, h, 0.14f)) },
+                new CombineInstance { mesh = box, transform = Matrix4x4.TRS(new Vector3(0.44f, 0f, -0.15f), Quaternion.identity, new Vector3(0.11f, h, 0.24f)) },
+                new CombineInstance { mesh = box, transform = Matrix4x4.TRS(new Vector3(0.6f, 0f, -0.12f), Quaternion.identity, new Vector3(0.11f, h, 0.18f)) },
+            };
+            var mesh = new Mesh { name = "Key" };
+            mesh.CombineMeshes(parts, true, true);
+            Object.DestroyImmediate(temp);
+            Object.DestroyImmediate(bow);
+            return mesh;
+        }
+
         /// <summary>The mine's metal body as one mesh: a squat cylinder plus eight teeth standing around its rim.</summary>
         static Mesh MineBodyMesh(float r, float bodyTop, float sink, float height)
         {
@@ -267,7 +291,7 @@ namespace SphereDescent
         /// together to slip between, too high to jump over), filling the doorway between its two walls. Each is
         /// a white-hot core inside a thin glow in the color opposite the local zone's, so it stands out from the
         /// neon floor and walls. A trigger across the doorway catches the ball. Their switch pads: a metal disc
-        /// with a ring and center pulsing warning red, turning green once rolled over.
+        /// with a ring and a key symbol pulsing warning red, turning green once rolled over.
         /// </summary>
         static void CreateLaserGates(LevelInstance level, MazeLayout layout, LevelSettings s, Transform[] layerRoots,
             ZoneMap zones, Material glowTemplate)
@@ -278,6 +302,7 @@ namespace SphereDescent
             var disarmedMat = level.Own(LevelMaterials.MakeEmissive(offColor, 1.4f));
             var metalMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
             var ringMesh = level.Own(MeshBuilders.BuildTorus(1.05f, 0.07f, 40, 8));
+            var keyMesh = level.Own(KeyMesh());
             var glowMesh = level.Own(MeshBuilders.BuildBeam(0.5f, 1f, 12));
             var holeMesh = level.Own(MeshBuilders.BuildDisc(0.1f, 16));
             var emberMesh = level.Own(MeshBuilders.BuildDisc(0.05f, 12));
@@ -369,9 +394,10 @@ namespace SphereDescent
                 disc.localScale = new Vector3(2.6f, 0.2f, 2.6f);
                 var ring = CreateMeshObject(pad.transform, "Ring", ringMesh, armedMat, false, ShadowCastingMode.Off);
                 ring.transform.localPosition = new Vector3(0f, 0.08f, 0f);
-                var light = Part(pad.transform, PrimitiveType.Cylinder, "Light", armedMat);
-                light.localPosition = new Vector3(0f, 0.06f, 0f);
-                light.localScale = new Vector3(1.1f, 0.03f, 1.1f);
+                // A key symbol inside the ring, lying flat, so it reads as "unlock".
+                var key = CreateMeshObject(pad.transform, "Key", keyMesh, armedMat, false, ShadowCastingMode.Off);
+                key.transform.localPosition = new Vector3(0f, 0.06f, 0f);
+                key.transform.localRotation = Quaternion.Euler(0f, 35f, 0f);
 
                 var trigger = pad.AddComponent<SphereCollider>();
                 trigger.isTrigger = true;
@@ -380,7 +406,7 @@ namespace SphereDescent
 
                 var sw = pad.AddComponent<LaserSwitch>();
                 sw.gate = gate;
-                sw.indicators = new[] { ring.GetComponent<Renderer>(), light.GetComponent<Renderer>() };
+                sw.indicators = new[] { ring.GetComponent<Renderer>(), key.GetComponent<Renderer>() };
                 sw.armed = armedMat;
                 sw.disarmed = disarmedMat;
                 sw.warningColor = warning;
