@@ -117,7 +117,7 @@ namespace SphereDescent
             }
 
             CreateMines(level, layout, s, terrains, layerRoots, mats.beam);
-            CreateLaserGates(level, layout, s, layerRoots, zones, mats.beam);
+            CreateLaserGates(level, layout, s, terrains, layerRoots, zones, mats.beam);
             CreateCameras(level, layout, s, terrains, layerRoots, mats);
             CreateCubes(level, layout, s, terrains, layerRoots, mats.spot);
             CreateCheckpoints(level, layout, s, layerRoots);
@@ -235,6 +235,103 @@ namespace SphereDescent
         }
 
         /// <summary>
+        /// A flat strip on the floor along the way from a laser gate's switch pad to its doorway, through the
+        /// middle of each cell on the way, hugging the ground over hills. At the doorway it branches left and
+        /// right along the gate to the two walls the lasers come out of. Its triangles run in order from the pad
+        /// to the gate, then both branches at once, piece by piece (returned separately, with how far along the
+        /// cable each piece ends), and the mesh starts with none of them drawn, so it can be revealed a piece at
+        /// a time.
+        /// </summary>
+        static Mesh CableMesh(MazeLayout layout, LevelSettings s, ShellTerrain[] terrains, MazeLayout.LaserGate g, float width,
+            out int[] triangles, out float[] distances)
+        {
+            var grid = layout.Grids[g.Shell];
+            var terrain = terrains[g.Shell];
+            float radius = s.shellRadii[g.Shell];
+            var door = grid.Edges[g.Edge];
+            var cells = layout.PathBetween(g.Section, g.SwitchCell, g.EntrySideCell, g.Edge);
+            var corners = new List<Vector3>();
+            foreach (int c in cells) corners.Add(grid.CellCenters[c] * radius);
+            // From the edge of the pad, to the middle of the doorway (under the lasers).
+            if (corners.Count > 1)
+                corners[0] += (corners[1] - corners[0]).normalized * 1.4f;
+            Vector3 middle = (door.P0 + door.P1).normalized * radius;
+            corners.Add(middle);
+            // The branches stop at the face of each wall.
+            Vector3 end0 = door.P0 * radius, end1 = door.P1 * radius;
+            float stop = s.wallThickness * 0.5f + 0.05f;
+            end0 += (middle - end0).normalized * stop;
+            end1 += (middle - end1).normalized * stop;
+
+            var verts = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var main = Strip(Along(corners), 0f);
+            float mainLength = main.Count > 0 ? main[main.Count - 1].distance : 0f;
+            var left = Strip(Along(new List<Vector3> { middle, end0 }), mainLength);
+            var right = Strip(Along(new List<Vector3> { middle, end1 }), mainLength);
+            var tris = new List<int>();
+            var dist = new List<float>();
+            foreach (var (quad, d) in main) { tris.AddRange(quad); dist.Add(d); }
+            // Both branches grow together: their pieces interleaved.
+            for (int k = 0; k < Mathf.Max(left.Count, right.Count); k++)
+            {
+                if (k < left.Count) { tris.AddRange(left[k].quad); dist.Add(left[k].distance); }
+                if (k < right.Count) { tris.AddRange(right[k].quad); dist.Add(right[k].distance); }
+            }
+
+            // Points every half unit along a line of corners, set on the ground.
+            List<Vector3> Along(List<Vector3> line)
+            {
+                var points = new List<Vector3>();
+                for (int k = 0; k + 1 < line.Count; k++)
+                {
+                    float length = Vector3.Distance(line[k], line[k + 1]);
+                    int steps = Mathf.Max(1, Mathf.CeilToInt(length / 0.5f));
+                    for (int n = 0; n < steps; n++) points.Add(line[k] + (line[k + 1] - line[k]) * (n / (float)steps));
+                }
+                points.Add(line[line.Count - 1]);
+                for (int k = 0; k < points.Count; k++)
+                {
+                    Vector3 dir = points[k].normalized;
+                    points[k] = dir * (terrain.SurfaceRadius(dir) + 0.035f);
+                }
+                return points;
+            }
+
+            // A flat ribbon along the points, facing up; one quad (six indices) per step, in order, each with how
+            // far along the cable it ends (counting from <paramref name="startDistance"/>).
+            List<(int[] quad, float distance)> Strip(List<Vector3> points, float startDistance)
+            {
+                var quads = new List<(int[], float)>();
+                float travelled = startDistance;
+                for (int k = 0; k < points.Count; k++)
+                {
+                    Vector3 up = points[k].normalized;
+                    Vector3 along = points[Mathf.Min(k + 1, points.Count - 1)] - points[Mathf.Max(k - 1, 0)];
+                    Vector3 side = Vector3.Cross(up, along).normalized * (width * 0.5f);
+                    verts.Add(points[k] - side); verts.Add(points[k] + side);
+                    normals.Add(up); normals.Add(up);
+                    if (k == 0) continue;
+                    int v = verts.Count - 4;
+                    // Facing up: wound so the normal agrees with up.
+                    bool flip = Vector3.Dot(Vector3.Cross(verts[v + 1] - verts[v], verts[v + 2] - verts[v]), up) < 0f;
+                    travelled += Vector3.Distance(points[k - 1], points[k]);
+                    quads.Add((!flip ? new[] { v, v + 1, v + 2, v + 1, v + 3, v + 2 } : new[] { v, v + 2, v + 1, v + 1, v + 2, v + 3 }, travelled));
+                }
+                return quads;
+            }
+
+            triangles = tris.ToArray();
+            distances = dist.ToArray();
+            var mesh = new Mesh { name = "Cable" };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(new int[0], 0);
+            mesh.bounds = new Bounds(middle, Vector3.one * 200f);
+            return mesh;
+        }
+
+        /// <summary>
         /// A flat key symbol in the local XZ plane, about 1.5 long along X: a ring for the bow, a shaft, and two
         /// teeth hanging off the far end.
         /// </summary>
@@ -300,13 +397,14 @@ namespace SphereDescent
         /// neon floor and walls. A trigger across the doorway catches the ball. Their switch pads: a metal disc
         /// with a ring and a key symbol pulsing warning red, turning green once rolled over.
         /// </summary>
-        static void CreateLaserGates(LevelInstance level, MazeLayout layout, LevelSettings s, Transform[] layerRoots,
-            ZoneMap zones, Material glowTemplate)
+        static void CreateLaserGates(LevelInstance level, MazeLayout layout, LevelSettings s, ShellTerrain[] terrains,
+            Transform[] layerRoots, ZoneMap zones, Material glowTemplate)
         {
             if (layout.LaserGates.Count == 0) return;
             var offColor = new Color(0.05f, 1f, 0.2f);
             var warning = new Color(1f, 0.04f, 0.02f);
             var disarmedMat = level.Own(LevelMaterials.MakeEmissive(offColor, 1.4f));
+            var cableMat = level.Own(LevelMaterials.MakeEmissive(offColor, 2.4f));
             var metalMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
             var ringMesh = level.Own(MeshBuilders.BuildTorus(1.05f, 0.07f, 40, 8));
             var keyMesh = level.Own(KeyMesh());
@@ -417,6 +515,13 @@ namespace SphereDescent
                 sw.armed = armedMat;
                 sw.disarmed = disarmedMat;
                 sw.warningColor = warning;
+
+                // The cable from the pad to the gate, hidden until the pad is used.
+                var cableMesh = level.Own(CableMesh(layout, s, terrains, g, 0.26f, out int[] cableTriangles, out float[] cableDistances));
+                var cable = CreateMeshObject(layerRoots[g.Shell], "Cable", cableMesh, cableMat, false, ShadowCastingMode.Off);
+                sw.cable = cable.GetComponent<MeshFilter>().sharedMesh;
+                sw.cableTriangles = cableTriangles;
+                sw.cableDistances = cableDistances;
             }
         }
 

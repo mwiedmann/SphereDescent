@@ -646,6 +646,34 @@ namespace SphereDescent
         }
 
         /// <summary>Steps from <paramref name="from"/> to every cell of a section reachable without crossing <paramref name="blockedEdge"/>.</summary>
+        /// <summary>
+        /// The shortest way through a section's cells from one cell to another, both included, never crossing
+        /// <paramref name="blockedEdge"/>. Empty if there's none.
+        /// </summary>
+        public List<int> PathBetween(int section, int from, int to, int blockedEdge = -1)
+        {
+            int shell = Sections[section].Shell;
+            var grid = Grids[shell];
+            var prev = new Dictionary<int, int> { [from] = -1 };
+            var queue = new Queue<int>();
+            queue.Enqueue(from);
+            while (queue.Count > 0 && !prev.ContainsKey(to))
+            {
+                int cur = queue.Dequeue();
+                foreach (int nb in grid.Neighbors[cur])
+                {
+                    int e = grid.EdgeBetween(cur, nb);
+                    if (e == blockedEdge || prev.ContainsKey(nb) || Region[shell][nb] != section || !Open[shell][e]) continue;
+                    prev[nb] = cur;
+                    queue.Enqueue(nb);
+                }
+            }
+            var path = new List<int>();
+            if (!prev.ContainsKey(to)) return path;
+            for (int c = to; c != -1; c = prev[c]) path.Insert(0, c);
+            return path;
+        }
+
         public Dictionary<int, int> Reachable(int section, int from, int blockedEdge = -1)
         {
             int shell = Sections[section].Shell;
