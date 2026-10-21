@@ -32,13 +32,17 @@ To help you find your way, each sphere is split into 12 zones, each with its own
 
 ## Look
 
-Everything is drawn by shaders, with no image textures:
+Everything is drawn by shaders, with no image files. There are two styles, picked from a menu when the game starts (press M to bring it back; it restarts world 1): **Synthwave**, **Deep Sea**, or alternating every world. Hole rings, pads, beams, hazards and the gold core look the same in both, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
+
+Synthwave:
 
 - **Floors:** dark, with glowing anti-aliased lines in the zone's neon color (`Assets/Shaders/TriplanarGrid.shader`).
 - **Walls:** dark panels with a neon strip along the top edge.
 - **Ball:** eight equal segments, like a crash-test ball, alternating glossy black and neon in the color of the zone you're in. The color fades smoothly as you cross a border.
 - **Sky:** a purple-to-magenta gradient with stars and a striped retro sun on the horizon (`Assets/Shaders/SynthwaveSky.shader`). It follows your local "up" wherever you are on the planet.
 - **Glow:** bloom and a light vignette from URP post-processing (`Assets/Settings/PostProcessing.asset`).
+
+Deep Sea: dark blue-green surfaces glowing in softer bioluminescent zone colors, with caustic light rippling over floors and walls (a tiling pattern computed at startup). The sky is water, brightest overhead, with swaying shafts of light and drifting specks; a blue haze fills the distance and specks drift around the camera.
 
 ## Controls
 
@@ -50,6 +54,7 @@ Everything is drawn by shaders, with no image textures:
 | Turn the camera | Mouse (click to capture), or Q / E | Right stick |
 | Respawn on the current layer | R | Select / View |
 | Release the mouse | Esc | |
+| Style menu (restarts world 1) | M | Start |
 | Skip to the next world (testing) | N | |
 
 ## Running it

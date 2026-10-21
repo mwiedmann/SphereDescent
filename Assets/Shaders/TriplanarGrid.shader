@@ -31,6 +31,9 @@ Shader "SphereDescent/TriplanarGrid"
         _SeamGlow ("Wall Panel Line Glow", Range(0, 1)) = 0.15
         [Toggle] _BallMode ("Ball Mode", Float) = 0
         _RimStrength ("Ball Rim Glow", Float) = 1.6
+        _PatternStrength ("Zone Pattern Strength", Range(0, 1)) = 1
+        _Caustics ("Caustic Light", Range(0, 2)) = 0
+        _CausticScale ("Caustic Size", Float) = 6
     }
     SubShader
     {
@@ -58,6 +61,9 @@ Shader "SphereDescent/TriplanarGrid"
             float _SurfaceRadius;
             float _WallHeight;
             float _StripWidth;
+            float _PatternStrength;
+            float _Caustics;
+            float _CausticScale;
             float _SeamGlow;
             float _BallMode;
             float _RimStrength;
@@ -162,6 +168,28 @@ Shader "SphereDescent/TriplanarGrid"
                 return Pattern(p.yz, kind) * w.x + Pattern(p.xz, kind) * w.y + Pattern(p.xy, kind) * w.z;
             }
 
+            // Rippling caustic light, as cast on a sea floor. The pattern is precomputed into a tiling texture
+            // (CausticTexture); two copies drifting different ways, kept only where both are bright, make it
+            // shimmer. Mipmaps soften it in the distance.
+            TEXTURE2D(_CausticTex);
+            SAMPLER(sampler_CausticTex);
+
+            float Caustic (float2 p)
+            {
+                float2 uv = p / _CausticScale;
+                float t = _Time.y;
+                float a = SAMPLE_TEXTURE2D(_CausticTex, sampler_CausticTex, uv + t * float2(0.021, 0.013)).r;
+                float b = SAMPLE_TEXTURE2D(_CausticTex, sampler_CausticTex, uv * 1.27 + 0.37 - t * float2(0.017, -0.019)).r;
+                return min(a, b) * 1.4;
+            }
+
+            float TriplanarCaustic (float3 p, float3 n)
+            {
+                float3 w = pow(abs(normalize(n)), 12);
+                w /= (w.x + w.y + w.z);
+                return Caustic(p.yz) * w.x + Caustic(p.xz) * w.y + Caustic(p.xy) * w.z;
+            }
+
             // The two zones whose directions are closest to dir, and how close.
             void NearestZones (float3 dir, out int zone, out int zone2, out float best, out float second)
             {
@@ -213,6 +241,8 @@ Shader "SphereDescent/TriplanarGrid"
 
                     float3 neon = _ZoneColors[zone].rgb;
                     albedo = _DarkColor.rgb * lerp(1.0, 0.4 + neon * 2.0, _ZoneMix) * _Color.rgb;
+                    float caustic = _Caustics > 0.0 ? TriplanarCaustic(i.positionWS, i.normalWS) * _Caustics : 0.0;
+                    float3 causticLight = lerp(neon, float3(0.6, 0.95, 1.0), 0.6) * caustic;
 
                     if (_WallMode > 0.5)
                     {
@@ -227,14 +257,15 @@ Shader "SphereDescent/TriplanarGrid"
                         // Panel lines on the sides glow faintly, below the bloom threshold so they don't halo.
                         // Not on the top, where they'd look like joints between wall pieces.
                         float seams = (1.0 - topFace) * saturate(Triplanar(i.gridPos, i.gridNormal, 0));
-                        emission = neon * (top * lerp(1.0, 0.3, topFace) + base * 0.35 + seams * _SeamGlow);
+                        emission = neon * (top * lerp(1.0, 0.3, topFace) + base * 0.35 + seams * _SeamGlow * _PatternStrength)
+                            + causticLight * 0.5;
                     }
                     else
                     {
-                        float m = saturate(Triplanar(i.gridPos, i.gridNormal, zone % 4));
+                        float m = saturate(Triplanar(i.gridPos, i.gridNormal, zone % 4)) * _PatternStrength;
                         float bw = fwidth(borderDist);
                         float border = 1.0 - smoothstep(_ZoneBorder - bw, _ZoneBorder + bw, borderDist);
-                        emission = lerp(neon * m, neon * 1.5, border);
+                        emission = lerp(neon * m, neon * 1.5, border) + causticLight;
                     }
                     emission *= _GlowIntensity * _Color.rgb;
                 }

@@ -14,6 +14,8 @@ Shader "SphereDescent/SynthwaveSky"
         _SunSize ("Sun Angular Radius", Range(0.05, 0.6)) = 0.22
         _SunGlow ("Sun Brightness", Float) = 1.6
         _StarDensity ("Star Density", Range(0, 0.02)) = 0.004
+        _StarDrift ("Star Drift Speed", Float) = 0
+        _RayStrength ("Light Shafts From Above", Range(0, 1)) = 0
     }
     SubShader
     {
@@ -38,6 +40,8 @@ Shader "SphereDescent/SynthwaveSky"
                 float _SunSize;
                 float _SunGlow;
                 float _StarDensity;
+                float _StarDrift;
+                float _RayStrength;
             CBUFFER_END
 
             float3 _PlayerUp;
@@ -72,17 +76,29 @@ Shader "SphereDescent/SynthwaveSky"
                     ? lerp(lerp(_HorizonColor.rgb, _MidColor.rgb, saturate(h * 5.0)), _TopColor.rgb, saturate((h - 0.2) * 1.6))
                     : lerp(_HorizonColor.rgb * 0.5, _BelowColor.rgb, saturate(-h * 6.0));
 
-                // Stars, fading out toward the horizon glow.
-                float3 cell = floor(d * 220.0);
+                // Stars (or drifting specks), fading out toward the horizon glow.
+                float3 cell = floor((d + up * _Time.y * _StarDrift) * 220.0);
                 float star = step(1.0 - _StarDensity, Hash(cell));
                 float twinkle = 0.6 + 0.4 * Hash(cell + 7.0);
                 col += star * twinkle * saturate((h - 0.08) * 4.0);
+
+                // Shafts of light fanning down from overhead, slowly swaying (under water).
+                if (_RayStrength > 0.0)
+                {
+                    float3 right = normalize(cross(up, abs(up.y) < 0.9 ? float3(0, 1, 0) : float3(1, 0, 0)));
+                    float3 fwd = cross(right, up);
+                    float around = atan2(dot(d, fwd), dot(d, right));
+                    float sway = 1.7 * sin(around * 4.0 + _Time.y * 0.15);
+                    float shafts = pow(saturate(0.5 + 0.5 * sin(around * 9.0 + sway + _Time.y * 0.05)), 6.0);
+                    shafts *= 0.6 + 0.4 * sin(around * 3.0 - _Time.y * 0.1);
+                    col += _TopColor.rgb * 1.6 * shafts * smoothstep(0.0, 0.9, h) * _RayStrength;
+                }
 
                 // Retro sun: disc on the horizon, yellow at the top to pink at the bottom, with horizontal
                 // gaps that get wider toward the horizon.
                 float3 sunDir = normalize(_SkySunDir);
                 float sunAngle = acos(saturate(dot(d, sunDir)));
-                if (sunAngle < _SunSize)
+                if (_SunSize > 0.0 && sunAngle < _SunSize)
                 {
                     float sunUp = dot(sunDir, up);
                     float rel = (h - sunUp) / _SunSize; // -1 at the bottom of the disc, 1 at the top
@@ -92,7 +108,7 @@ Shader "SphereDescent/SynthwaveSky"
                     col = lerp(col, sunCol, edge * (1.0 - gap));
                 }
                 // Soft glow around the sun.
-                col += _SunBottomColor.rgb * 0.25 * saturate(1.0 - sunAngle / (_SunSize * 3.0));
+                if (_SunSize > 0.0) col += _SunBottomColor.rgb * 0.25 * saturate(1.0 - sunAngle / (_SunSize * 3.0));
 
                 return half4(col, 1);
             }

@@ -56,6 +56,20 @@ namespace SphereDescent
         public static bool SkipWorldPressed() => Keyboard.current != null && Keyboard.current.nKey.wasPressedThisFrame;
         public static bool UnlockCursorPressed() => Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
         public static bool LockCursorPressed() => Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+
+        public static bool MenuPressed() =>
+            (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame) ||
+            (Gamepad.current != null && Gamepad.current.startButton.wasPressedThisFrame);
+
+        /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
+        public static int NumberPressed()
+        {
+            var k = Keyboard.current;
+            if (k == null) return 0;
+            for (int n = 1; n <= 9; n++)
+                if (k[Key.Digit1 + (n - 1)].wasPressedThisFrame || k[Key.Numpad1 + (n - 1)].wasPressedThisFrame) return n;
+            return 0;
+        }
 #else
         public static Vector2 Move() =>
             Vector2.ClampMagnitude(new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")), 1f);
@@ -77,6 +91,15 @@ namespace SphereDescent
         public static bool SkipWorldPressed() => Input.GetKeyDown(KeyCode.N);
         public static bool UnlockCursorPressed() => Input.GetKeyDown(KeyCode.Escape);
         public static bool LockCursorPressed() => Input.GetMouseButtonDown(0);
+        public static bool MenuPressed() => Input.GetKeyDown(KeyCode.M);
+
+        /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
+        public static int NumberPressed()
+        {
+            for (int n = 1; n <= 9; n++)
+                if (Input.GetKeyDown(KeyCode.Alpha1 + (n - 1)) || Input.GetKeyDown(KeyCode.Keypad1 + (n - 1))) return n;
+            return 0;
+        }
 #endif
     }
 }

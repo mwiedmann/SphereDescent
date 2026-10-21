@@ -20,17 +20,27 @@ namespace SphereDescent
         public int startWorld = 1;
         public float worldTransitionDelay = 2.5f;
         public Light sun;
+        [Tooltip("Looks the worlds take turns through: world 1 uses the first, world 2 the second, and so on, wrapping around.")]
+        public VisualStyle[] styles = { VisualStyle.Synthwave(), VisualStyle.DeepSea() };
+        [Tooltip("Show a menu at the start (and on M) to pick the style, which then starts world 1 in it.")]
+        public bool styleMenu = true;
 
         LevelInstance level;
         BallController ball;
         OrbitCamera orbit;
         Camera cam;
         CameraClearFlags surfaceClearFlags;
+        VisualStyle style;
+        int styleChoice = -1; // index into styles, or -1 to take turns world by world
+        bool menuOpen;
+        float frameMs;
+        Material skyMaterial;
+        ParticleSystem specks;
         int world;
         bool transitioning;
         string message;
         float messageUntil;
-        GUIStyle hudStyle, bannerStyle;
+        GUIStyle hudStyle, bannerStyle, rightStyle, menuTitleStyle, menuButtonStyle, menuHintStyle;
         int section;
         int climbingThrough = -1; // the hole a boost-pad launch is heading up through, until the ball lands
 
@@ -41,6 +51,120 @@ namespace SphereDescent
             Instance = this;
             materials.EnsureDefaults();
             if (sun == null) sun = RenderSettings.sun;
+            // Styles recolor the sky, so work on a copy rather than the material asset.
+            if (RenderSettings.skybox != null) RenderSettings.skybox = skyMaterial = new Material(RenderSettings.skybox);
+        }
+
+        VisualStyle StyleFor(int w)
+        {
+            if (styles == null || styles.Length == 0) return VisualStyle.Synthwave();
+            return styleChoice >= 0 && styleChoice < styles.Length ? styles[styleChoice] : styles[(w - 1) % styles.Length];
+        }
+
+        /// <summary>Pauses on the style menu (the world stays in view behind it).</summary>
+        void OpenMenu()
+        {
+            if (transitioning) return;
+            menuOpen = true;
+            ball.SetFrozen(true);
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+
+        /// <summary>Starts world 1 over in the chosen style (-1 = take turns each world).</summary>
+        void ChooseStyle(int choice)
+        {
+            styleChoice = choice;
+            menuOpen = false;
+            world = 1;
+            BuildWorld();
+            ball.SetFrozen(false);
+        }
+
+        /// <summary>Sets up the sky, light and air for a world's style (its surfaces are styled as the level is built).</summary>
+        void ApplyStyle(VisualStyle s)
+        {
+            style = s;
+            ApplyAtmosphere(s, skyMaterial, sun);
+            SetSpecks(s.floatingSpecks, s.speckColor);
+        }
+
+        /// <summary>A style's sky, light and fog. Static so editor tools can preview a style too.</summary>
+        public static void ApplyAtmosphere(VisualStyle s, Material skyMaterial, Light sun)
+        {
+            if (skyMaterial != null)
+            {
+                skyMaterial.SetColor("_TopColor", s.skyTop);
+                skyMaterial.SetColor("_MidColor", s.skyMid);
+                skyMaterial.SetColor("_HorizonColor", s.skyHorizon);
+                skyMaterial.SetColor("_BelowColor", s.skyBelow);
+                skyMaterial.SetColor("_SunTopColor", s.sunTop);
+                skyMaterial.SetColor("_SunBottomColor", s.sunBottom);
+                skyMaterial.SetFloat("_SunSize", s.sunSize);
+                skyMaterial.SetFloat("_SunGlow", s.sunGlow);
+                skyMaterial.SetFloat("_StarDensity", s.starDensity);
+                skyMaterial.SetFloat("_StarDrift", s.starDrift);
+                skyMaterial.SetFloat("_RayStrength", s.lightRays);
+            }
+            if (sun != null)
+            {
+                sun.color = s.sunLight;
+                sun.intensity = s.sunLightIntensity;
+            }
+            RenderSettings.ambientLight = s.ambientLight;
+            RenderSettings.fog = s.fogDensity > 0f;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogDensity = s.fogDensity;
+            RenderSettings.fogColor = s.fogColor;
+        }
+
+        /// <summary>Tiny specks drifting in the water around the camera (marine snow). Zero turns them off.</summary>
+        void SetSpecks(int count, Color color)
+        {
+            if (count <= 0)
+            {
+                if (specks != null) specks.gameObject.SetActive(false);
+                return;
+            }
+            if (specks == null)
+            {
+                var go = new GameObject("Floating Specks");
+                go.transform.SetParent(cam.transform, false);
+                specks = go.AddComponent<ParticleSystem>();
+                specks.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                var shape = specks.shape;
+                shape.shapeType = ParticleSystemShapeType.Box;
+                shape.scale = new Vector3(36f, 24f, 36f);
+                var noise = specks.noise;
+                noise.enabled = true;
+                noise.strength = 0.25f;
+                noise.frequency = 0.3f;
+                var r = go.GetComponent<ParticleSystemRenderer>();
+                var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
+                // Additive, so specks glow softly and never darken what's behind them.
+                mat.SetFloat("_Surface", 1f);
+                mat.SetFloat("_Blend", 2f);
+                mat.SetOverrideTag("RenderType", "Transparent");
+                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
+                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
+                mat.SetInt("_ZWrite", 0);
+                mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                r.sharedMaterial = mat;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            specks.gameObject.SetActive(true);
+            var main = specks.main;
+            main.loop = true;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = count;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(6f, 10f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.05f, 0.3f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.09f);
+            main.startColor = color;
+            var emission = specks.emission;
+            emission.rateOverTime = count / 8f;
+            specks.Play();
         }
 
         void Start()
@@ -48,6 +172,7 @@ namespace SphereDescent
             world = Mathf.Max(1, startWorld);
             CreatePlayer();
             BuildWorld();
+            if (styleMenu) OpenMenu();
         }
 
         /// <summary>The player's ball: a sphere with grippy physics and the ball controller.</summary>
@@ -100,7 +225,9 @@ namespace SphereDescent
 
             float t0 = Time.realtimeSinceStartup;
             var layout = MazeLayout.Generate(settings, baseSeed + world * 7919);
-            level = LevelBuilder.Build(layout, settings, materials, world);
+            var worldStyle = StyleFor(world);
+            level = LevelBuilder.Build(layout, settings, materials, world, worldStyle);
+            ApplyStyle(worldStyle);
             Debug.Log($"World {world}: seed {layout.Seed}, layout found after {layout.AttemptsUsed} attempts, " +
                       $"{layout.Sections.Count} sections ({layout.Climbs} climbs), " +
                       $"built in {(Time.realtimeSinceStartup - t0) * 1000f:F0} ms");
@@ -110,7 +237,7 @@ namespace SphereDescent
             ball.level = level;
             ball.Teleport(level.SpawnPosition);
             orbit.Snap();
-            ShowMessage($"World {world}", 3f);
+            ShowMessage(styles != null && styles.Length > 1 ? $"World {world}: {worldStyle.name}" : $"World {world}", 3f);
         }
 
         /// <summary>Seals the hole the ball just fell through.</summary>
@@ -156,17 +283,30 @@ namespace SphereDescent
 
         void Update()
         {
-            if (GameInput.LockCursorPressed() && Cursor.lockState != CursorLockMode.Locked)
+            // Smoothed frame time for the HUD, to compare how heavy each style is.
+            frameMs = Mathf.Lerp(frameMs <= 0f ? Time.unscaledDeltaTime * 1000f : frameMs, Time.unscaledDeltaTime * 1000f, 0.05f);
+
+            if (menuOpen)
             {
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
+                int n = GameInput.NumberPressed();
+                if (n >= 1 && n <= styles.Length) ChooseStyle(n - 1);
+                else if (n == styles.Length + 1) ChooseStyle(-1);
             }
-            if (GameInput.UnlockCursorPressed())
+            else
             {
-                Cursor.lockState = CursorLockMode.None;
-                Cursor.visible = true;
+                if (GameInput.LockCursorPressed() && Cursor.lockState != CursorLockMode.Locked)
+                {
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
+                }
+                if (GameInput.UnlockCursorPressed())
+                {
+                    Cursor.lockState = CursorLockMode.None;
+                    Cursor.visible = true;
+                }
+                if (GameInput.SkipWorldPressed()) OnExitReached();
+                if (styleMenu && GameInput.MenuPressed()) OpenMenu();
             }
-            if (GameInput.SkipWorldPressed()) OnExitReached();
             if (level != null && ball != null)
             {
                 // Landing anywhere on the core completes the world.
@@ -192,7 +332,7 @@ namespace SphereDescent
                 level.SetVisibleLayers(visibleLayer);
                 // Below the surface the layers above are hidden, and the sky is plain black.
                 cam.clearFlags = visibleLayer > 0 ? CameraClearFlags.SolidColor : surfaceClearFlags;
-                cam.backgroundColor = visibleLayer > 0 ? Color.black : skyColor;
+                cam.backgroundColor = visibleLayer > 0 ? (style != null ? style.innerBackground : Color.black) : skyColor;
             }
         }
 
@@ -240,12 +380,42 @@ namespace SphereDescent
             string help = GameInput.GamepadConnected
                 ? "Left stick / D-pad move · A jump · Right stick camera · Select respawn"
                 : Cursor.lockState == CursorLockMode.Locked
-                ? "WASD move · Space jump · Mouse/Q/E camera · R respawn · Esc free cursor"
-                : "Click to capture mouse · WASD move · Space jump · Q/E camera · R respawn · N skip world";
+                ? "WASD move · Space jump · Mouse/Q/E camera · R respawn · Esc free cursor · M style menu"
+                : "Click to capture mouse · WASD move · Space jump · Q/E camera · R respawn · N skip world · M style menu";
             Shadowed(new Rect(16, Screen.height - 36, 1000, 30), help, hudStyle);
 
+            // Frame time and style, top right.
+            string perf = $"{frameMs:F1} ms ({(frameMs > 0f ? 1000f / frameMs : 0f):F0} fps)   ·   {(style != null ? style.name : "")}";
+            Shadowed(new Rect(Screen.width - 416, 12, 400, 30), perf, rightStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.UpperRight });
+
+            if (menuOpen)
+            {
+                DrawMenu();
+                return;
+            }
             if (Time.time < messageUntil && !string.IsNullOrEmpty(message))
                 Shadowed(new Rect(0, Screen.height * 0.25f, Screen.width, 60), message, bannerStyle);
+        }
+
+        void DrawMenu()
+        {
+            const float w = 420f, row = 46f;
+            int options = styles.Length + 1;
+            float h = 90f + options * row;
+            var box = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
+            // Drawn twice for a darker panel behind the buttons.
+            GUI.Box(box, "");
+            GUI.Box(box, "");
+            Shadowed(new Rect(box.x, box.y + 12, w, 40), "Choose a style", menuTitleStyle ??= new GUIStyle(bannerStyle) { fontSize = 28 });
+            for (int i = 0; i < options; i++)
+            {
+                string label = i < styles.Length ? styles[i].name : "Alternate every world";
+                var r = new Rect(box.x + 30, box.y + 64 + i * row, w - 60, row - 8);
+                if (GUI.Button(r, $"{i + 1}.  {label}", menuButtonStyle ??= new GUIStyle(GUI.skin.button) { fontSize = 20 }))
+                    ChooseStyle(i < styles.Length ? i : -1);
+            }
+            Shadowed(new Rect(box.x, box.yMax + 6, w, 30), "Starts world 1   ·   M brings this menu back",
+                menuHintStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.UpperCenter, fontSize = 15 });
         }
 
         static void Shadowed(Rect r, string text, GUIStyle style)

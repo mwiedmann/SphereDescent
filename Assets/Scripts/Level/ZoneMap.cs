@@ -13,29 +13,14 @@ namespace SphereDescent
     {
         public const int Count = 12;
 
-        // Neon colors: each zone's grid lines and wall strips glow in its color.
-        static readonly (string name, Color color)[] Palette =
-        {
-            ("Crimson", new Color(1.00f, 0.10f, 0.25f)),
-            ("Amber",   new Color(1.00f, 0.50f, 0.05f)),
-            ("Gold",    new Color(1.00f, 0.85f, 0.10f)),
-            ("Lime",    new Color(0.60f, 1.00f, 0.10f)),
-            ("Jade",    new Color(0.05f, 1.00f, 0.45f)),
-            ("Teal",    new Color(0.00f, 0.95f, 0.90f)),
-            ("Azure",   new Color(0.10f, 0.60f, 1.00f)),
-            ("Cobalt",  new Color(0.30f, 0.30f, 1.00f)),
-            ("Violet",  new Color(0.65f, 0.20f, 1.00f)),
-            ("Magenta", new Color(1.00f, 0.15f, 0.85f)),
-            ("Coral",   new Color(1.00f, 0.45f, 0.40f)),
-            ("Ice",     new Color(0.75f, 0.90f, 1.00f)),
-        };
-
         public readonly Vector3[] Directions = new Vector3[Count];
         public readonly Color[] Colors = new Color[Count];
         public readonly string[] Names = new string[Count];
 
-        public ZoneMap(int seed)
+        /// <param name="palette">The style's zones: each zone's grid lines and wall strips glow in its color.</param>
+        public ZoneMap(int seed, VisualStyle.Zone[] palette)
         {
+            if (palette == null || palette.Length < Count) palette = VisualStyle.Synthwave().zones;
             var rng = new Random(seed ^ 0x5f3759df);
             var rotation = Quaternion.Euler((float)rng.NextDouble() * 360f, (float)rng.NextDouble() * 360f, (float)rng.NextDouble() * 360f);
             var baseDirs = IcoSphere.Get(0).Vertices;
@@ -51,8 +36,8 @@ namespace SphereDescent
             for (int i = 0; i < Count; i++)
             {
                 Directions[i] = (rotation * baseDirs[i]).normalized;
-                Colors[i] = Palette[order[i]].color;
-                Names[i] = Palette[order[i]].name;
+                Colors[i] = palette[order[i]].color;
+                Names[i] = palette[order[i]].name;
             }
         }
 

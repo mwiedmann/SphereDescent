@@ -7,14 +7,16 @@ namespace SphereDescent
     /// <summary>Turns a <see cref="MazeLayout"/> into GameObjects: shells, walls, hole rings, boost pads and the core (the exit).</summary>
     public static class LevelBuilder
     {
-        public static LevelInstance Build(MazeLayout layout, LevelSettings s, LevelMaterials mats, int world)
+        public static LevelInstance Build(MazeLayout layout, LevelSettings s, LevelMaterials mats, int world, VisualStyle style = null)
         {
+            style ??= VisualStyle.Synthwave();
             var root = new GameObject($"World {world} (seed {layout.Seed})");
             var level = root.AddComponent<LevelInstance>();
             var shellIco = IcoSphere.Get(s.shellMeshSubdivisions);
             Vector3 startDir = layout.Grids[0].CellCenters[layout.StartCell];
-            var zones = new ZoneMap(layout.Seed);
+            var zones = new ZoneMap(layout.Seed, style.zones);
             zones.ApplyToShaders();
+            if (style.caustics > 0f) Shader.SetGlobalTexture("_CausticTex", CausticTexture.Get());
             level.Init(s, layout, world, startDir * (s.shellRadii[0] + 1.5f), zones);
 
             // A light beam marks where each section ends, colored like the rings: orange over the hole to drop
@@ -50,7 +52,7 @@ namespace SphereDescent
                     if (h.Shell == shell)
                         cuts.Add(new HoleCut { Direction = h.Direction, AngularRadius = holeRadius / radius });
 
-                var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 3f, 0.6f));
+                var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 3f, style.groundZoneMix, style));
                 var shellMesh = level.Own(MeshBuilders.BuildShell(shellIco, radius, s.shellThickness, cuts, terrain));
                 // Shells don't cast shadows, otherwise the outer shell would plunge every inner layer into darkness.
                 CreateMeshObject(layerRoot, "Shell", shellMesh, groundMat, true, ShadowCastingMode.Off);
@@ -58,7 +60,7 @@ namespace SphereDescent
                 var walls = new List<(Vector3, Vector3)>();
                 for (int e = 0; e < grid.Edges.Length; e++)
                     if (!layout.Open[shell][e]) walls.Add((grid.Edges[e].P0, grid.Edges[e].P1));
-                var wallMat = level.Own(ZoneMaterial(mats.wall, WallColor(shell), 2f, 0.9f));
+                var wallMat = level.Own(ZoneMaterial(mats.wall, WallColor(shell), 2f, style.wallZoneMix, style));
                 // Neon strip along the top of the walls: the shader measures height above this shell.
                 wallMat.SetFloat("_WallMode", 1f);
                 wallMat.SetFloat("_SurfaceRadius", radius);
@@ -583,12 +585,17 @@ namespace SphereDescent
             return go;
         }
 
-        static Material ZoneMaterial(Material template, Color tint, float gridSize, float zoneMix)
+        static Material ZoneMaterial(Material template, Color tint, float gridSize, float zoneMix, VisualStyle style)
         {
             var m = new Material(template) { color = tint };
             if (m.HasProperty("_ZoneMode")) m.SetFloat("_ZoneMode", 1f);
             if (m.HasProperty("_ZoneMix")) m.SetFloat("_ZoneMix", zoneMix);
             if (m.HasProperty("_GridSize")) m.SetFloat("_GridSize", gridSize);
+            if (m.HasProperty("_DarkColor")) m.SetColor("_DarkColor", style.darkColor);
+            if (m.HasProperty("_GlowIntensity")) m.SetFloat("_GlowIntensity", style.glowIntensity);
+            if (m.HasProperty("_PatternStrength")) m.SetFloat("_PatternStrength", style.patternStrength);
+            if (m.HasProperty("_Caustics")) m.SetFloat("_Caustics", style.caustics);
+            if (m.HasProperty("_CausticScale")) m.SetFloat("_CausticScale", style.causticScale);
             return m;
         }
 
