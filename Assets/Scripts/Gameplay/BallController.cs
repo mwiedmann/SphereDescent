@@ -47,6 +47,10 @@ namespace SphereDescent
         public int CurrentLayer { get; private set; }
         public bool IsGrounded { get; private set; }
         public bool IsLaunching => launchPad != null;
+        /// <summary>Launched from a boost pad.</summary>
+        public event System.Action<BoostPad> Launched;
+        /// <summary>Fell through a hole: the layer it came from, and where it crossed.</summary>
+        public event System.Action<int, Vector3> DroppedThrough;
         /// <summary>True while blown up and waiting to reappear.</summary>
         public bool IsDestroyed => exploding;
         public bool OnPad => pad != null && Time.time - padSeenAt < 0.15f;
@@ -100,7 +104,11 @@ namespace SphereDescent
             if (level != null) CurrentLayer = level.LayerAt(r);
             // Fell through a hole: drop straight down from here on, so momentum can't carry the ball over a
             // wall into a sealed-off part of the maze below.
-            if (CurrentLayer > previousLayer && launchPad == null) dropping = true;
+            if (CurrentLayer > previousLayer && launchPad == null)
+            {
+                dropping = true;
+                DroppedThrough?.Invoke(previousLayer, pos);
+            }
             if (IsGrounded)
             {
                 dropping = false;
@@ -188,6 +196,7 @@ namespace SphereDescent
             rb.linearVelocity = up * Mathf.Sqrt(2f * gravity * rise);
             rb.angularVelocity *= 0.3f;
             boost.OnLaunched();
+            Launched?.Invoke(boost);
         }
 
         /// <summary>

@@ -120,6 +120,9 @@ namespace SphereDescent.EditorTools
             mats.EnsureDefaults();
             int failures = 0;
             var allRoutes = new System.Collections.Generic.List<int>();
+            var groupOpenings = new System.Collections.Generic.List<float>();
+            var openingsByShell = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<float>>();
+            var minesByShell = new System.Collections.Generic.Dictionary<int, (int groups, int mines)>();
             for (int world = 1; world <= 8; world++)
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -163,7 +166,7 @@ namespace SphereDescent.EditorTools
                 if (deadEnds > 0) problems.Append($" {deadEnds} dead ends;");
 
                 // Mines: clear of walls, holes and pads, far enough apart to roll between, 2-3 groups a section.
-                float minGap = float.MaxValue, minWall = float.MaxValue, minHole = float.MaxValue, maxWallMineGap = 0f;
+                float minGap = float.MaxValue, gapShortfall = float.MaxValue, minWall = float.MaxValue, minHole = float.MaxValue, maxWallMineGap = 0f;
                 int wallMines = 0;
                 var perSection = new int[layout.Sections.Count];
                 for (int m = 0; m < layout.Mines.Count; m++)
@@ -174,7 +177,11 @@ namespace SphereDescent.EditorTools
                     perSection[mine.Section]++;
                     for (int n = m + 1; n < layout.Mines.Count; n++)
                         if (layout.Mines[n].Shell == mine.Shell)
-                            minGap = Mathf.Min(minGap, Vector3.Distance(p, layout.Mines[n].Direction * r) - 2f * settings.mineRadius);
+                        {
+                            float gap = Vector3.Distance(p, layout.Mines[n].Direction * r) - 2f * settings.mineRadius;
+                            minGap = Mathf.Min(minGap, gap);
+                            gapShortfall = Mathf.Min(gapShortfall, gap - layout.MineGap(settings, mine.Shell));
+                        }
                     var grid = layout.Grids[mine.Shell];
                     float wallGap = float.MaxValue;
                     for (int e = 0; e < grid.Edges.Length; e++)
@@ -194,7 +201,7 @@ namespace SphereDescent.EditorTools
                             minHole = Mathf.Min(minHole, Vector3.Angle(h.Direction, mine.Direction) * Mathf.Deg2Rad * r
                                 - settings.HoleRadius(layout.Grids[h.Shell], h.Shell) - settings.mineRadius);
                 }
-                if (minGap < MazeLayout.MinePassage - 0.05f) problems.Append($" mines only {minGap:F2} apart;");
+                if (gapShortfall < -0.05f) problems.Append($" mines {-gapShortfall:F2} closer than their shell allows;");
                 if (maxWallMineGap >= 1f) problems.Append($" a wall mine leaves {maxWallMineGap:F2} to squeeze past;");
                 if (minWall < 0.5f) problems.Append($" a mine {minWall:F2} from a wall;");
                 if (minHole < 2f) problems.Append($" a mine {minHole:F2} from a hole or pad;");
@@ -229,6 +236,19 @@ namespace SphereDescent.EditorTools
                 var gateSections = new System.Text.StringBuilder();
                 foreach (var g in layout.LaserGates) gateSections.Append(' ').Append(g.Section + 1);
 
+                // How easy each mine group is to get through: the widest ball that could roll across its cell,
+                // from the doorway the route comes in by to the one it leaves by.
+                foreach (var (gSection, gCell) in layout.MineGroups)
+                {
+                    float w = WidestPassage(layout, settings, gSection, gCell);
+                    groupOpenings.Add(w);
+                    int sh = layout.Sections[gSection].Shell;
+                    if (!openingsByShell.TryGetValue(sh, out var list)) openingsByShell[sh] = list = new System.Collections.Generic.List<float>();
+                    list.Add(w);
+                    if (!minesByShell.ContainsKey(sh)) minesByShell[sh] = (0, 0);
+                    var cur = minesByShell[sh];
+                    minesByShell[sh] = (cur.groups + 1, cur.mines + layout.Mines.FindAll(m => m.Shell == sh && layout.Grids[sh].NearestCell(m.Direction) == gCell).Count);
+                }
                 var mineCounts = new System.Text.StringBuilder();
                 foreach (int c in perSection) mineCounts.Append(' ').Append(c);
 
@@ -266,7 +286,106 @@ namespace SphereDescent.EditorTools
             if (allRoutes.Count > 0)
                 Debug.Log($"[Validate] shortest route per section (cells): min {allRoutes[0]}, median {allRoutes[allRoutes.Count / 2]}, " +
                           $"max {allRoutes[allRoutes.Count - 1]}; about {settings.cellSpacing:F1} units per cell");
+            groupOpenings.Sort();
+            if (groupOpenings.Count > 0)
+                Debug.Log($"[Validate] mine groups: {groupOpenings.Count}; widest ball that could roll through a group: " +
+                          $"median {groupOpenings[groupOpenings.Count / 2]:F1}, 90% {groupOpenings[groupOpenings.Count * 9 / 10]:F1}, " +
+                          $"max {groupOpenings[groupOpenings.Count - 1]:F1}; over 3 wide: {groupOpenings.FindAll(g => g > 3f).Count} " +
+                          $"(the ball is 1)");
+            foreach (var kv in openingsByShell)
+            {
+                kv.Value.Sort();
+                var (g, m) = minesByShell[kv.Key];
+                Debug.Log($"[Validate] sphere {kv.Key + 1}: {g} groups, about {m / (float)g:F1} mines in each group's cell; widest way through " +
+                          $"median {kv.Value[kv.Value.Count / 2]:F1}, narrowest-10% {kv.Value[kv.Value.Count / 10]:F1}");
+            }
             Debug.Log(failures == 0 ? "[Validate] OK" : $"[Validate] {failures} worlds have problems");
+        }
+
+        /// <summary>
+        /// The widest ball that could roll across a mine group's cell from the doorway the route enters by to
+        /// the one it leaves by, staying in the cell: sampled on a fine grid, with each point's room to the
+        /// nearest mine or wall, joined from roomiest down until the two doorways connect.
+        /// </summary>
+        static float WidestPassage(MazeLayout layout, LevelSettings s, int section, int cell)
+        {
+            int shell = layout.Sections[section].Shell;
+            var grid = layout.Grids[shell];
+            float r = s.shellRadii[shell];
+            var route = layout.Route(section);
+            int k = route.IndexOf(cell);
+            if (k <= 0 || k >= route.Count - 1) return 0f;
+            var inEdge = grid.Edges[grid.EdgeBetween(route[k - 1], cell)];
+            var outEdge = grid.Edges[grid.EdgeBetween(cell, route[k + 1])];
+            Vector3 c = grid.CellCenters[cell];
+            Vector3 x = Vector3.Cross(c, Mathf.Abs(c.y) < 0.9f ? Vector3.up : Vector3.right).normalized, y = Vector3.Cross(c, x);
+            var mines = new List<Vector3>();
+            foreach (var m in layout.Mines) if (m.Shell == shell && Vector3.Angle(m.Direction, c) * Mathf.Deg2Rad * r < 25f) mines.Add(m.Direction * r);
+            var walls = new List<(Vector3, Vector3)>();
+            foreach (int a in new List<int>(grid.Neighbors[cell]) { cell })
+                foreach (int nb in grid.Neighbors[a])
+                {
+                    int e = grid.EdgeBetween(a, nb);
+                    if (!layout.Open[shell][e]) walls.Add((grid.Edges[e].P0 * r, grid.Edges[e].P1 * r));
+                }
+            float SegDist(Vector3 p, Vector3 a0, Vector3 a1)
+            {
+                float t = Mathf.Clamp01(Vector3.Dot(p - a0, a1 - a0) / (a1 - a0).sqrMagnitude);
+                return Vector3.Distance(p, a0 + (a1 - a0) * t);
+            }
+
+            const float step = 0.35f;
+            int n = Mathf.CeilToInt(11f / step) * 2 + 1;
+            var room = new float[n * n];
+            var source = new bool[n * n];
+            var target = new bool[n * n];
+            var inside = new bool[n * n];
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++)
+                {
+                    Vector3 dir = (c * r + x * ((i - n / 2) * step) + y * ((j - n / 2) * step)).normalized;
+                    if (grid.NearestCell(dir) != cell) continue;
+                    Vector3 p = dir * r;
+                    float best = float.MaxValue;
+                    foreach (var m in mines) best = Mathf.Min(best, Vector3.Distance(p, m) - s.mineRadius);
+                    foreach (var (a0, a1) in walls) best = Mathf.Min(best, SegDist(p, a0, a1) - s.wallThickness * 0.5f);
+                    int id = i * n + j;
+                    inside[id] = true;
+                    room[id] = best;
+                    source[id] = SegDist(p, inEdge.P0 * r, inEdge.P1 * r) < step * 1.5f;
+                    target[id] = SegDist(p, outEdge.P0 * r, outEdge.P1 * r) < step * 1.5f;
+                }
+
+            // Union-find, adding points roomiest first; the room at which the doorways join is the bottleneck.
+            var parent = new int[n * n];
+            for (int i = 0; i < parent.Length; i++) parent[i] = i;
+            int Find(int a) { while (parent[a] != a) a = parent[a] = parent[parent[a]]; return a; }
+            var order = new List<int>();
+            for (int i = 0; i < n * n; i++) if (inside[i]) order.Add(i);
+            order.Sort((a, b) => room[b].CompareTo(room[a]));
+            var added = new bool[n * n];
+            var hasSource = new bool[n * n];
+            var hasTarget = new bool[n * n];
+            foreach (int id in order)
+            {
+                added[id] = true;
+                hasSource[id] = source[id];
+                hasTarget[id] = target[id];
+                int i = id / n, j = id % n;
+                foreach (var (di, dj) in new[] { (1, 0), (-1, 0), (0, 1), (0, -1) })
+                {
+                    int ni = i + di, nj = j + dj;
+                    if (ni < 0 || nj < 0 || ni >= n || nj >= n || !added[ni * n + nj]) continue;
+                    int ra = Find(id), rb = Find(ni * n + nj);
+                    if (ra == rb) continue;
+                    parent[rb] = ra;
+                    hasSource[ra] |= hasSource[rb];
+                    hasTarget[ra] |= hasTarget[rb];
+                }
+                int root = Find(id);
+                if (hasSource[root] && hasTarget[root]) return Mathf.Max(0f, room[id]) * 2f;
+            }
+            return 0f;
         }
 
         /// <summary>

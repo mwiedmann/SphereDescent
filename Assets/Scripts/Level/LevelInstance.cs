@@ -16,6 +16,9 @@ namespace SphereDescent
         readonly Dictionary<int, List<Renderer>> shadowCasters = new Dictionary<int, List<Renderer>>();
         readonly Dictionary<int, (GameObject beam, int layer)> beams = new Dictionary<int, (GameObject, int)>();
         int beamSection = -2;
+        // Holes and pads, by section: what to hide once used, and the sealed cover to show instead.
+        readonly Dictionary<(bool pad, int section), (GameObject[] hide, GameObject seal)> usables =
+            new Dictionary<(bool, int), (GameObject[], GameObject)>();
         int shadowLayer = -1;
         Renderer[][] layerRenderers;   // [layer] -> every renderer on that layer
         int visibleFocus = -2;
@@ -43,6 +46,20 @@ namespace SphereDescent
             if (!shadowCasters.TryGetValue(layer, out var list)) shadowCasters[layer] = list = new List<Renderer>();
             list.Add(r);
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        internal void RegisterUsable(bool pad, int section, GameObject[] hide, GameObject seal) =>
+            usables[(pad, section)] = (hide, seal);
+
+        /// <summary>
+        /// Seals a hole or pad once it has been used, so there's no going back: it's covered with a solid black
+        /// disc marked with a red X.
+        /// </summary>
+        public void MarkUsed(bool pad, int section)
+        {
+            if (!usables.TryGetValue((pad, section), out var parts) || parts.seal.activeSelf) return;
+            foreach (var go in parts.hide) if (go != null) go.SetActive(false);
+            parts.seal.SetActive(true);
         }
 
         internal void RegisterBeam(int section, int layer, GameObject beam)

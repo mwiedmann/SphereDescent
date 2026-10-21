@@ -32,6 +32,7 @@ namespace SphereDescent
         float messageUntil;
         GUIStyle hudStyle, bannerStyle;
         int section;
+        int climbingThrough = -1; // the hole a boost-pad launch is heading up through, until the ball lands
 
         public int World => world;
 
@@ -72,6 +73,8 @@ namespace SphereDescent
         void CreatePlayer()
         {
             ball = CreateBall(materials.ball);
+            ball.DroppedThrough += OnDroppedThrough;
+            ball.Launched += OnLaunched;
 
             cam = Camera.main;
             if (cam == null)
@@ -102,11 +105,36 @@ namespace SphereDescent
                       $"{layout.Sections.Count} sections ({layout.Climbs} climbs), " +
                       $"built in {(Time.realtimeSinceStartup - t0) * 1000f:F0} ms");
             section = 0;
+            climbingThrough = -1;
 
             ball.level = level;
             ball.Teleport(level.SpawnPosition);
             orbit.Snap();
             ShowMessage($"World {world}", 3f);
+        }
+
+        /// <summary>Seals the hole the ball just fell through.</summary>
+        void OnDroppedThrough(int fromLayer, Vector3 position)
+        {
+            if (level == null) return;
+            int best = -1;
+            float bestAngle = float.MaxValue;
+            var holes = level.Layout.Holes;
+            for (int i = 0; i < holes.Count; i++)
+            {
+                if (holes[i].Shell != fromLayer) continue;
+                float angle = Vector3.Angle(holes[i].Direction, position);
+                if (angle < bestAngle) { bestAngle = angle; best = i; }
+            }
+            if (best >= 0) level.MarkUsed(false, best);
+        }
+
+        void OnLaunched(BoostPad pad)
+        {
+            if (level == null) return;
+            var holes = level.Layout.Holes;
+            for (int i = 0; i < holes.Count; i++)
+                if (holes[i].TwoWay && Vector3.Dot(holes[i].Direction, pad.Axis) > 0.9999f) climbingThrough = i;
         }
 
         public void OnExitReached()
@@ -146,6 +174,14 @@ namespace SphereDescent
                 int s = level.Layout.SectionAt(ball.CurrentLayer, ball.transform.position);
                 if (s >= 0) section = s;
                 level.SetBeamSection(section);
+                // A climb seals its pad and the hole above once the ball has landed up there.
+                if (climbingThrough >= 0 && ball.IsGrounded && !ball.IsLaunching &&
+                    ball.CurrentLayer == level.Layout.Holes[climbingThrough].Shell)
+                {
+                    level.MarkUsed(true, climbingThrough);
+                    level.MarkUsed(false, climbingThrough);
+                    climbingThrough = -1;
+                }
 
                 level.SetShadowLayer(ball.CurrentLayer);
                 // Only one layer is drawn: the deeper of the ball's and camera's. Falling through a hole shows the

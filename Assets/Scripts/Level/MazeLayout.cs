@@ -58,7 +58,14 @@ namespace SphereDescent
         }
 
         // Clear space kept between any two mines, so the ball (1 unit across) can always roll between them.
+        // The innermost shells use their own, roomier gap (Innermost Mine Gap).
         public const float MinePassage = 1.6f;
+
+        /// <summary>Whether a shell is one of the innermost few, which get sparser mines.</summary>
+        public bool InnermostForMines(LevelSettings s, int shell) => shell >= ShellCount - s.fewerMinesInnermost;
+
+        /// <summary>Clear space kept between mines on a shell.</summary>
+        public float MineGap(LevelSettings s, int shell) => InnermostForMines(s, shell) ? Mathf.Max(MinePassage, s.innermostMineGap) : MinePassage;
 
         public struct Section
         {
@@ -77,6 +84,7 @@ namespace SphereDescent
         public List<Hole> Holes = new List<Hole>();
         public List<Section> Sections = new List<Section>();
         public List<Mine> Mines = new List<Mine>();
+        public List<(int section, int cell)> MineGroups = new List<(int, int)>();
         public List<LaserGate> LaserGates = new List<LaserGate>();
         public List<SecurityCamera> Cameras = new List<SecurityCamera>();
         public int StartCell;
@@ -401,9 +409,9 @@ namespace SphereDescent
                 // Usable stretch of the route: skip two cells at each end.
                 int first = 2, last = route.Count - 3;
                 if (last < first) continue;
-                // The smallest shells are cramped, so they get one group fewer, each with one mine fewer.
-                int fewer = shell >= layout.ShellCount - s.fewerMinesInnermost ? 1 : 0;
-                int groups = rng.Next(s.mineGroupsMin, s.mineGroupsMax + 1) - fewer;
+                // The smallest shells are cramped, so they get one group fewer, each with fewer mines.
+                bool inner = layout.InnermostForMines(s, shell);
+                int groups = rng.Next(s.mineGroupsMin, s.mineGroupsMax + 1) - (inner ? 1 : 0);
                 groups = Mathf.Min(groups, (last - first) / 2 + 1);
                 var used = new List<int>();
                 // A cell can hold a group if it's clear of laser gates, their switches and camera doorways, and
@@ -428,9 +436,11 @@ namespace SphereDescent
                     int cell = route[at];
                     if (!Usable(cell)) continue;
                     used.Add(cell);
+                    layout.MineGroups.Add((i, cell));
                     // Group Size counts every mine: the ones beside the walls first, the rest in the middle.
                     int sizeMin = Mathf.Max(1, s.mineGroupSizeMin);
-                    int size = Mathf.Max(1, rng.Next(sizeMin, Mathf.Max(sizeMin, s.mineGroupSizeMax) + 1) - fewer);
+                    int size = Mathf.Max(1, rng.Next(sizeMin, Mathf.Max(sizeMin, s.mineGroupSizeMax) + 1) -
+                        (inner ? s.innermostGroupSizeCut : 0));
                     int byWalls = PlaceWallMines(layout, s, rng, shell, i, cell, radius, size);
                     PlaceGroup(layout, s, rng, shell, i, cell, radius, size - byWalls);
                 }
@@ -438,42 +448,58 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// The middle of a mine group: <paramref name="count"/> mines evenly around a ring, neighbors Mine
-        /// Spacing apart (2 are a pair, 3 a triangle, 4 a square; a lone mine sits in the middle).
+        /// The rest of a mine group, spread over its whole cell: each mine goes where the cell is most open
+        /// (the farthest point from every mine and wall, out of a batch of random tries), so the group covers
+        /// the cell evenly and leaves no wide, easy lane through it. Every mine still leaves room to roll past.
         /// </summary>
         static void PlaceGroup(MazeLayout layout, LevelSettings s, Random rng, int shell, int section, int cell, float radius,
             int count)
         {
-            if (count <= 0) return;
-            Vector3 center = layout.Grids[shell].CellCenters[cell];
-            // Tangent frame at the cell center, turned to a random angle.
+            var grid = layout.Grids[shell];
+            Vector3 center = grid.CellCenters[cell];
             Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
             Vector3 y = Vector3.Cross(center, x);
-            float turn = (float)rng.NextDouble() * Mathf.PI * 2f;
-            Vector3 u = x * Mathf.Cos(turn) + y * Mathf.Sin(turn), v = Vector3.Cross(center, u);
-            // Shift the whole group a little off center so it doesn't always sit in the middle.
-            float shift = (float)rng.NextDouble() * 1.5f, shiftAngle = (float)rng.NextDouble() * Mathf.PI * 2f;
-            Vector2 offset = new Vector2(Mathf.Cos(shiftAngle), Mathf.Sin(shiftAngle)) * shift;
+            float reach = s.cellSpacing * 0.62f; // a little past the cell's corners
+            const int tries = 40;
+            for (int n = 0; n < count; n++)
+            {
+                Vector3 best = Vector3.zero;
+                float bestRoom = 0f;
+                for (int t = 0; t < tries; t++)
+                {
+                    // A random point in a disc around the cell, kept if it's in this cell.
+                    float a = (float)rng.NextDouble() * Mathf.PI * 2f, d = Mathf.Sqrt((float)rng.NextDouble()) * reach;
+                    Vector3 dir = (center * radius + (x * Mathf.Cos(a) + y * Mathf.Sin(a)) * d).normalized;
+                    if (grid.NearestCell(dir) != cell || !MineFits(layout, s, shell, cell, dir, radius, 0.5f)) continue;
+                    float room = Room(layout, s, shell, cell, dir * radius, radius);
+                    if (room > bestRoom) { bestRoom = room; best = dir; }
+                }
+                if (best == Vector3.zero) return; // the cell is full
+                layout.Mines.Add(new Mine { Shell = shell, Section = section, Direction = best });
+            }
+        }
 
-            float ring = count == 1 ? 0f : s.mineSpacing / (2f * Mathf.Sin(Mathf.PI / count));
-            Vector3 Spot(int k, Vector2 shiftBy)
+        /// <summary>Open space around a point: how far it is to the edge of the nearest mine or wall.</summary>
+        static float Room(MazeLayout layout, LevelSettings s, int shell, int cell, Vector3 p, float radius)
+        {
+            float room = float.MaxValue;
+            foreach (var m in layout.Mines)
+                if (m.Shell == shell) room = Mathf.Min(room, Vector3.Distance(m.Direction * radius, p) - s.mineRadius);
+            var grid = layout.Grids[shell];
+            void Walls(int c)
             {
-                float a = k * Mathf.PI * 2f / count;
-                Vector2 p = shiftBy + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * ring;
-                return (center * radius + u * p.x + v * p.y).normalized;
+                foreach (int nb in grid.Neighbors[c])
+                {
+                    int e = grid.EdgeBetween(c, nb);
+                    if (layout.Open[shell][e]) continue;
+                    Vector3 a0 = grid.Edges[e].P0 * radius, a1 = grid.Edges[e].P1 * radius;
+                    float t = Mathf.Clamp01(Vector3.Dot(p - a0, a1 - a0) / (a1 - a0).sqrMagnitude);
+                    room = Mathf.Min(room, Vector3.Distance(p, a0 + (a1 - a0) * t) - s.wallThickness * 0.5f);
+                }
             }
-            // Mines must stay clear of the walls and leave room to roll past every other mine. If the shifted
-            // group doesn't fit the cell, center it; any mine that still doesn't fit is left out.
-            const float wallClearance = 0.5f;
-            bool allFit = true;
-            for (int k = 0; k < count && allFit; k++) allFit = MineFits(layout, s, shell, cell, Spot(k, offset), radius, wallClearance);
-            if (!allFit) offset = Vector2.zero;
-            for (int k = 0; k < count; k++)
-            {
-                Vector3 dir = Spot(k, offset);
-                if (MineFits(layout, s, shell, cell, dir, radius, wallClearance))
-                    layout.Mines.Add(new Mine { Shell = shell, Section = section, Direction = dir });
-            }
+            Walls(cell);
+            foreach (int nb in grid.Neighbors[cell]) Walls(nb);
+            return room;
         }
 
         /// <summary>
@@ -483,7 +509,7 @@ namespace SphereDescent
         static bool MineFits(MazeLayout layout, LevelSettings s, int shell, int cell, Vector3 dir, float radius, float wallClearance)
         {
             Vector3 p = dir * radius;
-            float clear = 2f * s.mineRadius + MinePassage;
+            float clear = 2f * s.mineRadius + layout.MineGap(s, shell);
             foreach (var other in layout.Mines)
                 if (other.Shell == shell && Vector3.Distance(other.Direction * radius, p) < clear) return false;
             var grid = layout.Grids[shell];

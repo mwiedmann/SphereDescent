@@ -23,6 +23,9 @@ namespace SphereDescent
             var beamDrop = level.Own(BeamMaterial(mats.beam, mats.ringDrop.color, 0.3f));
             var beamPad = level.Own(BeamMaterial(mats.beam, mats.ringUp.color, 0.3f));
             var holeFloorMat = level.Own(LevelMaterials.MakeBlack());
+            // Used holes and pads get sealed with a black disc marked with a red X.
+            var sealMat = level.Own(LevelMaterials.MakeMetal(new Color(0.02f, 0.02f, 0.025f), 0.6f, 0.4f));
+            var crossMat = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.03f, 0.02f), 2.2f));
 
             // One root per layer (shells, then the core). Everything is parented under the layer it sits on,
             // so whole layers can be hidden at once.
@@ -69,6 +72,9 @@ namespace SphereDescent
                 var upRing = level.Own(MeshBuilders.BuildTorus(holeRadius + 0.3f, 0.18f));
                 var dropRing = level.Own(MeshBuilders.BuildTorus(holeRadius + 0.3f, 0.18f));
                 var holeFloor = level.Own(MeshBuilders.BuildDisc(holeRadius + 0.4f));
+                var holeCover = level.Own(MeshBuilders.BuildDisc(holeRadius + 0.55f, 40));
+                var padRadiusHere = LevelSettings.PadRadius(holeRadius);
+                var padCover = level.Own(MeshBuilders.BuildDisc(padRadiusHere + 0.3f, 40));
                 for (int i = 0; i < layout.Holes.Count; i++)
                 {
                     var h = layout.Holes[i];
@@ -83,11 +89,18 @@ namespace SphereDescent
                     var floor = CreateMeshObject(layerRoot, "Hole Floor", holeFloor, holeFloorMat, false, ShadowCastingMode.Off);
                     floor.transform.SetPositionAndRotation(dir * (radius - s.shellThickness - 0.1f), Quaternion.FromToRotation(Vector3.up, dir));
 
+                    // Once used, the hole is sealed over, so there's no going back through it.
+                    var holeSeal = CreateSeal(layerRoot, "Used Hole", holeCover, holeRadius, dir * (radius + 0.03f), dir, sealMat, crossMat);
+                    level.RegisterUsable(false, i, new[] { ring, floor }, holeSeal);
+
                     // Hole i ends section i. A two-way hole is where a climb comes out, so its section ends at
                     // the pad below it instead.
                     if (h.TwoWay)
                     {
-                        CreateBoostPad(level, layerRoots[shell + 1], layout, s, h, holeRadius, mats.pad);
+                        var pad = CreateBoostPad(level, layerRoots[shell + 1], layout, s, h, holeRadius, mats.pad);
+                        var padSeal = CreateSeal(layerRoots[shell + 1], "Used Pad", padCover, padRadiusHere,
+                            pad.transform.position + dir * 0.06f, dir, sealMat, crossMat);
+                        level.RegisterUsable(true, i, new[] { pad }, padSeal);
                         float padRadius = s.SurfaceRadius(shell + 1);
                         CreateBeam(level, i, shell + 1, layerRoots[shell + 1], dir, padRadius, padRadius + s.beamHeight,
                             LevelSettings.PadRadius(holeRadius) * 0.75f, beamPad);
@@ -467,7 +480,27 @@ namespace SphereDescent
             return go.transform;
         }
 
-        static void CreateBoostPad(LevelInstance level, Transform parent, MazeLayout layout, LevelSettings s,
+        /// <summary>
+        /// The cover that seals a used hole or pad: a solid black disc with a red X on it. Starts hidden;
+        /// LevelInstance.MarkUsed shows it.
+        /// </summary>
+        static GameObject CreateSeal(Transform parent, string name, Mesh disc, float markSize, Vector3 position, Vector3 up,
+            Material discMat, Material crossMat)
+        {
+            var seal = CreateMeshObject(parent, name, disc, discMat, true, ShadowCastingMode.Off);
+            seal.transform.SetPositionAndRotation(position, Quaternion.FromToRotation(Vector3.up, up));
+            foreach (float angle in new[] { 45f, -45f })
+            {
+                var bar = Part(seal.transform, PrimitiveType.Cube, "X", crossMat);
+                bar.localPosition = new Vector3(0f, 0.02f, 0f);
+                bar.localRotation = Quaternion.Euler(0f, angle, 0f);
+                bar.localScale = new Vector3(markSize * 1.5f, 0.03f, Mathf.Max(0.18f, markSize * 0.14f));
+            }
+            seal.SetActive(false);
+            return seal;
+        }
+
+        static GameObject CreateBoostPad(LevelInstance level, Transform parent, MazeLayout layout, LevelSettings s,
             MazeLayout.Hole hole, float holeRadius, Material mat)
         {
             var grid = layout.Grids[hole.Shell];
@@ -517,6 +550,7 @@ namespace SphereDescent
             pad.ExitTangent = exitTangent;
             pad.LandAngle = (holeRadius + 1.6f) / aboveRadius;
             pad.pulseVisual = ring.transform;
+            return go;
         }
 
         static void CreateBeam(LevelInstance level, int section, int layer, Transform parent, Vector3 dir, float fromRadius,

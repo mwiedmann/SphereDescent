@@ -437,11 +437,10 @@ MonoBehaviour:
     hillSize: 5
     hillCoverage: 1.2
     hillFlatMargin: 3
-    mineGroupsMin: 4
-    mineGroupsMax: 6
-    mineGroupSizeMin: 5
-    mineGroupSizeMax: 6
-    mineSpacing: 5
+    mineGroupsMin: 3
+    mineGroupsMax: 5
+    mineGroupSizeMin: 8
+    mineGroupSizeMax: 9
     mineRadius: 0.8
     mineHeight: 0.2
     mineWallGap: 0.35

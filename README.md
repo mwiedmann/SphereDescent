@@ -81,7 +81,7 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Main Path Cut Chance:** how often the main path is walled off, forcing a detour.
 - **Laser gates:** how often (every Nth section) and how many lasers each gate has.
 - **Security cameras:** how often, how many per run, and the spotlight's size, speed and reach.
-- **Mines:** groups per section, mines per group (the ones beside the walls count too), spacing, size, the gap left beside walls, and how many of the smallest spheres get fewer.
+- **Mines:** groups per section, mines per group (the ones beside the walls count too), size, the gap left beside walls, and how many of the smallest spheres get fewer.
 - **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **beam height**, and the **Base Seed**.
 
 The ball's speed, jump height and gravity are set on the `BallController`, and the camera's distance, pitch and follow behavior on the `OrbitCamera`.

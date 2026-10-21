@@ -50,15 +50,13 @@ namespace SphereDescent
 
         [Header("Mines")]
         [Tooltip("Mine groups along the route of each section (the stretch between two holes or pads). 0 = no mines.")]
-        public int mineGroupsMin = 4;
-        public int mineGroupsMax = 6;
+        public int mineGroupsMin = 3;
+        public int mineGroupsMax = 5;
         [Tooltip("Mines in each group, all told. One goes beside each wall of the group's cell first (so walls can't be " +
-                 "hugged past it); the rest are laid out evenly in the middle (2 = a pair, 3 = a triangle, ...). " +
-                 "Mines that don't fit their cell are left out.")]
-        public int mineGroupSizeMin = 5;
-        public int mineGroupSizeMax = 6;
-        [Tooltip("Distance between neighboring mines in a group (centers). The ball is 1 unit across.")]
-        public float mineSpacing = 5f;
+                 "hugged past it); the rest spread evenly over the cell, each in its most open spot, always leaving " +
+                 "room to roll between. More mines = narrower ways through. Mines that don't fit are left out.")]
+        public int mineGroupSizeMin = 8;
+        public int mineGroupSizeMax = 9;
         [Tooltip("Mine radius. The ball's radius is 0.5.")]
         public float mineRadius = 0.8f;
         [Tooltip("How far a mine sticks up out of the ground.")]
@@ -66,9 +64,13 @@ namespace SphereDescent
         [Tooltip("How far the mines beside walls sit from the wall. Keep it under the ball's width (1) so the wall " +
                  "can't be hugged past the group.")]
         public float mineWallGap = 0.35f;
-        [Tooltip("How many of the innermost (smallest) shells get one mine group fewer per section, and one mine " +
-                 "fewer in each group (never fewer than one).")]
+        [Tooltip("How many of the innermost (smallest) shells get sparser mines: one group fewer per section, smaller " +
+                 "groups, and more room between mines.")]
         public int fewerMinesInnermost = 2;
+        [Tooltip("On those shells, how many fewer mines each group gets (never fewer than one).")]
+        public int innermostGroupSizeCut = 3;
+        [Tooltip("On those shells, the clear space left between mines (elsewhere it's 1.6; the ball is 1 across).")]
+        public float innermostMineGap = 2.4f;
 
         [Header("Laser gates")]
         [Tooltip("A laser gate on every Nth section, starting with the first (2 = sections 1, 3, 5, ...). The pad that " +
