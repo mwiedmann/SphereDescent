@@ -61,8 +61,7 @@ namespace SphereDescent
 
             if (!firing)
             {
-                Vector2 p = Sweep(Mathf.Repeat(Time.time / period + phase, 1f));
-                aim = (center * groundRadius + across * (sweepAcross * p.x) + along * (sweepAlong * p.y)).normalized * groundRadius;
+                aim = SweepPoint(Time.time);
 
                 if (ball != null && !ball.IsDestroyed && ball.CurrentLayer == layer &&
                     Vector3.Angle(ball.transform.position, aim) * Mathf.Deg2Rad * groundRadius < spotRadius)
@@ -74,6 +73,33 @@ namespace SphereDescent
                 aim = ball.transform.position.normalized * groundRadius;
             }
             Aim();
+        }
+
+        Vector3 SweepPoint(float time)
+        {
+            Vector2 p = Sweep(Mathf.Repeat(time / period + phase, 1f));
+            return (center * groundRadius + across * (sweepAcross * p.x) + along * (sweepAlong * p.y)).normalized * groundRadius;
+        }
+
+        /// <summary>Poses the camera as it would be at <paramref name="time"/>, for still renders outside Play mode.</summary>
+        public void Preview(float time)
+        {
+            SetColor(searchColor);
+            if (laser != null) laser.gameObject.SetActive(false);
+            aim = SweepPoint(time);
+            Aim();
+        }
+
+        /// <summary>Poses the camera locked on and firing at <paramref name="target"/>, for still renders.</summary>
+        public void PreviewCaught(Vector3 target)
+        {
+            SetColor(alertColor);
+            aim = target.normalized * groundRadius;
+            Aim();
+            Vector3 from = lens.position;
+            laser.gameObject.SetActive(true);
+            laser.SetPositionAndRotation((from + target) * 0.5f, Quaternion.FromToRotation(Vector3.up, target - from));
+            laser.localScale = new Vector3(0.12f, Vector3.Distance(from, target) * 0.5f, 0.12f);
         }
 
         /// <summary>Where the spot is at time <paramref name="u"/> (0-1 through one period), as fractions of the sweep's reach across and along.</summary>

@@ -723,6 +723,7 @@ namespace SphereDescent.EditorTools
             var sun = gm.sun;
             var orbit = cam.GetComponent<OrbitCamera>();
 
+            Color innerBackground = Color.black;
             var ball = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             ball.GetComponent<MeshRenderer>().sharedMaterial = gm.materials.ball;
             ball.transform.rotation = Quaternion.Euler(30f, 40f, 10f);
@@ -737,6 +738,9 @@ namespace SphereDescent.EditorTools
                 ball.transform.position = ballPos;
                 GameManager.UpdateSky(sun, ballPos.normalized);
                 cam.transform.SetPositionAndRotation(camPos, camRot);
+                // As in game: below the surface the layers above are hidden under a plain background.
+                cam.clearFlags = focusLayer > 0 ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
+                cam.backgroundColor = innerBackground;
                 var rt = new RenderTexture(width, height, 24) { antiAliasing = 8 };
                 cam.targetTexture = rt;
                 cam.Render();
@@ -850,6 +854,90 @@ namespace SphereDescent.EditorTools
             Vector3 corePos = coreDir * (settings.coreRadius + 0.5f);
             Vector3 coreEye = coreDir * (settings.coreRadius + 4f) - coreSide * 7f;
             Render("core", corePos, coreEye, Quaternion.LookRotation(corePos + coreDir * 0.6f - coreEye, coreDir), layout.ShellCount);
+
+            // Hazards. Mines: rolling up to the first group on the surface, with some of their lights lit.
+            foreach (var m in level.GetComponentsInChildren<Mine>())
+                if ((m.transform.position.sqrMagnitude * 7f) % 2f < 1f)
+                {
+                    m.lightRenderer.sharedMaterial = m.lightOn;
+                    m.glowRenderer.sharedMaterial = m.glowOn;
+                }
+            foreach (var (section, cell) in layout.MineGroups)
+            {
+                int shell = layout.Sections[section].Shell;
+                var route = Route(section);
+                int k = route.IndexOf(cell);
+                if (shell != 0 || k < 1) continue;
+                var grid = layout.Grids[shell];
+                level.SetBeamSection(section);
+                GameView("mines", shell, Vector3.Slerp(grid.CellCenters[route[k - 1]], grid.CellCenters[cell], 0.3f),
+                    grid.CellCenters[cell], orbit.pitch + 8f);
+                break;
+            }
+
+            // A laser gate across its doorway, and the pad that switches it off.
+            if (layout.LaserGates.Count > 0)
+            {
+                var g = layout.LaserGates[0];
+                var grid = layout.Grids[g.Shell];
+                var door = grid.Edges[g.Edge];
+                Vector3 doorDir = (door.P0 + door.P1).normalized;
+                level.SetBeamSection(g.Section);
+                GameView("laser_gate", g.Shell, Vector3.Slerp(grid.CellCenters[g.EntrySideCell], doorDir, 0.45f), doorDir, orbit.pitch);
+
+                Vector3 pad = grid.CellCenters[g.SwitchCell];
+                Vector3 t = Vector3.ProjectOnPlane(grid.CellCenters[g.EntrySideCell] - pad, pad).normalized;
+                float r = Ground(g.Shell, pad);
+                Vector3 padBall = (pad * r + t * 2.5f).normalized * (Ground(g.Shell, pad * r + t * 2.5f) + 0.5f);
+                Vector3 padEye = pad * (r + 8f) + t * 7f;
+                Render("laser_pad", padBall, padEye, Quaternion.LookRotation(pad * r - padEye, pad), g.Shell);
+            }
+
+            // A run of security cameras sweeping their doorways, and one catching the ball.
+            if (layout.Cameras.Count > 0)
+            {
+                var first = layout.Cameras[0];
+                var grid = layout.Grids[first.Shell];
+                var run = new System.Collections.Generic.List<SecurityCamera>();
+                foreach (var c in layout.Cameras)
+                {
+                    if (c.Section != first.Section) continue;
+                    var e = grid.Edges[c.Edge];
+                    foreach (var sc in level.GetComponentsInChildren<SecurityCamera>())
+                        if (sc.layer == c.Shell && Vector3.Angle(sc.center, e.P0 + e.P1) < 0.01f) run.Add(sc);
+                }
+                foreach (var sc in run) sc.Preview(1.3f);
+                var door = grid.Edges[first.Edge];
+                Vector3 doorDir = (door.P0 + door.P1).normalized;
+                level.SetBeamSection(first.Section);
+                GameView("security_cameras", first.Shell, Vector3.Slerp(grid.CellCenters[first.NearCell], doorDir, 0.15f), doorDir, orbit.pitch + 4f);
+
+                if (run.Count > 0)
+                {
+                    Vector3 spot = run[0].spot.position.normalized;
+                    Vector3 caught = spot * (Ground(first.Shell, spot) + 0.5f);
+                    run[0].PreviewCaught(caught);
+                    Vector3 back = Vector3.ProjectOnPlane(grid.CellCenters[first.NearCell] - spot, spot).normalized;
+                    Vector3 caughtEye = caught + spot * 5f + back * 7f;
+                    Render("camera_caught", caught, caughtEye, Quaternion.LookRotation(caught + spot * 1.5f - caughtEye, spot), first.Shell);
+                    run[0].Preview(1.3f);
+                }
+            }
+
+            // The same corridor as the gameplay shot, in the Deep Sea style.
+            {
+                var deepSea = VisualStyle.DeepSea();
+                Object.DestroyImmediate(level.gameObject);
+                level = LevelBuilder.Build(layout, settings, gm.materials, 1, deepSea);
+                Physics.SyncTransforms();
+                var sky = new Material(RenderSettings.skybox); // leave the sky material asset alone
+                RenderSettings.skybox = sky;
+                GameManager.ApplyAtmosphere(deepSea, sky, sun);
+                innerBackground = deepSea.innerBackground;
+                level.SetBeamSection(0);
+                // Lower pitch than the gameplay shot, so the water sky and its light shafts show.
+                GameView("deep_sea", 0, g0.CellCenters[route0[at]], g0.CellCenters[route0[at + 1]], orbit.pitch - 16f);
+            }
 
             Object.DestroyImmediate(ball);
             Object.DestroyImmediate(level.gameObject);

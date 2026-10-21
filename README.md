@@ -1,12 +1,12 @@
 # Sphere Descent
 
-A 3D rolling-ball maze game made in Unity, with a synthwave look. You steer a small ball across the outside of a planet covered in neon-lit maze walls. You drop through holes onto smaller spheres nested inside, and sometimes climb back up, until you reach the glowing core at the center.
+A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. You steer a small ball across the outside of a planet covered in neon-lit maze walls. You drop through holes onto smaller spheres nested inside, and sometimes climb back up, until you reach the glowing core at the center.
 
 ![The synthwave sun over the maze](Docs/screenshots/horizon.png)
 
 ![Rolling through a maze corridor](Docs/screenshots/gameplay.png)
 
-> **Status:** early prototype. The core loop works, but tuning, traps and obstacles, sound and menus are still to come.
+> **Status:** early prototype. The core loop and three kinds of hazard work, but tuning, sound and a proper menu are still to come.
 
 ## How it plays
 
@@ -28,6 +28,14 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 
 ![Landing on the gold core completes the world](Docs/screenshots/core.png)
 
+| Mines along the route | A laser gate across a doorway | The pad that switches it off |
+|---|---|---|
+| ![A group of mines in a corridor](Docs/screenshots/mines.png) | ![A grid of lasers filling a doorway](Docs/screenshots/laser_gate.png) | ![The pad that turns the lasers off, down a side path](Docs/screenshots/laser_pad.png) |
+
+| Security cameras sweeping a passage | Caught in the light |
+|---|---|
+| ![Cameras on poles above the walls, sweeping spotlights across the passage](Docs/screenshots/security_cameras.png) | ![A camera locked on and firing its laser at the ball](Docs/screenshots/camera_caught.png) |
+
 To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. The HUD shows the world, section, layer and zone you're in.
 
 ## Look
@@ -43,6 +51,8 @@ Synthwave:
 - **Glow:** bloom and a light vignette from URP post-processing (`Assets/Settings/PostProcessing.asset`).
 
 Deep Sea: dark blue-green surfaces glowing in softer bioluminescent zone colors, with caustic light rippling over floors and walls (a tiling pattern computed at startup). The sky is water, brightest overhead, with swaying shafts of light and drifting specks; a blue haze fills the distance and specks drift around the camera.
+
+![The same corridor in the Deep Sea style](Docs/screenshots/deep_sea.png)
 
 ## Controls
 
