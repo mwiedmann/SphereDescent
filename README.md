@@ -20,6 +20,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them. Weave between them or jump over them: touching one blows you up and sends you back to where you last arrived on that sphere.
 - **Laser gates.** Every other section has a gate of lasers across a doorway you can't get around. Find the pad nearby on your side, usually down a short side path: it pulses red while the lasers are on and turns green when you roll over it, switching them off. Touching the lasers blows you up like a mine.
 - **Security cameras.** The other sections have a run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own pattern (a figure-8, a circle, or darting from side to side and holding). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
+- **Energy cubes.** Each section has 10 glowing cubes to collect: half along the main route, half tucked away down side lanes and around corners. Roll through one for a point. One hidden cube per section is a larger magenta super cube worth 5. Your score is on the HUD.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
 | Section end: a hole to drop through | Section end: a boost pad to climb |
@@ -40,7 +41,7 @@ To help you find your way, each sphere is split into 12 zones, each with its own
 
 ## Look
 
-Everything is drawn by shaders, with no image files. There are two styles, picked from a menu when the game starts (press M to bring it back; it restarts world 1): **Synthwave**, **Deep Sea**, or alternating every world. Hole rings, pads, beams, hazards and the gold core look the same in both, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
+Everything is drawn by shaders, with no image files. There are two styles: **Synthwave** (the default) and **Deep Sea**. Press M to open a menu where you can pick a style (or alternate them every world) and which world to play. Hole rings, pads, beams, hazards and the gold core look the same in both, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
 
 Synthwave:
 
@@ -64,7 +65,7 @@ Deep Sea: dark blue-green surfaces glowing in softer bioluminescent zone colors,
 | Turn the camera | Mouse (click to capture), or Q / E | Right stick |
 | Respawn on the current layer | R | Select / View |
 | Release the mouse | Esc | |
-| Style menu (restarts world 1) | M | Start |
+| Menu: style and world | M | Start |
 | Skip to the next world (testing) | N | |
 
 ## Running it
@@ -94,6 +95,7 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Section Length Min / Max:** the length of each section's main path, in maze cells.
 - **Side Lane Chance:** how wide sections are, and how many alternative routes they have.
 - **Main Path Cut Chance:** how often the main path is walled off, forcing a detour.
+- **Energy cubes:** how many per section, how many are hidden, points, and size.
 - **Laser gates:** how often (every Nth section) and how many lasers each gate has.
 - **Security cameras:** how often, how many per run, and the spotlight's size, speed and reach.
 - **Mines:** groups per section, mines per group (the ones beside the walls count too), size, the gap left beside walls, and how many of the smallest spheres get fewer.

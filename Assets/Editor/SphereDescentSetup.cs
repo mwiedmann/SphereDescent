@@ -121,6 +121,7 @@ namespace SphereDescent.EditorTools
             int failures = 0;
             var allRoutes = new System.Collections.Generic.List<int>();
             var groupOpenings = new System.Collections.Generic.List<float>();
+            int allCubes = 0, allHidden = 0, totalSections = 0;
             var openingsByShell = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<float>>();
             var minesByShell = new System.Collections.Generic.Dictionary<int, (int groups, int mines)>();
             for (int world = 1; world <= 8; world++)
@@ -222,6 +223,18 @@ namespace SphereDescent.EditorTools
                             * settings.shellRadii[g.Shell] < 1.3f + settings.mineRadius + MazeLayout.MinePassage)
                             problems.Append($" a mine crowds the laser switch in section {g.Section + 1};");
                 // Camera runs: at least one doorway in each must be unavoidable. Count how many are.
+                // Energy cubes: the right number per section, a super cube on each, all on their section's ground.
+                var cubeCounts = new System.Text.StringBuilder();
+                for (int i = 0; i < layout.Sections.Count; i++)
+                {
+                    var cubes = layout.Cubes.FindAll(c => c.Section == i);
+                    int hidden = cubes.FindAll(c => c.Hidden).Count, supers = cubes.FindAll(c => c.Super).Count;
+                    if (supers != 1 && settings.cubesPerLeg > 0) problems.Append($" section {i + 1} has {supers} super cubes;");
+                    foreach (var c in cubes)
+                        if (layout.Region[c.Shell][c.Cell] != i) problems.Append($" a cube in section {i + 1} is outside it;");
+                    cubeCounts.Append($" {cubes.Count}({hidden})");
+                    allCubes += cubes.Count; allHidden += hidden; totalSections++;
+                }
                 var cameraSections = new System.Text.StringBuilder();
                 for (int i = 0; i < layout.Sections.Count; i++)
                 {
@@ -261,6 +274,7 @@ namespace SphereDescent.EditorTools
                 if (problems.Length > 0) failures++;
                 string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
                              $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
+                             $" cubes per section (hidden):{cubeCounts};" +
                              $" laser gates in sections{gateSections} ({spurs} switches in side spurs); cameras (section:count) {cameraSections};" +
                              $" mines per section:{mineCounts} ({wallMines} by walls; gap {minGap:F1}, other mines to wall {minWall:F1}, wall mines to wall max {maxWallMineGap:F2}, hole {minHole:F1})" +
                              (problems.Length > 0 ? " PROBLEMS:" + problems : "");
@@ -286,6 +300,8 @@ namespace SphereDescent.EditorTools
             if (allRoutes.Count > 0)
                 Debug.Log($"[Validate] shortest route per section (cells): min {allRoutes[0]}, median {allRoutes[allRoutes.Count / 2]}, " +
                           $"max {allRoutes[allRoutes.Count - 1]}; about {settings.cellSpacing:F1} units per cell");
+            if (totalSections > 0)
+                Debug.Log($"[Validate] cubes: {allCubes / (float)totalSections:F1} per section on average, {allHidden / (float)totalSections:F1} of them hidden");
             groupOpenings.Sort();
             if (groupOpenings.Count > 0)
                 Debug.Log($"[Validate] mine groups: {groupOpenings.Count}; widest ball that could roll through a group: " +

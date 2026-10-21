@@ -119,6 +119,7 @@ namespace SphereDescent
             CreateMines(level, layout, s, terrains, layerRoots, mats.beam);
             CreateLaserGates(level, layout, s, layerRoots, zones, mats.beam);
             CreateCameras(level, layout, s, terrains, layerRoots, mats);
+            CreateCubes(level, layout, s, terrains, layerRoots, mats.spot);
 
             // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
@@ -468,6 +469,92 @@ namespace SphereDescent
                 cam.pattern = c.Pattern;
                 cam.spotRadius = s.spotRadius;
             }
+        }
+
+        /// <summary>
+        /// Energy cubes: a crisp glowing outline of a cube (its twelve edges) around faint glass faces, with a
+        /// tiny, intensely bright point at its heart, like a singularity, in a tight soft glow. Floats a little
+        /// above the ground. Gold for ordinary cubes; the super cube is larger and magenta.
+        /// </summary>
+        static void CreateCubes(LevelInstance level, MazeLayout layout, LevelSettings s, ShellTerrain[] terrains, Transform[] layerRoots,
+            Material glowTemplate)
+        {
+            if (layout.Cubes.Count == 0) return;
+            var gold = new Color(1f, 0.78f, 0.15f);
+            var magenta = new Color(1f, 0.2f, 0.85f);
+            var edgeGold = level.Own(LevelMaterials.MakeEmissive(gold, 2.2f));
+            var edgeMagenta = level.Own(LevelMaterials.MakeEmissive(magenta, 2.6f));
+            var faceGold = level.Own(LevelMaterials.MakeGlass(gold, 0.08f, 0.15f));
+            var faceMagenta = level.Own(LevelMaterials.MakeGlass(magenta, 0.1f, 0.2f));
+            // The point inside: white-hot, tinted just slightly.
+            var pointGold = level.Own(LevelMaterials.MakeEmissive(Color.Lerp(gold, Color.white, 0.7f), 12f));
+            var pointMagenta = level.Own(LevelMaterials.MakeEmissive(Color.Lerp(magenta, Color.white, 0.6f), 12f));
+            Material Glow(Color c, float intensity)
+            {
+                var m = level.Own(new Material(glowTemplate));
+                m.SetFloat("_Soft", 1f);
+                m.SetColor("_Color", c);
+                m.SetFloat("_Intensity", intensity);
+                return m;
+            }
+            var glowGold = Glow(gold, 1.6f);
+            var glowMagenta = Glow(magenta, 2f);
+            var glowMesh = level.Own(MeshBuilders.BuildDisc(1f, 24));
+            var frameMesh = level.Own(CubeFrameMesh(0.04f));
+            foreach (var c in layout.Cubes)
+            {
+                float size = s.cubeSize * (c.Super ? 1.4f : 1f);
+                float lift = 0.45f + size * 0.6f;
+                var go = new GameObject(c.Super ? "Super Cube" : "Energy Cube");
+                go.transform.SetParent(layerRoots[c.Shell], false);
+                go.transform.SetPositionAndRotation(c.Direction * terrains[c.Shell].SurfaceRadius(c.Direction),
+                    Quaternion.FromToRotation(Vector3.up, c.Direction));
+                var visual = new GameObject("Visual").transform;
+                visual.SetParent(go.transform, false);
+                visual.localPosition = new Vector3(0f, lift, 0f);
+                var frame = CreateMeshObject(visual, "Outline", frameMesh, c.Super ? edgeMagenta : edgeGold, false, ShadowCastingMode.Off);
+                frame.transform.localScale = Vector3.one * size;
+                var faces = Part(visual, PrimitiveType.Cube, "Faces", c.Super ? faceMagenta : faceGold);
+                faces.localScale = Vector3.one * size * 0.98f;
+                var point = Part(visual, PrimitiveType.Sphere, "Singularity", c.Super ? pointMagenta : pointGold);
+                point.localScale = Vector3.one * s.cubeCoreSize * (c.Super ? 1.3f : 1f);
+                var glow = CreateMeshObject(go.transform, "Glow", glowMesh, c.Super ? glowMagenta : glowGold, false, ShadowCastingMode.Off);
+                glow.transform.localScale = Vector3.one * s.cubeCoreSize * 5f;
+
+                var trigger = go.AddComponent<SphereCollider>();
+                trigger.isTrigger = true;
+                trigger.center = new Vector3(0f, lift, 0f);
+                trigger.radius = Mathf.Max(0.45f, size * 0.75f);
+
+                var cube = go.AddComponent<EnergyCube>();
+                cube.visual = visual;
+                cube.halo = glow.transform;
+                cube.isSuper = c.Super;
+                cube.points = c.Super ? s.superCubePoints : s.cubePoints;
+                if (c.Super) cube.spinSpeed = 80f;
+            }
+        }
+
+        /// <summary>The twelve edges of a unit cube (centered on the origin) as thin bars, in one mesh.</summary>
+        static Mesh CubeFrameMesh(float thickness)
+        {
+            var temp = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var box = temp.GetComponent<MeshFilter>().sharedMesh;
+            var parts = new List<CombineInstance>();
+            float len = 1f + thickness;
+            for (int axis = 0; axis < 3; axis++)
+                for (int a = -1; a <= 1; a += 2)
+                    for (int b = -1; b <= 1; b += 2)
+                    {
+                        var pos = new Vector3[] { new Vector3(0f, a, b), new Vector3(a, 0f, b), new Vector3(a, b, 0f) }[axis] * 0.5f;
+                        var scale = new Vector3[] { new Vector3(len, thickness, thickness), new Vector3(thickness, len, thickness),
+                            new Vector3(thickness, thickness, len) }[axis];
+                        parts.Add(new CombineInstance { mesh = box, transform = Matrix4x4.TRS(pos, Quaternion.identity, scale) });
+                    }
+            var mesh = new Mesh { name = "Cube Frame" };
+            mesh.CombineMeshes(parts.ToArray(), true, true);
+            Object.DestroyImmediate(temp);
+            return mesh;
         }
 
         static Transform Part(Transform parent, PrimitiveType type, string name, Material mat)

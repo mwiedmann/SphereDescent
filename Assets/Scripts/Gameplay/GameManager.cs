@@ -22,8 +22,10 @@ namespace SphereDescent
         public Light sun;
         [Tooltip("Looks the worlds take turns through: world 1 uses the first, world 2 the second, and so on, wrapping around.")]
         public VisualStyle[] styles = { VisualStyle.Synthwave(), VisualStyle.DeepSea() };
-        [Tooltip("Show a menu at the start (and on M) to pick the style, which then starts world 1 in it.")]
+        [Tooltip("M (or Start on a gamepad) opens a menu to pick the style and the world to play.")]
         public bool styleMenu = true;
+        [Tooltip("Highest world the menu lets you pick.")]
+        public int maxMenuWorld = 20;
 
         LevelInstance level;
         BallController ball;
@@ -31,8 +33,9 @@ namespace SphereDescent
         Camera cam;
         CameraClearFlags surfaceClearFlags;
         VisualStyle style;
-        int styleChoice = -1; // index into styles, or -1 to take turns world by world
+        int styleChoice;      // index into styles, or -1 to take turns world by world
         bool menuOpen;
+        int menuStyle, menuWorld; // what the menu has selected, applied on Start
         float frameMs;
         Material skyMaterial;
         ParticleSystem specks;
@@ -42,6 +45,7 @@ namespace SphereDescent
         float messageUntil;
         GUIStyle hudStyle, bannerStyle, rightStyle, menuTitleStyle, menuButtonStyle, menuHintStyle;
         int section;
+        int score;
         int climbingThrough = -1; // the hole a boost-pad launch is heading up through, until the ball lands
 
         public int World => world;
@@ -61,22 +65,31 @@ namespace SphereDescent
             return styleChoice >= 0 && styleChoice < styles.Length ? styles[styleChoice] : styles[(w - 1) % styles.Length];
         }
 
-        /// <summary>Pauses on the style menu (the world stays in view behind it).</summary>
+        /// <summary>Pauses on the menu (the world stays in view behind it), with the current style and world selected.</summary>
         void OpenMenu()
         {
             if (transitioning) return;
             menuOpen = true;
+            menuStyle = styleChoice;
+            menuWorld = world;
             ball.SetFrozen(true);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
 
-        /// <summary>Starts world 1 over in the chosen style (-1 = take turns each world).</summary>
-        void ChooseStyle(int choice)
+        void CloseMenu()
         {
-            styleChoice = choice;
             menuOpen = false;
-            world = 1;
+            ball.SetFrozen(false);
+        }
+
+        /// <summary>Starts a world over in a style (-1 = take turns each world), with the score reset.</summary>
+        void StartWorld(int styleIndex, int worldNumber)
+        {
+            styleChoice = styleIndex;
+            menuOpen = false;
+            world = Mathf.Max(1, worldNumber);
+            score = 0;
             BuildWorld();
             ball.SetFrozen(false);
         }
@@ -172,7 +185,6 @@ namespace SphereDescent
             world = Mathf.Max(1, startWorld);
             CreatePlayer();
             BuildWorld();
-            if (styleMenu) OpenMenu();
         }
 
         /// <summary>The player's ball: a sphere with grippy physics and the ball controller.</summary>
@@ -240,6 +252,14 @@ namespace SphereDescent
             ShowMessage(styles != null && styles.Length > 1 ? $"World {world}: {worldStyle.name}" : $"World {world}", 3f);
         }
 
+        public int Score => score;
+
+        public void CollectCube(EnergyCube cube)
+        {
+            score += cube.points;
+            if (cube.isSuper) ShowMessage($"Super cube! +{cube.points}", 1.5f);
+        }
+
         /// <summary>Seals the hole the ball just fell through.</summary>
         void OnDroppedThrough(int fromLayer, Vector3 position)
         {
@@ -289,8 +309,11 @@ namespace SphereDescent
             if (menuOpen)
             {
                 int n = GameInput.NumberPressed();
-                if (n >= 1 && n <= styles.Length) ChooseStyle(n - 1);
-                else if (n == styles.Length + 1) ChooseStyle(-1);
+                if (n >= 1 && n <= styles.Length) menuStyle = n - 1;
+                else if (n == styles.Length + 1) menuStyle = -1;
+                menuWorld = Mathf.Clamp(menuWorld + GameInput.MenuStep(), 1, Mathf.Max(1, maxMenuWorld));
+                if (GameInput.ConfirmPressed()) StartWorld(menuStyle, menuWorld);
+                else if (GameInput.MenuPressed() || GameInput.UnlockCursorPressed()) CloseMenu();
             }
             else
             {
@@ -374,14 +397,14 @@ namespace SphereDescent
             int layer = Mathf.Clamp(ball.CurrentLayer, 0, level.LayerCount - 1);
             string zone = level.Zones.Names[level.Zones.ZoneAt(ball.transform.position)];
             string status = $"World {world}   ·   Section {section + 1}/{level.Layout.Sections.Count}   ·   " +
-                            $"{level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone";
+                            $"{level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone   ·   Score {score}";
             Shadowed(new Rect(16, 12, 900, 30), status, hudStyle);
 
             string help = GameInput.GamepadConnected
                 ? "Left stick / D-pad move · A jump · Right stick camera · Select respawn"
                 : Cursor.lockState == CursorLockMode.Locked
-                ? "WASD move · Space jump · Mouse/Q/E camera · R respawn · Esc free cursor · M style menu"
-                : "Click to capture mouse · WASD move · Space jump · Q/E camera · R respawn · N skip world · M style menu";
+                ? "WASD move · Space jump · Mouse/Q/E camera · R respawn · Esc free cursor · M menu"
+                : "Click to capture mouse · WASD move · Space jump · Q/E camera · R respawn · N skip world · M menu";
             Shadowed(new Rect(16, Screen.height - 36, 1000, 30), help, hudStyle);
 
             // Frame time and style, top right.
@@ -399,23 +422,46 @@ namespace SphereDescent
 
         void DrawMenu()
         {
-            const float w = 420f, row = 46f;
+            const float w = 440f, row = 46f;
             int options = styles.Length + 1;
-            float h = 90f + options * row;
+            float h = 64f + options * row + 40f + row + 16f + row + 16f;
             var box = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
             // Drawn twice for a darker panel behind the buttons.
             GUI.Box(box, "");
             GUI.Box(box, "");
-            Shadowed(new Rect(box.x, box.y + 12, w, 40), "Choose a style", menuTitleStyle ??= new GUIStyle(bannerStyle) { fontSize = 28 });
+            menuTitleStyle ??= new GUIStyle(bannerStyle) { fontSize = 28 };
+            menuButtonStyle ??= new GUIStyle(GUI.skin.button) { fontSize = 20 };
+            var sectionStyle = menuHintStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.UpperCenter, fontSize = 15 };
+
+            float y = box.y + 12;
+            Shadowed(new Rect(box.x, y, w, 40), "Style", menuTitleStyle);
+            y += 52;
             for (int i = 0; i < options; i++)
             {
+                int value = i < styles.Length ? i : -1;
                 string label = i < styles.Length ? styles[i].name : "Alternate every world";
-                var r = new Rect(box.x + 30, box.y + 64 + i * row, w - 60, row - 8);
-                if (GUI.Button(r, $"{i + 1}.  {label}", menuButtonStyle ??= new GUIStyle(GUI.skin.button) { fontSize = 20 }))
-                    ChooseStyle(i < styles.Length ? i : -1);
+                // The selected style is marked, and its button stays pressed.
+                bool chosen = GUI.Toggle(new Rect(box.x + 30, y, w - 60, row - 8), menuStyle == value,
+                    $"{i + 1}.  {label}{(menuStyle == value ? "   (selected)" : "")}", menuButtonStyle);
+                if (chosen) menuStyle = value;
+                y += row;
             }
-            Shadowed(new Rect(box.x, box.yMax + 6, w, 30), "Starts world 1   ·   M brings this menu back",
-                menuHintStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.UpperCenter, fontSize = 15 });
+
+            y += 8;
+            Shadowed(new Rect(box.x, y, w, 32), "World", new GUIStyle(menuTitleStyle) { fontSize = 22 });
+            y += 34;
+            float bw = 60f;
+            if (GUI.Button(new Rect(box.x + 30, y, bw, row - 8), "−", menuButtonStyle)) menuWorld = Mathf.Max(1, menuWorld - 1);
+            Shadowed(new Rect(box.x + 30 + bw, y + 4, w - 60 - bw * 2, row - 8), $"{menuWorld}",
+                new GUIStyle(menuTitleStyle) { fontSize = 24 });
+            if (GUI.Button(new Rect(box.xMax - 30 - bw, y, bw, row - 8), "+", menuButtonStyle))
+                menuWorld = Mathf.Min(Mathf.Max(1, maxMenuWorld), menuWorld + 1);
+            y += row + 16;
+
+            if (GUI.Button(new Rect(box.x + 30, y, w - 60, row - 4), "Start", menuButtonStyle)) StartWorld(menuStyle, menuWorld);
+
+            Shadowed(new Rect(box.x - 60, box.yMax + 6, w + 120, 30),
+                "1-3 style   ·   ← → world   ·   Enter start   ·   Esc / M close", sectionStyle);
         }
 
         static void Shadowed(Rect r, string text, GUIStyle style)

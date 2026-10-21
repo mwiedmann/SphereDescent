@@ -87,6 +87,17 @@ namespace SphereDescent
         public List<(int section, int cell)> MineGroups = new List<(int, int)>();
         public List<LaserGate> LaserGates = new List<LaserGate>();
         public List<SecurityCamera> Cameras = new List<SecurityCamera>();
+        public List<Cube> Cubes = new List<Cube>();
+
+        public struct Cube
+        {
+            public int Shell;
+            public int Section;
+            public int Cell;
+            public Vector3 Direction;  // unit direction of where it floats
+            public bool Hidden;        // off the main route
+            public bool Super;
+        }
         public int StartCell;
         public int Seed;
         public int AttemptsUsed;
@@ -164,6 +175,7 @@ namespace SphereDescent
             PlaceLaserGates(layout, s, new Random(seed * 17 + 3));
             PlaceCameras(layout, s, new Random(seed * 13 + 5));
             PlaceMines(layout, s, new Random(seed * 31 + 7));
+            PlaceCubes(layout, s, new Random(seed * 7 + 11));
             return layout;
         }
 
@@ -332,6 +344,130 @@ namespace SphereDescent
                     else if (fallback == Vector3.zero) fallback = mount;
                 }
             return preferred != Vector3.zero ? preferred : fallback;
+        }
+
+        /// <summary>
+        /// Energy cubes on each section. Some are spread evenly along the main route (skipping the cells where
+        /// you arrive and leave); the rest are hidden in side-lane cells, the ones farthest off the route first,
+        /// tucked against the wall that faces away from the route so they only show once you look around the
+        /// corner. The most hidden one is the super cube. Side lanes are part of the section, so every cube can
+        /// be reached; cubes keep clear of mines and walls.
+        /// </summary>
+        static void PlaceCubes(MazeLayout layout, LevelSettings s, Random rng)
+        {
+            if (s.cubesPerLeg <= 0) return;
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                var sec = layout.Sections[i];
+                int shell = sec.Shell;
+                var grid = layout.Grids[shell];
+                float radius = s.shellRadii[shell];
+                var route = layout.Route(i);
+                var onRoute = new HashSet<int>(route);
+                int hiddenWanted = Mathf.RoundToInt(s.cubesPerLeg * s.hiddenCubeShare);
+
+                // Side cells, by how many steps they are off the route (farthest first).
+                var offRoute = new Dictionary<int, int>();
+                var queue = new Queue<int>();
+                foreach (int c in route) { offRoute[c] = 0; queue.Enqueue(c); }
+                while (queue.Count > 0)
+                {
+                    int cur = queue.Dequeue();
+                    foreach (int nb in grid.Neighbors[cur])
+                    {
+                        if (offRoute.ContainsKey(nb) || layout.Region[shell][nb] != i || !layout.Open[shell][grid.EdgeBetween(cur, nb)]) continue;
+                        offRoute[nb] = offRoute[cur] + 1;
+                        queue.Enqueue(nb);
+                    }
+                }
+                var side = new List<int>();
+                foreach (var kv in offRoute) if (kv.Value > 0 && !layout.ReservedForHazard(shell, kv.Key)) side.Add(kv.Key);
+                side.Sort((a, b) => offRoute[b] != offRoute[a] ? offRoute[b].CompareTo(offRoute[a]) : rng.Next(3) - 1);
+
+                int placedHidden = 0;
+                foreach (int cell in side)
+                {
+                    if (placedHidden >= hiddenWanted) break;
+                    // The cell this side cell is entered from (one step closer to the route).
+                    int from = -1;
+                    foreach (int nb in grid.Neighbors[cell])
+                        if (offRoute.TryGetValue(nb, out int d) && d == offRoute[cell] - 1 && layout.Open[shell][grid.EdgeBetween(cell, nb)]) from = nb;
+                    if (from < 0) continue;
+                    // Tuck it against the closed wall farthest from where you come in.
+                    Vector3 best = Vector3.zero;
+                    float bestFar = -1f;
+                    foreach (int nb in grid.Neighbors[cell])
+                    {
+                        int e = grid.EdgeBetween(cell, nb);
+                        if (layout.Open[shell][e]) continue;
+                        Vector3 mid = (grid.Edges[e].P0 + grid.Edges[e].P1).normalized;
+                        float far = Vector3.Angle(mid, grid.CellCenters[from]);
+                        if (far <= bestFar) continue;
+                        Vector3 inward = Vector3.ProjectOnPlane(grid.CellCenters[cell] - mid, mid).normalized;
+                        Vector3 spot = (mid * radius + inward * (s.wallThickness * 0.5f + 1.6f)).normalized;
+                        if (!CubeFits(layout, s, shell, spot, radius)) continue;
+                        bestFar = far; best = spot;
+                    }
+                    if (best == Vector3.zero)
+                    {
+                        Vector3 center = grid.CellCenters[cell];
+                        if (!CubeFits(layout, s, shell, center, radius)) continue;
+                        best = center;
+                    }
+                    layout.Cubes.Add(new Cube { Shell = shell, Section = i, Cell = cell, Direction = best, Hidden = true, Super = placedHidden == 0 });
+                    placedHidden++;
+                }
+
+                // The rest along the route, evenly spaced, nudged around anything in the way.
+                int routeWanted = s.cubesPerLeg - placedHidden;
+                int first = 1, last = route.Count - 2;
+                for (int n = 0; n < routeWanted && last >= first; n++)
+                {
+                    int at = first + (int)((last - first + 1) * (n + 0.5f) / routeWanted);
+                    int cell = route[Mathf.Clamp(at, first, last)];
+                    Vector3 center = grid.CellCenters[cell];
+                    Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+                    Vector3 y = Vector3.Cross(center, x);
+                    for (int tries = 0; tries < 30; tries++)
+                    {
+                        float a = (float)rng.NextDouble() * Mathf.PI * 2f, d = tries == 0 ? 0f : (float)rng.NextDouble() * s.cellSpacing * 0.35f;
+                        Vector3 spot = (center * radius + (x * Mathf.Cos(a) + y * Mathf.Sin(a)) * d).normalized;
+                        if (grid.NearestCell(spot) != cell || !CubeFits(layout, s, shell, spot, radius)) continue;
+                        layout.Cubes.Add(new Cube { Shell = shell, Section = i, Cell = cell, Direction = spot });
+                        break;
+                    }
+                }
+                // No side lanes to hide one in: the last cube on the route becomes the super cube instead.
+                if (placedHidden == 0)
+                    for (int k = layout.Cubes.Count - 1; k >= 0; k--)
+                        if (layout.Cubes[k].Section == i) { var c = layout.Cubes[k]; c.Super = true; layout.Cubes[k] = c; break; }
+            }
+        }
+
+        /// <summary>A cube here can be collected without touching a mine or squeezing against a wall, and isn't on another cube.</summary>
+        static bool CubeFits(MazeLayout layout, LevelSettings s, int shell, Vector3 dir, float radius)
+        {
+            Vector3 p = dir * radius;
+            foreach (var m in layout.Mines)
+                if (m.Shell == shell && Vector3.Distance(m.Direction * radius, p) < s.mineRadius + 1.6f) return false;
+            foreach (var c in layout.Cubes)
+                if (c.Shell == shell && Vector3.Distance(c.Direction * radius, p) < 3f) return false;
+            var grid = layout.Grids[shell];
+            int cell = grid.NearestCell(dir);
+            foreach (int a in new List<int>(grid.Neighbors[cell]) { cell })
+                foreach (int nb in grid.Neighbors[a])
+                {
+                    int e = grid.EdgeBetween(a, nb);
+                    if (layout.Open[shell][e]) continue;
+                    Vector3 a0 = grid.Edges[e].P0 * radius, a1 = grid.Edges[e].P1 * radius;
+                    float t = Mathf.Clamp01(Vector3.Dot(p - a0, a1 - a0) / (a1 - a0).sqrMagnitude);
+                    if (Vector3.Distance(p, a0 + (a1 - a0) * t) < s.wallThickness * 0.5f + 0.8f) return false;
+                }
+            // Clear of holes and pads too.
+            foreach (var h in layout.Holes)
+                if ((h.Shell == shell || h.Shell + 1 == shell) && Vector3.Angle(h.Direction, dir) * Mathf.Deg2Rad * radius < s.HoleRadius(layout.Grids[h.Shell], h.Shell) + 1.5f)
+                    return false;
+            return true;
         }
 
         /// <summary>

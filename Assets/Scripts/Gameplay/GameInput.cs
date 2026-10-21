@@ -61,6 +61,21 @@ namespace SphereDescent
             (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame) ||
             (Gamepad.current != null && Gamepad.current.startButton.wasPressedThisFrame);
 
+        /// <summary>-1 / +1 when left / right was pressed this frame (arrow keys, D-pad), else 0.</summary>
+        public static int MenuStep()
+        {
+            int step = 0;
+            var k = Keyboard.current;
+            if (k != null) step += (k.rightArrowKey.wasPressedThisFrame ? 1 : 0) - (k.leftArrowKey.wasPressedThisFrame ? 1 : 0);
+            var g = Gamepad.current;
+            if (g != null) step += (g.dpad.right.wasPressedThisFrame ? 1 : 0) - (g.dpad.left.wasPressedThisFrame ? 1 : 0);
+            return step;
+        }
+
+        public static bool ConfirmPressed() =>
+            (Keyboard.current != null && (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame)) ||
+            (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame);
+
         /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
         public static int NumberPressed()
         {
@@ -92,6 +107,12 @@ namespace SphereDescent
         public static bool UnlockCursorPressed() => Input.GetKeyDown(KeyCode.Escape);
         public static bool LockCursorPressed() => Input.GetMouseButtonDown(0);
         public static bool MenuPressed() => Input.GetKeyDown(KeyCode.M);
+
+        /// <summary>-1 / +1 when left / right was pressed this frame, else 0.</summary>
+        public static int MenuStep() =>
+            (Input.GetKeyDown(KeyCode.RightArrow) ? 1 : 0) - (Input.GetKeyDown(KeyCode.LeftArrow) ? 1 : 0);
+
+        public static bool ConfirmPressed() => Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
 
         /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
         public static int NumberPressed()

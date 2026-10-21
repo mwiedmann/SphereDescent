@@ -1,5 +1,6 @@
 // The pool of light a security camera's spotlight casts on the ground: additive, softly filled, with a
-// brighter rim so its edge is easy to judge. The disc mesh's UVs run 0-1 across it.
+// brighter rim so its edge is easy to judge. With Soft Glow on it's instead a plain glow fading out from
+// the middle (the halo around energy cubes). The disc mesh's UVs run 0-1 across it.
 Shader "SphereDescent/Spotlight"
 {
     Properties
@@ -7,6 +8,7 @@ Shader "SphereDescent/Spotlight"
         _Color ("Color", Color) = (1,0.92,0.7,1)
         _Intensity ("Intensity", Float) = 1
         _Fill ("Fill Brightness", Range(0, 1)) = 0.35
+        [Toggle] _Soft ("Soft Glow", Float) = 0
     }
     SubShader
     {
@@ -31,6 +33,7 @@ Shader "SphereDescent/Spotlight"
                 float4 _Color;
                 float _Intensity;
                 float _Fill;
+                float _Soft;
             CBUFFER_END
 
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
@@ -47,6 +50,11 @@ Shader "SphereDescent/Spotlight"
             half4 frag (Varyings i) : SV_Target
             {
                 float d = length(i.uv - 0.5) * 2.0;
+                if (_Soft > 0.5)
+                {
+                    float g = saturate(1.0 - d);
+                    return half4(_Color.rgb * _Intensity * g * g * g, 1);
+                }
                 float inside = 1.0 - smoothstep(0.92, 1.0, d);
                 float rim = smoothstep(0.75, 0.95, d);
                 return half4(_Color.rgb * _Intensity * inside * lerp(_Fill, 1.0, rim), 1);

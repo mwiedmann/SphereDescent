@@ -94,6 +94,19 @@ namespace SphereDescent
         [Tooltip("How high the camera's pole rises above the wall it stands on.")]
         public float cameraPoleHeight = 3f;
 
+        [Header("Energy cubes")]
+        [Tooltip("Cubes to collect on each section (the stretch between two holes or pads). 0 = none.")]
+        public int cubesPerLeg = 10;
+        [Tooltip("Share of them tucked away off the main route, down side lanes and around corners.")]
+        [Range(0f, 1f)] public float hiddenCubeShare = 0.5f;
+        [Tooltip("Points for a cube, and for the one super cube hidden on each section.")]
+        public int cubePoints = 1;
+        public int superCubePoints = 5;
+        [Tooltip("Edge length of a cube's glowing outline (the ball is 1 across). The super cube is larger.")]
+        public float cubeSize = 0.5f;
+        [Tooltip("Size of the bright point glowing at the heart of each cube.")]
+        public float cubeCoreSize = 0.08f;
+
         [Header("Orientation")]
         [Tooltip("How high the light beam over the current section's hole or boost pad rises into the sky.")]
         public float beamHeight = 100f;

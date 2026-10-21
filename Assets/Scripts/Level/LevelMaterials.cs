@@ -64,6 +64,23 @@ namespace SphereDescent
             return m;
         }
 
+        /// <summary>See-through and faintly glowing: a soft halo around something bright.</summary>
+        public static Material MakeGlass(Color color, float alpha, float glow)
+        {
+            var m = new Material(Shader.Find(LitShaderName)) { color = new Color(color.r, color.g, color.b, alpha) };
+            m.SetFloat("_Surface", 1f); // transparent
+            m.SetFloat("_Blend", 0f);   // alpha
+            m.SetOverrideTag("RenderType", "Transparent");
+            m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            m.SetInt("_ZWrite", 0);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            m.EnableKeyword("_EMISSION");
+            m.SetColor("_EmissionColor", color * glow);
+            return m;
+        }
+
         public static Material MakeMetal(Color color, float metallic, float smoothness)
         {
             var m = new Material(Shader.Find(LitShaderName)) { color = color };
