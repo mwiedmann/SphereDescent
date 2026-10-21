@@ -56,6 +56,8 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | **Cable** | The glowing line that lights up along the floor from the key pad to the gate; the lasers go off when it arrives. | the switch's cable mesh |
 | **Camera run** | Three security cameras in a row, on poles above the walls on alternating sides. | `SecurityCamera`, `camerasPerGroup` |
 | **Sweep pattern** | How a camera's **spotlight** moves: **figure-8**, **orbit** or **sweep**. | `SweepPattern` |
+| **Acid pool** | A cell on the route (entered through a choke point) sunk into a pit of acid; falling in destroys the ball. | `AcidPool`, `MazeLayout.AcidPools` |
+| **Bridge** | The narrow beam across an acid pool, from the doorway in to the doorway out, with a round landing where it bends. | `acidBridgeWidth` |
 
 ## Pickups
 

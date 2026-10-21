@@ -16,11 +16,13 @@ namespace SphereDescent
         public Material exit;
         public Material beam;
         public Material spot;
+        public Material acid;
 
         public const string GridShaderName = "SphereDescent/TriplanarGrid";
         public const string LitShaderName = "Universal Render Pipeline/Lit";
         public const string BeamShaderName = "SphereDescent/LightBeam";
         public const string SpotShaderName = "SphereDescent/Spotlight";
+        public const string AcidShaderName = "SphereDescent/Acid";
 
         /// <summary>Fills any unassigned slot with a runtime material so the game still runs without the setup step.</summary>
         public void EnsureDefaults()
@@ -34,6 +36,7 @@ namespace SphereDescent
             if (exit == null) exit = MakeEmissive(new Color(1f, 0.85f, 0.2f), 3f);
             if (beam == null) beam = MakeBeam();
             if (spot == null) spot = new Material(Shader.Find(SpotShaderName));
+            if (acid == null) acid = new Material(Shader.Find(AcidShaderName));
         }
 
         /// <summary>Light beam rising from holes and boost pads; LevelBuilder tints copies to match the rings.</summary>

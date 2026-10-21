@@ -113,6 +113,14 @@ namespace SphereDescent
         [Tooltip("Size of the bright point glowing at the heart of each cube.")]
         public float cubeCoreSize = 0.08f;
 
+        [Header("Acid pools")]
+        [Tooltip("An acid pool crossed by a thin bridge on every Nth section. 0 = none.")]
+        public int acidPoolEvery = 2;
+        [Tooltip("The first section with an acid pool (sections count from 1).")]
+        public int acidPoolFirstSection = 2;
+        [Tooltip("Width of the bridge over the acid (the ball is 1 across).")]
+        public float acidBridgeWidth = 2.275f;
+
         [Header("Checkpoints")]
         [Tooltip("A checkpoint pad halfway along each section: once you've rolled over it, dying sends you back there.")]
         public bool checkpoints = true;

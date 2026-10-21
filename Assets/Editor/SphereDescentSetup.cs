@@ -32,6 +32,7 @@ namespace SphereDescent.EditorTools
                 exit = SaveMaterial("Exit", LevelMaterials.MakeEmissive(new Color(1f, 0.85f, 0.2f), 3f)),
                 beam = SaveMaterial("LightBeam", LevelMaterials.MakeBeam()),
                 spot = SaveMaterial("Spotlight", new Material(Shader.Find(LevelMaterials.SpotShaderName))),
+                acid = SaveMaterial("Acid", new Material(Shader.Find(LevelMaterials.AcidShaderName))),
             };
 
             var sky = SaveMaterial("Sky", new Material(Shader.Find("SphereDescent/SynthwaveSky")));
@@ -269,6 +270,19 @@ namespace SphereDescent.EditorTools
                     if (!found) problems.Append($" no arrow by the checkpoint in section {cp.Section + 1};");
                 }
                 arrowsTotal += layout.Arrows.Count;
+                // Acid pools: a two-opening cell every way through has to enter, nothing placed in it.
+                var poolSections = new System.Text.StringBuilder();
+                foreach (var pool in layout.AcidPools)
+                {
+                    var sec = layout.Sections[pool.Section];
+                    var g = layout.Grids[pool.Shell];
+                    if (layout.Openings(pool.Shell, pool.Cell) != 2) problems.Append($" acid pool in section {pool.Section + 1} has side openings;");
+                    if (layout.Reachable(pool.Section, sec.EntryCell, g.EdgeBetween(pool.From, pool.Cell)).ContainsKey(sec.ExitCell))
+                        problems.Append($" acid pool in section {pool.Section + 1} can be walked around;");
+                    if (layout.Cubes.Exists(c => c.Shell == pool.Shell && c.Cell == pool.Cell)) problems.Append($" a cube over acid in section {pool.Section + 1};");
+                    if (layout.Mines.Exists(m => m.Shell == pool.Shell && g.NearestCell(m.Direction) == pool.Cell)) problems.Append($" a mine in acid in section {pool.Section + 1};");
+                    poolSections.Append(' ').Append(pool.Section + 1);
+                }
                 var cameraSections = new System.Text.StringBuilder();
                 for (int i = 0; i < layout.Sections.Count; i++)
                 {
@@ -310,7 +324,7 @@ namespace SphereDescent.EditorTools
                 string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
                              $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
                              $" cubes per section (hidden):{cubeCounts};" +
-                             $" laser gates in sections{gateSections} ({spurs} switches in side spurs); cameras (section:count) {cameraSections};" +
+                             $" laser gates in sections{gateSections} ({spurs} switches in side spurs); cameras (section:count) {cameraSections}; acid pools in sections{poolSections};" +
                              $" mines per section:{mineCounts} ({wallMines} by walls; gap {minGap:F1}, other mines to wall {minWall:F1}, wall mines to wall max {maxWallMineGap:F2}, hole {minHole:F1})" +
                              (problems.Length > 0 ? " PROBLEMS:" + problems : "");
 

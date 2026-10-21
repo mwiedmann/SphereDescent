@@ -64,6 +64,32 @@ namespace SphereDescent
                 foreach (var h in layout.Holes)
                     if (h.Shell == shell)
                         cuts.Add(new HoleCut { Direction = h.Direction, AngularRadius = holeRadius / radius });
+                // Acid pools: a pit the exact shape of their cell (its edges run under the walls).
+                foreach (var p in layout.AcidPools)
+                {
+                    if (p.Shell != shell) continue;
+                    Vector3 c = grid.CellCenters[p.Cell];
+                    var corners = CellCorners(grid, p.Cell);
+                    // Each side's plane, facing into the cell.
+                    var sides = new Vector3[corners.Count];
+                    for (int k = 0; k < corners.Count; k++)
+                    {
+                        Vector3 nrm = Vector3.Cross(corners[k], corners[(k + 1) % corners.Count]).normalized;
+                        sides[k] = Vector3.Dot(nrm, c) < 0f ? -nrm : nrm;
+                    }
+                    cuts.Add(new HoleCut
+                    {
+                        Direction = c,
+                        Inside = d => System.Array.TrueForAll(sides, n => Vector3.Dot(d, n) > 0f),
+                        SnapToEdge = d =>
+                        {
+                            // Onto the side this point is farthest beyond.
+                            Vector3 n = sides[0];
+                            foreach (var o in sides) if (Vector3.Dot(d, o) < Vector3.Dot(d, n)) n = o;
+                            return d - n * Vector3.Dot(d, n);
+                        },
+                    });
+                }
 
                 var groundMat = level.Own(ZoneMaterial(mats.ground, GroundColor(shell), 3f, style.groundZoneMix, style));
                 var shellMesh = level.Own(MeshBuilders.BuildShell(shellIco, radius, s.shellThickness, cuts, terrain));
@@ -147,6 +173,7 @@ namespace SphereDescent
             CreateCubes(level, layout, s, terrains, layerRoots, mats.spot);
             CreateCheckpoints(level, layout, s, layerRoots);
             CreateArrows(level, layout, s, terrains, layerRoots);
+            CreateAcidPools(level, layout, s, layerRoots, mats);
 
             // The whole core is the exit: it glows gold, and landing on it completes the world.
             var coreRoot = layerRoots[layout.ShellCount];
@@ -208,6 +235,9 @@ namespace SphereDescent
             }
             foreach (var c in layout.Checkpoints)
                 terrains[c.Shell].AddFlatSpot(c.Direction, s.checkpointRadius + 0.8f, Fade(c.Shell));
+            // Acid pools: the whole cell and its doorways, so the pit's edge and the bridge are level.
+            foreach (var p in layout.AcidPools)
+                terrains[p.Shell].AddFlatSpot(layout.Grids[p.Shell].CellCenters[p.Cell], s.cellSpacing * 0.75f, Fade(p.Shell));
             // Arrows lie flat on the floor.
             foreach (var a in layout.Arrows)
                 terrains[a.Shell].AddFlatSpot(a.Direction, 1.8f, Fade(a.Shell));
@@ -969,6 +999,231 @@ namespace SphereDescent
             m.SetColor("_Color", color);
             m.SetFloat("_FadeStart", fadeStart);
             return m;
+        }
+
+        /// <summary>
+        /// Acid pools: the pit cut into the floor (done with the shell) gets a solid bottom, a glowing acid
+        /// surface a little below the floor, and a thin metal bridge with bright edges running from the doorway
+        /// you come in by, through the middle (a round landing where it bends), to the doorway out.
+        /// </summary>
+        static void CreateAcidPools(LevelInstance level, MazeLayout layout, LevelSettings s, Transform[] layerRoots, LevelMaterials mats)
+        {
+            if (layout.AcidPools.Count == 0) return;
+            var metal = level.Own(LevelMaterials.MakeMetal(new Color(0.09f, 0.09f, 0.1f), 0.85f, 0.5f));
+            var edgeMat = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.85f, 0.2f), 1.6f));
+            var pitMat = level.Own(LevelMaterials.MakeBlack());
+            float w = s.acidBridgeWidth;
+            const float depth = 1.05f;
+            foreach (var p in layout.AcidPools)
+            {
+                var grid = layout.Grids[p.Shell];
+                float r = s.shellRadii[p.Shell];
+                Vector3 c = grid.CellCenters[p.Cell];
+                var go = new GameObject("Acid Pool");
+                go.transform.SetParent(layerRoots[p.Shell], false);
+                go.transform.position = c * r;
+
+                var corners = CellCorners(grid, p.Cell);
+
+                var bottom = level.Own(CellCapMesh(c, corners, r - 1f, 8));
+                // These meshes are built in world space; the pool object itself sits at the cell (so it lands in the
+                // right chunk), so they're placed back at the world origin.
+                var pitBottom = CreateMeshObject(go.transform, "Pit Bottom", bottom, pitMat, true, ShadowCastingMode.Off);
+                pitBottom.transform.position = Vector3.zero;
+                var acid = CreateMeshObject(go.transform, "Acid", level.Own(CellCapMesh(c, corners, r - 0.55f, 8)), mats.acid, false, ShadowCastingMode.Off);
+                acid.transform.position = Vector3.zero;
+                // Walls lining the pit all the way round, so you can't see under the floor through the doorways.
+                CreateMeshObject(go.transform, "Pit Walls", level.Own(PitWallMesh(c, corners, r, r - 1f, 8)), metal, true, ShadowCastingMode.Off)
+                    .transform.position = Vector3.zero;
+
+                // The bridge: from just outside the doorway in, through the middle, to just outside the doorway out.
+                Vector3 Doorway(int other, float beyond)
+                {
+                    var e = grid.Edges[grid.EdgeBetween(p.Cell, other)];
+                    Vector3 mid = (e.P0 + e.P1).normalized;
+                    Vector3 away = Vector3.ProjectOnPlane(grid.CellCenters[other] - mid, mid).normalized;
+                    return (mid * r + away * beyond).normalized * r;
+                }
+                var path = new List<Vector3> { Doorway(p.From, 1.5f), c * r, Doorway(p.To, 1.5f) };
+                var bridge = level.Own(BridgeMesh(path, w, depth, out Mesh edges));
+                CreateMeshObject(go.transform, "Bridge", bridge, metal, true, ShadowCastingMode.On).transform.position = Vector3.zero;
+                CreateMeshObject(go.transform, "Bridge Edges", level.Own(edges), edgeMat, false, ShadowCastingMode.Off).transform.position = Vector3.zero;
+                // A round landing where it bends, so the turn is as wide as the bridge.
+                var landing = Part(go.transform, PrimitiveType.Cylinder, "Bridge Landing", metal);
+                landing.SetPositionAndRotation(c * (r + 0.02f - depth * 0.5f), Quaternion.FromToRotation(Vector3.up, c));
+                landing.localScale = new Vector3(w * 1.15f, depth * 0.5f, w * 1.15f);
+                landing.gameObject.AddComponent<MeshCollider>().sharedMesh = landing.GetComponent<MeshFilter>().sharedMesh;
+
+                var pool = go.AddComponent<AcidPool>();
+                pool.center = c;
+                pool.neighbors = System.Array.ConvertAll(grid.Neighbors[p.Cell], n => grid.CellCenters[n]);
+                pool.floorRadius = r;
+                pool.layer = p.Shell;
+            }
+        }
+
+        /// <summary>A cell's outline: the corners of its walls, in order around it.</summary>
+        static List<Vector3> CellCorners(SphereGrid grid, int cell)
+        {
+            Vector3 c = grid.CellCenters[cell];
+            var corners = new List<Vector3>();
+            foreach (int nb in grid.Neighbors[cell])
+            {
+                var e = grid.Edges[grid.EdgeBetween(cell, nb)];
+                foreach (var q in new[] { e.P0, e.P1 })
+                    if (!corners.Exists(k => Vector3.Angle(k, q) < 1e-3f)) corners.Add(q);
+            }
+            Vector3 ax = Vector3.Cross(c, Mathf.Abs(c.y) < 0.9f ? Vector3.up : Vector3.right).normalized, ay = Vector3.Cross(c, ax);
+            corners.Sort((a, b) => Mathf.Atan2(Vector3.Dot(a, ay), Vector3.Dot(a, ax)).CompareTo(Mathf.Atan2(Vector3.Dot(b, ay), Vector3.Dot(b, ax))));
+            return corners;
+        }
+
+        /// <summary>A spherical patch shaped like a maze cell (fanned out from its center to its corners) at the given radius, facing out.</summary>
+        static Mesh CellCapMesh(Vector3 center, List<Vector3> corners, float radius, int steps)
+        {
+            var verts = new List<Vector3>();
+            var tris = new List<int>();
+            for (int k = 0; k < corners.Count; k++)
+            {
+                Vector3 a = corners[k], b = corners[(k + 1) % corners.Count];
+                int start = verts.Count;
+                // Rows from the center outward, each a line from a-side to b-side.
+                for (int i = 0; i <= steps; i++)
+                    for (int j = 0; j <= i; j++)
+                    {
+                        float u = i / (float)steps, v = i == 0 ? 0f : j / (float)i;
+                        Vector3 rim = Vector3.Lerp(a, b, v);
+                        verts.Add(Vector3.Lerp(center, rim, u).normalized * radius);
+                    }
+                int Row(int i) => start + i * (i + 1) / 2;
+                for (int i = 0; i < steps; i++)
+                    for (int j = 0; j <= i; j++)
+                    {
+                        tris.Add(Row(i) + j); tris.Add(Row(i + 1) + j); tris.Add(Row(i + 1) + j + 1);
+                        if (j < i) { tris.Add(Row(i) + j); tris.Add(Row(i + 1) + j + 1); tris.Add(Row(i) + j + 1); }
+                    }
+            }
+            // Wind every triangle to face away from the center of the world.
+            for (int t = 0; t < tris.Count; t += 3)
+            {
+                Vector3 n = Vector3.Cross(verts[tris[t + 1]] - verts[tris[t]], verts[tris[t + 2]] - verts[tris[t]]);
+                if (Vector3.Dot(n, verts[tris[t]]) < 0f) (tris[t + 1], tris[t + 2]) = (tris[t + 2], tris[t + 1]);
+            }
+            var normals = verts.ConvertAll(v => v.normalized);
+            var mesh = new Mesh { name = "Cell Cap", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>The sides of a pit shaped like a maze cell, from <paramref name="top"/> down to <paramref name="bottom"/>, facing in.</summary>
+        static Mesh PitWallMesh(Vector3 center, List<Vector3> corners, float top, float bottom, int steps)
+        {
+            var verts = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var tris = new List<int>();
+            for (int k = 0; k < corners.Count; k++)
+            {
+                Vector3 a = corners[k], b = corners[(k + 1) % corners.Count];
+                int start = verts.Count;
+                for (int i = 0; i <= steps; i++)
+                {
+                    Vector3 d = Vector3.Lerp(a, b, i / (float)steps).normalized;
+                    Vector3 inward = Vector3.ProjectOnPlane(center - d, d).normalized;
+                    verts.Add(d * top); verts.Add(d * bottom);
+                    normals.Add(inward); normals.Add(inward);
+                }
+                for (int i = 0; i < steps; i++)
+                {
+                    int t0 = start + i * 2, b0 = t0 + 1, t1 = t0 + 2, b1 = t0 + 3;
+                    // Wound to face into the pit.
+                    bool flip = Vector3.Dot(Vector3.Cross(verts[b0] - verts[t0], verts[t1] - verts[t0]), normals[t0]) < 0f;
+                    if (!flip) { tris.Add(t0); tris.Add(b0); tris.Add(t1); tris.Add(t1); tris.Add(b0); tris.Add(b1); }
+                    else { tris.Add(t0); tris.Add(t1); tris.Add(b0); tris.Add(t1); tris.Add(b1); tris.Add(b0); }
+                }
+            }
+            var mesh = new Mesh { name = "Pit Walls" };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>
+        /// A narrow beam following <paramref name="path"/> (points on the floor), its top just above the floor and
+        /// <paramref name="depth"/> deep, with flat top, sides and ends. Also returns two thin bright strips along
+        /// its top edges.
+        /// </summary>
+        static Mesh BridgeMesh(List<Vector3> path, float width, float depth, out Mesh edgeStrips)
+        {
+            // Points every half unit along the path, lifted just above the floor.
+            var pts = new List<Vector3>();
+            for (int k = 0; k + 1 < path.Count; k++)
+            {
+                int steps = Mathf.Max(1, Mathf.CeilToInt(Vector3.Distance(path[k], path[k + 1]) / 0.5f));
+                for (int n = 0; n < steps; n++) pts.Add(Vector3.Lerp(path[k], path[k + 1], n / (float)steps));
+            }
+            pts.Add(path[path.Count - 1]);
+            // On the sphere (straight lines between points would dip below the curved floor), just above it.
+            float surface = path[0].magnitude;
+            for (int k = 0; k < pts.Count; k++) pts[k] = pts[k].normalized * (surface + 0.02f);
+
+            var verts = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var tris = new List<int>();
+            var eVerts = new List<Vector3>();
+            var eTris = new List<int>();
+            void Quad(List<Vector3> vs, List<int> ts, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector3 facing, List<Vector3> ns)
+            {
+                int i = vs.Count;
+                vs.Add(a); vs.Add(b); vs.Add(c); vs.Add(d);
+                if (ns != null) { ns.Add(facing); ns.Add(facing); ns.Add(facing); ns.Add(facing); }
+                bool flip = Vector3.Dot(Vector3.Cross(b - a, c - a), facing) < 0f;
+                if (!flip) { ts.Add(i); ts.Add(i + 1); ts.Add(i + 2); ts.Add(i); ts.Add(i + 2); ts.Add(i + 3); }
+                else { ts.Add(i); ts.Add(i + 2); ts.Add(i + 1); ts.Add(i); ts.Add(i + 3); ts.Add(i + 2); }
+            }
+            Vector3 Side(int k)
+            {
+                Vector3 up = pts[k].normalized;
+                Vector3 along = pts[Mathf.Min(k + 1, pts.Count - 1)] - pts[Mathf.Max(k - 1, 0)];
+                return Vector3.Cross(up, along).normalized;
+            }
+            for (int k = 0; k + 1 < pts.Count; k++)
+            {
+                Vector3 u0 = pts[k].normalized, u1 = pts[k + 1].normalized;
+                Vector3 s0 = Side(k) * (width * 0.5f), s1 = Side(k + 1) * (width * 0.5f);
+                Vector3 tl0 = pts[k] + s0, tr0 = pts[k] - s0, tl1 = pts[k + 1] + s1, tr1 = pts[k + 1] - s1;
+                Vector3 bl0 = tl0 - u0 * depth, br0 = tr0 - u0 * depth, bl1 = tl1 - u1 * depth, br1 = tr1 - u1 * depth;
+                Quad(verts, tris, tl0, tl1, tr1, tr0, u0, normals);
+                Quad(verts, tris, tl0, tl1, bl1, bl0, s0.normalized, normals);
+                Quad(verts, tris, tr0, tr1, br1, br0, -s0.normalized, normals);
+                // Bright strips just inside both top edges.
+                Vector3 e0 = s0.normalized * 0.07f, e1 = s1.normalized * 0.07f;
+                Vector3 lift0 = u0 * 0.006f, lift1 = u1 * 0.006f;
+                Quad(eVerts, eTris, tl0 + lift0, tl1 + lift1, tl1 - e1 + lift1, tl0 - e0 + lift0, u0, null);
+                Quad(eVerts, eTris, tr0 + lift0, tr1 + lift1, tr1 + e1 + lift1, tr0 + e0 + lift0, u0, null);
+            }
+            // End caps.
+            foreach (int k in new[] { 0, pts.Count - 1 })
+            {
+                Vector3 u = pts[k].normalized, sd = Side(k) * (width * 0.5f);
+                Vector3 outward = (k == 0 ? pts[0] - pts[1] : pts[k] - pts[k - 1]).normalized;
+                Quad(verts, tris, pts[k] + sd, pts[k] - sd, pts[k] - sd - u * depth, pts[k] + sd - u * depth, outward, normals);
+            }
+            var mesh = new Mesh { name = "Bridge" };
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            edgeStrips = new Mesh { name = "Bridge Edges" };
+            edgeStrips.SetVertices(eVerts);
+            edgeStrips.SetTriangles(eTris, 0);
+            edgeStrips.RecalculateNormals();
+            edgeStrips.RecalculateBounds();
+            return mesh;
         }
 
         /// <summary>An invisible object that only collides, with this mesh.</summary>

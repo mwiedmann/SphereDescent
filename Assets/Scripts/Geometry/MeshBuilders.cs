@@ -7,7 +7,11 @@ namespace SphereDescent
     public struct HoleCut
     {
         public Vector3 Direction;   // unit direction of the hole center
-        public float AngularRadius; // radians
+        public float AngularRadius; // radians (for a round hole)
+        // A hole of any shape instead: whether a unit direction is inside it, and how to move a point just
+        // outside it onto its edge.
+        public System.Func<Vector3, bool> Inside;
+        public System.Func<Vector3, Vector3> SnapToEdge;
     }
 
     public static class MeshBuilders
@@ -32,7 +36,8 @@ namespace SphereDescent
             {
                 for (int h = 0; h < holes.Count; h++)
                 {
-                    if (Vector3.Dot(unit[v], holes[h].Direction) > cosRadii[h]) { inside[v] = true; break; }
+                    bool inHole = holes[h].Inside != null ? holes[h].Inside(unit[v]) : Vector3.Dot(unit[v], holes[h].Direction) > cosRadii[h];
+                    if (inHole) { inside[v] = true; break; }
                 }
             }
 
@@ -63,7 +68,7 @@ namespace SphereDescent
 
             var dirs = (Vector3[])unit.Clone();
 
-            // Snap boundary vertices onto the exact hole circle for round holes.
+            // Snap boundary vertices onto the exact edge of their hole: a circle, or the hole's own shape.
             foreach (int v in snapped)
             {
                 int best = -1;
@@ -74,6 +79,7 @@ namespace SphereDescent
                     if (d > bestDot) { bestDot = d; best = h; }
                 }
                 if (best < 0) continue;
+                if (holes[best].SnapToEdge != null) { dirs[v] = holes[best].SnapToEdge(unit[v]).normalized; continue; }
                 Vector3 c = holes[best].Direction;
                 Vector3 perp = (unit[v] - c * bestDot).normalized;
                 float ang = holes[best].AngularRadius;

@@ -90,6 +90,16 @@ namespace SphereDescent
         public List<SecurityCamera> Cameras = new List<SecurityCamera>();
         public List<Cube> Cubes = new List<Cube>();
         public List<Checkpoint> Checkpoints = new List<Checkpoint>();
+        public List<AcidPool> AcidPools = new List<AcidPool>();
+
+        public struct AcidPool
+        {
+            public int Shell;
+            public int Section;
+            public int Cell;           // the cell filled with acid
+            public int From, To;       // the route cells before and after it: the bridge runs between their doorways
+            public int RouteIndex;     // the pool cell's position along the section's route
+        }
         public List<Arrow> Arrows = new List<Arrow>();
 
         public struct Arrow
@@ -193,6 +203,7 @@ namespace SphereDescent
             // Own random streams, so hazard settings never change the maze itself.
             PlaceLaserGates(layout, s, new Random(seed * 17 + 3));
             PlaceCameras(layout, s, new Random(seed * 13 + 5));
+            PlaceAcidPools(layout, s);
             PlaceCheckpoints(layout, s);
             PlaceMines(layout, s, new Random(seed * 31 + 7));
             PlaceSingleMines(layout, s, new Random(seed * 19 + 13));
@@ -366,6 +377,67 @@ namespace SphereDescent
                     else if (fallback == Vector3.zero) fallback = mount;
                 }
             return preferred != Vector3.zero ? preferred : fallback;
+        }
+
+        /// <summary>
+        /// An acid pool on every Nth section (starting with Acid Pool First Section): a route cell every way
+        /// through has to enter, with just two openings (in and out), filled wall to wall with acid and crossed
+        /// by a thin bridge. Of the cells that qualify, it takes the one farthest along the route from the
+        /// section's laser gate or camera run (or, with neither, farthest from the middle, where the checkpoint
+        /// goes), so the big hazards are spread out. A section with no such cell passes its turn to the next.
+        /// </summary>
+        static void PlaceAcidPools(MazeLayout layout, LevelSettings s)
+        {
+            if (s.acidPoolEvery <= 0) return;
+            int due = Mathf.Max(0, s.acidPoolFirstSection - 1);
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                if (i < due) continue;
+                if (TryPlaceAcidPool(layout, i)) due = i + s.acidPoolEvery;
+            }
+        }
+
+        static bool TryPlaceAcidPool(MazeLayout layout, int section)
+        {
+            int shell = layout.Sections[section].Shell;
+            var grid = layout.Grids[shell];
+            var route = layout.Route(section);
+            // Where along the route the section's other big hazards are.
+            var others = new List<int>();
+            foreach (var g in layout.LaserGates) if (g.Section == section) others.Add(route.IndexOf(g.EntrySideCell));
+            foreach (var c in layout.Cameras) if (c.Section == section) others.Add(route.IndexOf(c.NearCell));
+
+            int best = -1;
+            float bestScore = float.MinValue;
+            foreach (var (near, _, _) in layout.Chokepoints(section))
+            {
+                int k = route.IndexOf(near) + 1; // every way through enters this cell
+                if (k < 2 || k > route.Count - 3) continue;
+                int cell = route[k];
+                if (layout.Openings(shell, cell) != 2) continue;
+                if (layout.ReservedForHazard(shell, route[k - 1]) || layout.ReservedForHazard(shell, cell) ||
+                    layout.ReservedForHazard(shell, route[k + 1])) continue;
+                float score;
+                if (others.Count > 0)
+                {
+                    score = int.MaxValue;
+                    foreach (int o in others) score = Mathf.Min(score, Mathf.Abs(k - o));
+                    if (score < 3) continue;
+                }
+                else score = Mathf.Abs(2 * k - route.Count) * 0.5f;
+                // Prefer doorways well apart, so the bridge doesn't fold back on itself.
+                Vector3 c0 = grid.CellCenters[cell];
+                float spread = Vector3.Angle(Vector3.ProjectOnPlane(grid.CellCenters[route[k - 1]] - c0, c0),
+                    Vector3.ProjectOnPlane(grid.CellCenters[route[k + 1]] - c0, c0));
+                score += spread / 360f;
+                if (score > bestScore) { bestScore = score; best = k; }
+            }
+            if (best < 0) return false;
+            layout.AcidPools.Add(new AcidPool
+            {
+                Shell = shell, Section = section, Cell = route[best], From = route[best - 1], To = route[best + 1], RouteIndex = best,
+            });
+            return true;
         }
 
         /// <summary>
@@ -588,6 +660,7 @@ namespace SphereDescent
         /// <summary>A cube near the middle of a cell (its center, or close by if something's in the way).</summary>
         static bool TryPlaceInMiddle(MazeLayout layout, LevelSettings s, Random rng, int shell, int section, int cell, float radius)
         {
+            if (layout.AcidPools.Exists(p => p.Shell == shell && p.Cell == cell)) return false; // nothing over the acid
             var grid = layout.Grids[shell];
             Vector3 center = grid.CellCenters[cell];
             Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
@@ -716,6 +789,8 @@ namespace SphereDescent
                     return true;
             foreach (var c in Checkpoints)
                 if (c.Shell == shell && cell == c.Cell) return true;
+            foreach (var p in AcidPools)
+                if (p.Shell == shell && (cell == p.Cell || cell == p.From || cell == p.To)) return true;
             return false;
         }
 

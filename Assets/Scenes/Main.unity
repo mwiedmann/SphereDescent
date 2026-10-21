@@ -461,6 +461,9 @@ MonoBehaviour:
     superCubePoints: 5
     cubeSize: 0.5
     cubeCoreSize: 0.08
+    acidPoolEvery: 2
+    acidPoolFirstSection: 2
+    acidBridgeWidth: 2.275
     checkpoints: 1
     checkpointRadius: 2.8
     arrowEvery: 4
@@ -477,6 +480,7 @@ MonoBehaviour:
     exit: {fileID: 2100000, guid: e1c7a22fe90fa4969b50ff8386c2e313, type: 2}
     beam: {fileID: 2100000, guid: dc0c2fbbf0454fbc899b50aeaf5fd6bb, type: 2}
     spot: {fileID: 2100000, guid: dfc69de9d5514985810f0d456a761aa9, type: 2}
+    acid: {fileID: 2100000, guid: a1a7497beaf04269a76567a7a1e9841d, type: 2}
   skyColor: {r: 0.08, g: 0.02, b: 0.16, a: 1}
   baseSeed: 1337
   startWorld: 1
