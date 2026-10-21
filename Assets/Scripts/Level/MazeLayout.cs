@@ -34,6 +34,7 @@ namespace SphereDescent
             public int Section;        // the section whose route it sits on
             public Vector3 Direction;  // unit direction of its center
             public bool NearWall;      // set just off a wall, so the wall can't be hugged past the group
+            public bool Single;        // a lone mine scattered along the section, not part of a group
         }
 
         public struct LaserGate
@@ -194,6 +195,7 @@ namespace SphereDescent
             PlaceCameras(layout, s, new Random(seed * 13 + 5));
             PlaceCheckpoints(layout, s);
             PlaceMines(layout, s, new Random(seed * 31 + 7));
+            PlaceSingleMines(layout, s, new Random(seed * 19 + 13));
             PlaceCubes(layout, s, new Random(seed * 7 + 11));
             PlaceArrows(layout, s);
             return layout;
@@ -524,6 +526,13 @@ namespace SphereDescent
                 int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i);
                 int checkpointAt = checkpoint >= 0 ? layout.Checkpoints[checkpoint].RouteIndex : -1;
 
+                bool MineNear(Vector3 p, float range)
+                {
+                    foreach (var m in layout.Mines)
+                        if (m.Shell == shell && Vector3.Distance(m.Direction * radius, p) < range + s.mineRadius) return true;
+                    return false;
+                }
+
                 void Add(Vector3 at, int toward)
                 {
                     at = at.normalized;
@@ -544,7 +553,7 @@ namespace SphereDescent
                         continue;
                     }
                     if (k < next || mined.Contains(route[k]) || layout.ReservedForHazard(shell, route[k]) ||
-                        Mathf.Abs(k - checkpointAt) < 2) continue;
+                        Mathf.Abs(k - checkpointAt) < 2 || MineNear(grid.CellCenters[route[k]] * radius, 2.5f)) continue;
                     Add(grid.CellCenters[route[k]], route[k + 1]);
                     next = k + s.arrowEvery;
                 }
@@ -824,6 +833,84 @@ namespace SphereDescent
         /// Whether a mine here leaves room to roll between it and every mine already on the shell, and stays at
         /// least <paramref name="wallClearance"/> from the walls around the cell.
         /// </summary>
+        /// <summary>
+        /// Lone mines scattered over each half of each section (before and after its checkpoint), as many as a
+        /// mine group there would have, on top of the groups: at random spots in route and side-lane cells, but
+        /// never in a group's cell, near the start or exit, or on a hole, pad, checkpoint, laser gate or camera
+        /// doorway. Like every mine they leave room to roll past.
+        /// </summary>
+        static void PlaceSingleMines(MazeLayout layout, LevelSettings s, Random rng)
+        {
+            if (!s.singleMines || s.mineGroupsMax <= 0) return;
+            for (int i = 0; i < layout.Sections.Count; i++)
+            {
+                var sec = layout.Sections[i];
+                int shell = sec.Shell;
+                var grid = layout.Grids[shell];
+                float radius = s.shellRadii[shell];
+                var route = layout.Route(i);
+                bool inner = layout.InnermostForMines(s, shell);
+                var groupCells = new HashSet<int>();
+                foreach (var (mineSection, mineCell) in layout.MineGroups) if (mineSection == i) groupCells.Add(mineCell);
+
+                // Every cell of the section, with the route cell it branches from (route cells branch from themselves).
+                var branch = new Dictionary<int, int>();
+                var queue = new Queue<int>();
+                for (int k = 0; k < route.Count; k++) { branch[route[k]] = k; queue.Enqueue(route[k]); }
+                while (queue.Count > 0)
+                {
+                    int cur = queue.Dequeue();
+                    foreach (int nb in grid.Neighbors[cur])
+                    {
+                        if (branch.ContainsKey(nb) || layout.Region[shell][nb] != i || !layout.Open[shell][grid.EdgeBetween(cur, nb)]) continue;
+                        branch[nb] = branch[cur];
+                        queue.Enqueue(nb);
+                    }
+                }
+
+                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i);
+                int split = checkpoint >= 0 ? layout.Checkpoints[checkpoint].RouteIndex : -1;
+                var halves = split > 0 ? new[] { (2, split - 1), (split + 1, route.Count - 3) } : new[] { (2, route.Count - 3) };
+                foreach (var (from, to) in halves)
+                {
+                    var cells = new List<int>();
+                    foreach (var kv in branch)
+                        if (kv.Value >= from && kv.Value <= to && !groupCells.Contains(kv.Key) && !layout.ReservedForHazard(shell, kv.Key))
+                            cells.Add(kv.Key);
+                    if (cells.Count == 0) continue;
+                    int sizeMin = Mathf.Max(1, s.mineGroupSizeMin);
+                    int count = Mathf.Max(1, rng.Next(sizeMin, Mathf.Max(sizeMin, s.mineGroupSizeMax) + 1) -
+                        (inner ? s.innermostGroupSizeCut : 0));
+                    for (int n = 0, tries = 0; n < count && tries < count * 40; tries++)
+                    {
+                        int cell = cells[rng.Next(cells.Count)];
+                        Vector3 center = grid.CellCenters[cell];
+                        Vector3 x = Vector3.Cross(center, Mathf.Abs(center.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+                        Vector3 y = Vector3.Cross(center, x);
+                        float a = (float)rng.NextDouble() * Mathf.PI * 2f, d = Mathf.Sqrt((float)rng.NextDouble()) * s.cellSpacing * 0.45f;
+                        Vector3 dir = (center * radius + (x * Mathf.Cos(a) + y * Mathf.Sin(a)) * d).normalized;
+                        if (grid.NearestCell(dir) != cell || !MineFits(layout, s, shell, cell, dir, radius, 0.5f) ||
+                            NearHoleOrCheckpoint(layout, s, shell, dir, radius)) continue;
+                        layout.Mines.Add(new Mine { Shell = shell, Section = i, Direction = dir, Single = true });
+                        n++;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Too close to a hole, a boost pad or a checkpoint pad for a mine.</summary>
+        static bool NearHoleOrCheckpoint(MazeLayout layout, LevelSettings s, int shell, Vector3 dir, float radius)
+        {
+            foreach (var h in layout.Holes)
+                if ((h.Shell == shell || h.Shell + 1 == shell) &&
+                    Vector3.Angle(h.Direction, dir) * Mathf.Deg2Rad * radius < s.HoleRadius(layout.Grids[h.Shell], h.Shell) + s.mineRadius + 3f)
+                    return true;
+            foreach (var c in layout.Checkpoints)
+                if (c.Shell == shell && Vector3.Angle(c.Direction, dir) * Mathf.Deg2Rad * radius < s.checkpointRadius + s.mineRadius + 1.5f)
+                    return true;
+            return false;
+        }
+
         static bool MineFits(MazeLayout layout, LevelSettings s, int shell, int cell, Vector3 dir, float radius, float wallClearance)
         {
             Vector3 p = dir * radius;

@@ -208,7 +208,9 @@ namespace SphereDescent
                 Vector3 dir = m.Direction;
                 var go = new GameObject("Mine");
                 go.transform.SetParent(layerRoots[m.Shell], false);
-                go.transform.SetPositionAndRotation(dir * terrains[m.Shell].SurfaceRadius(dir), Quaternion.FromToRotation(Vector3.up, dir));
+                // Tilted to lie flush with the ground, on a hillside too.
+                go.transform.SetPositionAndRotation(dir * terrains[m.Shell].SurfaceRadius(dir),
+                    Quaternion.FromToRotation(Vector3.up, terrains[m.Shell].Normal(dir)));
 
                 CreateMeshObject(go.transform, "Body", bodyMesh, bodyMat, false, ShadowCastingMode.Off);
                 var ring = CreateMeshObject(go.transform, "Ring", ringMesh, ringMat, false, ShadowCastingMode.Off);

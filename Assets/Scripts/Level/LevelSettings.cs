@@ -64,6 +64,9 @@ namespace SphereDescent
         [Tooltip("How far the mines beside walls sit from the wall. Keep it under the ball's width (1) so the wall " +
                  "can't be hugged past the group.")]
         public float mineWallGap = 0.35f;
+        [Tooltip("Also scatter lone mines over each half of a section (before and after its checkpoint), as many as " +
+                 "a group would have, on top of the groups.")]
+        public bool singleMines = true;
         [Tooltip("How many of the innermost (smallest) shells get sparser mines: one group fewer per section, smaller " +
                  "groups, and more room between mines.")]
         public int fewerMinesInnermost = 2;

@@ -20,7 +20,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Checkpoints.** Halfway along each section is a large checkpoint pad marked with a flag. Roll over it and it lights up green: if you're blown up after that, you come back there instead of at the start of the section.
 - **Dropping down.** Most sections end at a hole marked with a glowing ring. Roll into it to fall to the next section on the shell below.
 - **Climbing up.** Some sections end at a cyan boost pad. Roll onto it and it launches you up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
-- **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them. Weave between them or jump over them: touching one blows you up and sends you back to where you last arrived on that sphere.
+- **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them, and lone mines are scattered along the route and side lanes. Weave between them or jump over them: touching one blows you up and sends you back to your respawn point.
 - **Laser gates.** Every other section has a gate of lasers across a doorway you can't get around. Find the pad marked with a key nearby on your side, usually down a short side path: it pulses red while the lasers are on and turns green when you roll over it. A glowing cable then lights up along the floor from the pad to the gate, about as fast as you roll, and the lasers switch off when it reaches them. Touching the lasers blows you up like a mine.
 - **Security cameras.** The other sections have a run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own quick, steady pattern (a figure-8, a loop, or a wobbling side-to-side sweep). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
 - **Energy cubes.** Each half of a section, before and after its checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for a point. The most hidden cube in each half is a larger magenta super cube worth 5. Your score is on the HUD.
@@ -105,7 +105,7 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Energy cubes:** how many per half section, how many are hidden, points, and size.
 - **Laser gates:** how often (every Nth section) and how many lasers each gate has.
 - **Security cameras:** how often, how many per run, and the spotlight's size, speed and reach.
-- **Mines:** groups per section, mines per group (the ones beside the walls count too), size, the gap left beside walls, and how many of the smallest spheres get fewer.
+- **Mines:** groups per section, mines per group (the ones beside the walls count too), whether lone mines are scattered too, size, the gap left beside walls, and how many of the smallest spheres get fewer.
 - **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **beam height**, and the **Base Seed**.
 
 The ball's speed, jump height and gravity are set on the `BallController`, and the camera's distance, pitch and follow behavior on the `OrbitCamera`.

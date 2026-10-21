@@ -133,6 +133,25 @@ namespace SphereDescent
             return h;
         }
 
+        /// <summary>
+        /// Which way the ground faces in this direction: straight out from the center on flat ground, leaning
+        /// on a hillside. Measured from the ground height a short step either side.
+        /// </summary>
+        public Vector3 Normal(Vector3 direction, float step = 0.3f)
+        {
+            Vector3 up = direction.normalized;
+            if (maxHeight <= 0f) return up;
+            Vector3 a = Vector3.Cross(up, Mathf.Abs(up.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 b = Vector3.Cross(up, a);
+            Vector3 Ground(Vector3 offset)
+            {
+                Vector3 d = (up * radius + offset).normalized;
+                return d * SurfaceRadius(d);
+            }
+            Vector3 n = Vector3.Cross(Ground(a * step) - Ground(-a * step), Ground(b * step) - Ground(-b * step)).normalized;
+            return Vector3.Dot(n, up) < 0f ? -n : n;
+        }
+
         /// <summary>Distance from the center to the ground in this direction.</summary>
         public float SurfaceRadius(Vector3 direction) => radius + Height(direction);
     }

@@ -122,7 +122,7 @@ namespace SphereDescent.EditorTools
             int failures = 0;
             var allRoutes = new System.Collections.Generic.List<int>();
             var groupOpenings = new System.Collections.Generic.List<float>();
-            int allCubes = 0, allHidden = 0, totalSections = 0, arrowsTotal = 0;
+            int allCubes = 0, allHidden = 0, totalSections = 0, arrowsTotal = 0, singlesTotal = 0;
             var routeOffsets = new System.Collections.Generic.List<float>();
             var openingsByShell = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<float>>();
             var minesByShell = new System.Collections.Generic.Dictionary<int, (int groups, int mines)>();
@@ -296,6 +296,7 @@ namespace SphereDescent.EditorTools
                     var cur = minesByShell[sh];
                     minesByShell[sh] = (cur.groups + 1, cur.mines + layout.Mines.FindAll(m => m.Shell == sh && layout.Grids[sh].NearestCell(m.Direction) == gCell).Count);
                 }
+                singlesTotal += layout.Mines.FindAll(m => m.Single).Count;
                 var mineCounts = new System.Text.StringBuilder();
                 foreach (int c in perSection) mineCounts.Append(' ').Append(c);
 
@@ -337,7 +338,7 @@ namespace SphereDescent.EditorTools
             if (totalSections > 0)
                 Debug.Log($"[Validate] cubes: {allCubes / (float)totalSections:F1} per section on average, {allHidden / (float)totalSections:F1} of them hidden; " +
                           $"route cubes at most {(routeOffsets.Count > 0 ? routeOffsets.Max() : 0f):F1} from their cell's middle; " +
-                          $"{arrowsTotal / (float)totalSections:F1} arrows per section");
+                          $"{arrowsTotal / (float)totalSections:F1} arrows per section; {singlesTotal / (float)totalSections:F1} single mines per section");
             groupOpenings.Sort();
             if (groupOpenings.Count > 0)
                 Debug.Log($"[Validate] mine groups: {groupOpenings.Count}; widest ball that could roll through a group: " +
