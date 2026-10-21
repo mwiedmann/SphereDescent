@@ -50,6 +50,7 @@ The words we use when talking about Sphere Descent, and what each is called in t
 
 | Term | Meaning | In the code |
 |---|---|---|
+| **Major hazard** | A laser gate, camera run or acid pool: the big obstacles, each placed every few sections and staggered so they take turns. Mines are not major hazards; they're spread through every section. | `laserGateEvery`, `cameraEvery`, `acidPoolEvery`; their cells are `ReservedForHazard` |
 | **Mine group** | A cluster of mines in one cell, including its **wall mines** (one beside each wall, so you can't hug the wall past). | `MineGroups`, `Mine.NearWall` |
 | **Laser gate** | Horizontal lasers filling a choke point. | `LaserGate` |
 | **Key pad** | The pad that switches a laser gate off, marked with a key, usually down a spur. | `LaserSwitch` |
