@@ -1083,6 +1083,42 @@ namespace SphereDescent.EditorTools
                 }
             }
 
+            // An acid pool, rolling onto its bridge.
+            if (layout.AcidPools.Count > 0)
+            {
+                var p = layout.AcidPools[0];
+                var grid = layout.Grids[p.Shell];
+                Vector3 c = grid.CellCenters[p.Cell];
+                var e = grid.Edges[grid.EdgeBetween(p.From, p.Cell)];
+                Vector3 door = (e.P0 + e.P1).normalized;
+                level.SetBeamSection(p.Section);
+                GameView("acid_pool", p.Shell, Vector3.Slerp(door, c, 0.3f), c, orbit.pitch + 8f);
+            }
+
+            // A mortar on its wall, a bomb coming down where the ball is heading and the marker where it'll land.
+            if (layout.Mortars.Count > 0)
+            {
+                var m = layout.Mortars[0];
+                var grid = layout.Grids[m.Shell];
+                var route = Route(m.Section);
+                Vector3 c = grid.CellCenters[m.Cell];
+                var e = grid.Edges[grid.EdgeBetween(route[m.RouteIndex - 1], m.Cell)];
+                Vector3 door = (e.P0 + e.P1).normalized;
+                Mortar mortar = null;
+                foreach (var mo in level.GetComponentsInChildren<Mortar>())
+                    if (mortar == null || Vector3.Angle(mo.transform.position, m.Mount) < Vector3.Angle(mortar.transform.position, m.Mount)) mortar = mo;
+                Vector3 ballDir = Vector3.Slerp(door, c, 0.2f).normalized;
+                float r = Ground(m.Shell, ballDir);
+                Vector3 ballPos = ballDir * (r + 0.5f);
+                Vector3 landing = Vector3.Slerp(door, c, 0.6f).normalized;
+                mortar.PreviewShot(landing * Ground(m.Shell, landing), 0.75f);
+                Vector3 back = Vector3.ProjectOnPlane(door - c, ballDir).normalized;
+                Vector3 mortarEye = ballPos + back * 8f + ballDir * 4.5f;
+                Vector3 look = (landing * r + mortar.transform.position) * 0.5f;
+                level.SetBeamSection(m.Section);
+                Render("mortar", ballPos, mortarEye, Quaternion.LookRotation(look - mortarEye, ballDir), m.Shell);
+            }
+
             // The same corridor as the gameplay shot, in the Deep Sea style.
             {
                 var deepSea = VisualStyle.DeepSea();

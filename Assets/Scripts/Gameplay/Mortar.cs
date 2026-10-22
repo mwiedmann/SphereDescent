@@ -105,6 +105,18 @@ namespace SphereDescent
             return nearest < float.MaxValue;
         }
 
+        /// <summary>
+        /// For still renders outside Play mode: aims at <paramref name="target"/> and leaves a bomb
+        /// <paramref name="progress"/> (0-1) of the way along its flight there, with its marker on the ground.
+        /// </summary>
+        public void PreviewShot(Vector3 target, float progress)
+        {
+            Vector3 ground = Ground(target);
+            Vector3 flat = Vector3.ProjectOnPlane(ground - turret.position, transform.up);
+            turret.rotation = Quaternion.LookRotation(flat, transform.up);
+            MortarBomb.Launch(this, muzzle.position, ground, groundNormal).Advance(progress * flightTime);
+        }
+
         void Face(Vector3 target)
         {
             if (turret == null) return;

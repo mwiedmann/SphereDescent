@@ -45,6 +45,10 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 |---|---|
 | ![Cameras on poles above the walls, sweeping spotlights across the passage](Docs/screenshots/security_cameras.png) | ![A camera locked on and firing its laser at the ball](Docs/screenshots/camera_caught.png) |
 
+| An acid pool and its bridge | A mortar's bomb coming down on its marker |
+|---|---|
+| ![A narrow bridge across a pit of glowing green acid](Docs/screenshots/acid_pool.png) | ![A mortar gripping a wall, its bomb falling toward a red circle on the ground](Docs/screenshots/mortar.png) |
+
 To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in.
 
 ## Look

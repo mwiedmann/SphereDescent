@@ -19,7 +19,7 @@ namespace SphereDescent
         float markerIntensity;
 
         /// <param name="ground">The ground's normal where it will land, so the marker lies flat on a slope.</param>
-        public static void Launch(Mortar mortar, Vector3 from, Vector3 to, Vector3 ground)
+        public static MortarBomb Launch(Mortar mortar, Vector3 from, Vector3 to, Vector3 ground)
         {
             var go = new GameObject("Mortar Bomb");
             go.transform.SetParent(mortar.bombParent, true);
@@ -41,7 +41,11 @@ namespace SphereDescent
             bomb.marker = Piece(mortar.bombParent, "Bomb Marker", bomb.markerMesh, bomb.markerMat);
             bomb.marker.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             bomb.Tick(0f);
+            return bomb;
         }
+
+        /// <summary>Moves the bomb on by <paramref name="seconds"/> of its flight, for still renders.</summary>
+        public void Advance(float seconds) => Tick(seconds);
 
         /// <summary>
         /// A disc of <paramref name="radius"/> around <paramref name="center"/>, each of its points dropped onto
