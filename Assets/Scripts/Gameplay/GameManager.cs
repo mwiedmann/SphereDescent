@@ -17,6 +17,17 @@ namespace SphereDescent
         public Color skyColor = new Color(0.08f, 0.02f, 0.16f);
         [Tooltip("Each world's seed is derived from this, so the same number always gives the same worlds.")]
         public int baseSeed = 1337;
+        [Tooltip("Hand-picked seeds for the first worlds (world 1 first), used instead of one derived from Base Seed.")]
+        public int[] worldSeeds = (int[])DefaultWorldSeeds.Clone();
+
+        /// <summary>Picked for how well everything fits: nearly every major hazard slot and every extra checkpoint.</summary>
+        public static readonly int[] DefaultWorldSeeds = { 733206 };
+
+        /// <summary>A world's seed: its hand-picked one if it has one, otherwise derived from the base seed.</summary>
+        public static int SeedFor(int baseSeed, int[] worldSeeds, int world) =>
+            worldSeeds != null && world >= 1 && world <= worldSeeds.Length ? worldSeeds[world - 1] : baseSeed + world * 7919;
+
+        public int SeedFor(int world) => SeedFor(baseSeed, worldSeeds, world);
         public int startWorld = 1;
         public float worldTransitionDelay = 2.5f;
         public Light sun;
@@ -238,7 +249,7 @@ namespace SphereDescent
             if (level != null) Destroy(level.gameObject);
 
             float t0 = Time.realtimeSinceStartup;
-            var layout = MazeLayout.Generate(settings, baseSeed + world * 7919);
+            var layout = MazeLayout.Generate(settings, SeedFor(world));
             var worldStyle = StyleFor(world);
             level = LevelBuilder.Build(layout, settings, materials, world, worldStyle);
             ApplyStyle(worldStyle);
@@ -249,6 +260,7 @@ namespace SphereDescent
             climbingThrough = -1;
 
             ball.level = level;
+            ball.ForgetCheckpoints();
             ball.Teleport(level.SpawnPosition);
             FaceTheWayOn();
             ShowMessage(styles != null && styles.Length > 1 ? $"World {world}: {worldStyle.name}" : $"World {world}", 3f);

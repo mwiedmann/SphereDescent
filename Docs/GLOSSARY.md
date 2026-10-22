@@ -39,8 +39,8 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | Term | Meaning | In the code |
 |---|---|---|
 | **Spawn** | Where a world starts. | `SpawnPosition` |
-| **Checkpoint** | The flag pad halfway along each section. Turns green once reached. | `CheckpointPad` |
-| **Respawn point** | Where you come back after being blown up: the landing spot on that sphere, or its checkpoint once reached. | `checkpoint` in `BallController` |
+| **Checkpoint** | A flag pad along a section that turns green once reached. The **main checkpoint** is halfway along and splits the section into halves; on the first two spheres there are also **extra checkpoints** a quarter and three quarters of the way. | `CheckpointPad`, `Checkpoint.Main` |
+| **Respawn point** | Where you come back after being blown up: the landing spot on that sphere, or the furthest checkpoint reached on it. | `checkpoint` in `BallController` |
 | **Zone** | One of the 12 named color regions on each sphere. They line up through every layer. | `ZoneMap` |
 | **Exit beam** | The column of light over the hole or pad that ends the section you're in. | light beams, `SetBeamSection` |
 | **Floor arrows** | Arrows on the floor every few cells pointing along the route. | `MazeLayout.Arrows` |

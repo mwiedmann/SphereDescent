@@ -125,13 +125,15 @@ namespace SphereDescent.EditorTools
             var groupOpenings = new System.Collections.Generic.List<float>();
             int allCubes = 0, allHidden = 0, totalSections = 0, arrowsTotal = 0, singlesTotal = 0, hazardSlots = 0, hazardShortfall = 0;
             var allKindCounts = new int[4];
+            int extraCheckpoints = 0, extraWanted = 0;
+            var bridgeBends = new System.Text.StringBuilder();
             var routeOffsets = new System.Collections.Generic.List<float>();
             var openingsByShell = new System.Collections.Generic.SortedDictionary<int, System.Collections.Generic.List<float>>();
             var minesByShell = new System.Collections.Generic.Dictionary<int, (int groups, int mines)>();
             for (int world = 1; world <= 8; world++)
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var layout = MazeLayout.Generate(settings, 1337 + world * 7919);
+                var layout = MazeLayout.Generate(settings, GameManager.SeedFor(1337, GameManager.DefaultWorldSeeds, world));
                 long genMs = sw.ElapsedMilliseconds;
                 if (layout == null) { failures++; Debug.Log($"[Validate] World {world}: FAILED to generate"); continue; }
 
@@ -233,7 +235,7 @@ namespace SphereDescent.EditorTools
                 {
                     var cubes = layout.Cubes.FindAll(c => c.Section == i);
                     int hidden = cubes.FindAll(c => c.Hidden).Count, supers = cubes.FindAll(c => c.Super).Count;
-                    int halves = layout.Checkpoints.Exists(c => c.Section == i) ? 2 : 1;
+                    int halves = layout.Checkpoints.Exists(c => c.Section == i && c.Main) ? 2 : 1;
                     if (supers != halves && settings.cubesPerHalfSection > 0) problems.Append($" section {i + 1} has {supers} super cubes;");
                     foreach (var c in cubes)
                     {
@@ -248,20 +250,32 @@ namespace SphereDescent.EditorTools
                     cubeCounts.Append($" {cubes.Count}({hidden})");
                     allCubes += cubes.Count; allHidden += hidden; totalSections++;
                 }
-                // Checkpoints: one per section, on its route near the middle, and not on a hazard.
+                // Checkpoints: a main one per section on its route near the middle, extra ones within each half on
+                // the outer spheres, none on a major hazard.
                 int checkpoints = 0;
                 foreach (var cp in layout.Checkpoints)
                 {
                     var route = layout.Route(cp.Section);
                     float along = route.IndexOf(cp.Cell) / (float)(route.Count - 1);
-                    if (along < 0.3f || along > 0.7f) problems.Append($" checkpoint in section {cp.Section + 1} is {along:P0} along its route;");
+                    if (cp.Main && (along < 0.3f || along > 0.7f)) problems.Append($" checkpoint in section {cp.Section + 1} is {along:P0} along its route;");
+                    if (!cp.Main)
+                    {
+                        if (cp.Shell >= settings.extraCheckpointSpheres) problems.Append($" an extra checkpoint on sphere {cp.Shell + 1};");
+                        if (along < 0.1f || along > 0.9f || (along > 0.4f && along < 0.6f)) problems.Append($" extra checkpoint in section {cp.Section + 1} is {along:P0} along its route;");
+                        extraCheckpoints++;
+                    }
+                    foreach (var h in layout.MajorHazards)
+                        if (h.Section == cp.Section && cp.RouteIndex >= h.Start && cp.RouteIndex <= h.End)
+                            problems.Append($" a checkpoint in section {cp.Section + 1} is on a {h.Type};");
                     foreach (var m in layout.Mines)
                         if (m.Shell == cp.Shell && Vector3.Angle(m.Direction, cp.Direction) * Mathf.Deg2Rad * settings.shellRadii[cp.Shell] <
                             settings.checkpointRadius + settings.mineRadius + 1f)
                             problems.Append($" a mine on the checkpoint in section {cp.Section + 1};");
                     checkpoints++;
                 }
-                if (settings.checkpoints && checkpoints < layout.Sections.Count) problems.Append($" only {checkpoints} checkpoints;");
+                if (settings.checkpoints && layout.Checkpoints.FindAll(c => c.Main).Count < layout.Sections.Count) problems.Append($" only {layout.Checkpoints.FindAll(c => c.Main).Count} main checkpoints;");
+                for (int i = 0; i < layout.Sections.Count; i++)
+                    if (layout.Sections[i].Shell < settings.extraCheckpointSpheres) { extraWanted += 2; }
                 // Arrows: one by each checkpoint, pointing along the route away from it.
                 foreach (var cp in layout.Checkpoints)
                 {
@@ -277,6 +291,9 @@ namespace SphereDescent.EditorTools
                     var sec = layout.Sections[pool.Section];
                     var g = layout.Grids[pool.Shell];
                     if (layout.Openings(pool.Shell, pool.Cell) != 2) problems.Append($" acid pool in section {pool.Section + 1} has side openings;");
+                    float bend = layout.BridgeBend(pool.Shell, pool.Cell, pool.From, pool.To);
+                    if (bend > settings.acidMaxBend + 0.01f) problems.Append($" the bridge in section {pool.Section + 1} bends {bend:F0} degrees;");
+                    bridgeBends.Append($" {bend:F0}");
                     if (layout.Reachable(pool.Section, sec.EntryCell, g.EdgeBetween(pool.From, pool.Cell)).ContainsKey(sec.ExitCell))
                         problems.Append($" acid pool in section {pool.Section + 1} can be walked around;");
                     if (layout.Cubes.Exists(c => c.Shell == pool.Shell && c.Cell == pool.Cell)) problems.Append($" a cube over acid in section {pool.Section + 1};");
@@ -290,11 +307,31 @@ namespace SphereDescent.EditorTools
                     int unavoidable = cams.FindAll(c => !layout.Reachable(i, sec.EntryCell, c.Edge).ContainsKey(sec.ExitCell)).Count;
                     if (unavoidable == 0) problems.Append($" cameras in section {i + 1} can all be walked around;");
                 }
-                // Mortars: on a wall of their route cell.
+                // Mortars: on a wall of their route cell, and out of reach of every other major hazard and every
+                // checkpoint on their sphere (by straight-line distance: bombs fly over walls).
+                float nearestToMortar = float.MaxValue;
                 foreach (var m in layout.Mortars)
                 {
                     var e = layout.Grids[m.Shell].Edges[m.Wall];
                     if (layout.Open[m.Shell][m.Wall] || (e.A != m.Cell && e.B != m.Cell)) problems.Append($" mortar in section {m.Section + 1} isn't on its cell's wall;");
+                    float r = settings.shellRadii[m.Shell];
+                    float reach = settings.mortarRange + settings.cellSpacing * 0.5f;
+                    foreach (var h in layout.MajorHazards)
+                    {
+                        if (layout.Sections[h.Section].Shell != m.Shell) continue;
+                        var hr = layout.Route(h.Section);
+                        bool own = h.Type == MazeLayout.MajorHazard.Mortar && h.Section == m.Section && hr[(h.Start + h.End) / 2] == m.Cell;
+                        if (own) continue;
+                        for (int k = h.Start; k <= h.End; k++)
+                        {
+                            float d = Vector3.Angle(m.Mount, layout.Grids[m.Shell].CellCenters[hr[k]]) * Mathf.Deg2Rad * r;
+                            nearestToMortar = Mathf.Min(nearestToMortar, d);
+                            if (d < reach) { problems.Append($" a mortar in section {m.Section + 1} reaches a {h.Type} in section {h.Section + 1};"); break; }
+                        }
+                    }
+                    foreach (var cp in layout.Checkpoints)
+                        if (cp.Shell == m.Shell && Vector3.Angle(m.Mount, cp.Direction) * Mathf.Deg2Rad * r < reach)
+                            problems.Append($" a mortar in section {m.Section + 1} reaches a checkpoint in section {cp.Section + 1};");
                 }
                 // Major hazards: the right number in each half section (shortfalls are counted, not failures),
                 // never the same kind twice in a half, apart from each other and the checkpoint, and each kind used
@@ -305,8 +342,8 @@ namespace SphereDescent.EditorTools
                 {
                     int shell = layout.Sections[i].Shell;
                     int want = shell >= layout.ShellCount - settings.fewerHazardsInnermost ? settings.majorHazardsPerHalfInnermost : settings.majorHazardsPerHalf;
-                    bool hasCp = layout.Checkpoints.Exists(c => c.Section == i);
-                    var cp = layout.Checkpoints.Find(c => c.Section == i);
+                    bool hasCp = layout.Checkpoints.Exists(c => c.Section == i && c.Main);
+                    var cp = layout.Checkpoints.Find(c => c.Section == i && c.Main);
                     hazardPlan.Append(' ').Append(i + 1).Append(':');
                     for (int half = 0; half < 2; half++)
                     {
@@ -322,7 +359,7 @@ namespace SphereDescent.EditorTools
                             if (hasCp && (half == 0) != (cp.RouteIndex > h.End))
                                 problems.Append($" a {h.Type} in section {i + 1} is on the wrong side of the checkpoint;");
                             foreach (var o in layout.MajorHazards)
-                                if (o.Section == i && !o.Equals(h) && h.Start <= o.End + 1 && h.End >= o.Start - 1)
+                                if (o.Section == i && !o.Equals(h) && h.Start <= o.End + 2 && h.End >= o.Start - 2)
                                     problems.Append($" a {h.Type} and a {o.Type} crowd each other in section {i + 1};");
                             hazardPlan.Append("GCAM"[(int)h.Type]);
                         }
@@ -388,7 +425,7 @@ namespace SphereDescent.EditorTools
                 Debug.Log($"[Validate] cubes: {allCubes / (float)totalSections:F1} per section on average, {allHidden / (float)totalSections:F1} of them hidden; " +
                           $"route cubes at most {(routeOffsets.Count > 0 ? routeOffsets.Max() : 0f):F1} from their cell's middle; " +
                           $"{arrowsTotal / (float)totalSections:F1} arrows per section; {singlesTotal / (float)totalSections:F1} single mines per section; " +
-                          $"major hazards {hazardSlots - hazardShortfall}/{hazardSlots} placed, gates/cameras/acid/mortars {allKindCounts[0]}/{allKindCounts[1]}/{allKindCounts[2]}/{allKindCounts[3]}");
+                          $"extra checkpoints {extraCheckpoints}/{extraWanted}; bridge bends (degrees){bridgeBends}; major hazards {hazardSlots - hazardShortfall}/{hazardSlots} placed, gates/cameras/acid/mortars {allKindCounts[0]}/{allKindCounts[1]}/{allKindCounts[2]}/{allKindCounts[3]}");
             groupOpenings.Sort();
             if (groupOpenings.Count > 0)
                 Debug.Log($"[Validate] mine groups: {groupOpenings.Count}; widest ball that could roll through a group: " +
@@ -739,7 +776,7 @@ namespace SphereDescent.EditorTools
             Directory.CreateDirectory(outDir);
             BuildMainScene();
             var gm = Object.FindAnyObjectByType<GameManager>();
-            var layout = MazeLayout.Generate(gm.settings, gm.baseSeed + 1 * 7919);
+            var layout = MazeLayout.Generate(gm.settings, gm.SeedFor(1));
             var level = LevelBuilder.Build(layout, gm.settings, gm.materials, 1);
             var cam = Camera.main;
             var sun = gm.sun;
@@ -820,7 +857,7 @@ namespace SphereDescent.EditorTools
             var gm = Object.FindAnyObjectByType<GameManager>();
             gm.materials.EnsureDefaults();
             var settings = gm.settings;
-            var layout = MazeLayout.Generate(settings, gm.baseSeed + 1 * 7919);
+            var layout = MazeLayout.Generate(settings, gm.SeedFor(1));
             var level = LevelBuilder.Build(layout, settings, gm.materials, 1);
             var cam = Camera.main;
             var sun = gm.sun;
@@ -1086,7 +1123,7 @@ namespace SphereDescent.EditorTools
             var gm = Object.FindAnyObjectByType<GameManager>();
             gm.materials.EnsureDefaults();
             var settings = gm.settings;
-            var layout = MazeLayout.Generate(settings, gm.baseSeed + 1 * 7919);
+            var layout = MazeLayout.Generate(settings, gm.SeedFor(1));
             var level = LevelBuilder.Build(layout, settings, gm.materials, 1);
             var cam = Camera.main;
             var orbit = cam.GetComponent<OrbitCamera>();

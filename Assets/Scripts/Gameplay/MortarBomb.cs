@@ -1,10 +1,12 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace SphereDescent
 {
     /// <summary>
     /// A mortar bomb arcing from the barrel to where it will land, with a red light blinking on it and a red
-    /// marker on the ground beneath its landing spot that flashes faster and faster until it hits.
+    /// marker on the ground beneath its landing spot that flashes faster and faster until it hits. The marker
+    /// is draped over the ground, so it follows hills instead of cutting into them.
     /// </summary>
     public class MortarBomb : MonoBehaviour
     {
@@ -13,6 +15,7 @@ namespace SphereDescent
         float age, arcHeight;
         Transform marker, blinker;
         Material markerMat;
+        Mesh markerMesh;
         float markerIntensity;
 
         /// <param name="ground">The ground's normal where it will land, so the marker lies flat on a slope.</param>
@@ -31,13 +34,62 @@ namespace SphereDescent
             bomb.blinker = Piece(go.transform, "Light", mortar.bombMesh, mortar.bombLightMaterial);
             bomb.blinker.localPosition = new Vector3(0f, 0.22f, 0f);
 
-            // The marker sits just above the ground, lying on it, as wide as the blast.
+            // The marker lies on the ground, as wide as the blast.
             bomb.markerMat = new Material(mortar.markerMaterial);
             bomb.markerIntensity = bomb.markerMat.GetFloat("_Intensity");
-            bomb.marker = Piece(mortar.bombParent, "Bomb Marker", mortar.markerMesh, bomb.markerMat);
-            bomb.marker.SetPositionAndRotation(to + ground * 0.05f, Quaternion.FromToRotation(Vector3.up, ground));
-            bomb.marker.localScale = Vector3.one * mortar.blastRadius;
+            bomb.markerMesh = DrapedDisc(mortar, to, ground, mortar.blastRadius);
+            bomb.marker = Piece(mortar.bombParent, "Bomb Marker", bomb.markerMesh, bomb.markerMat);
+            bomb.marker.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             bomb.Tick(0f);
+        }
+
+        /// <summary>
+        /// A disc of <paramref name="radius"/> around <paramref name="center"/>, each of its points dropped onto
+        /// the ground below and lifted just off it, in world space. Rays start a little above the landing spot,
+        /// below the wall tops, so where the disc runs into a wall it tucks under it (out of sight) rather than
+        /// climbing it. UVs match a flat disc's, so the marker glows the same.
+        /// </summary>
+        static Mesh DrapedDisc(Mortar mortar, Vector3 center, Vector3 normal, float radius)
+        {
+            const int rings = 8, segments = 36;
+            const float lift = 0.06f;
+            Vector3 up = center.normalized;
+            Vector3 t1 = Vector3.Cross(normal, Mathf.Abs(Vector3.Dot(normal, Vector3.up)) < 0.9f ? Vector3.up : Vector3.right).normalized;
+            Vector3 t2 = Vector3.Cross(normal, t1);
+            var verts = new List<Vector3> { center + normal * lift };
+            var uvs = new List<Vector2> { new Vector2(0.5f, 0.5f) };
+            for (int i = 1; i <= rings; i++)
+                for (int j = 0; j < segments; j++)
+                {
+                    float a = j / (float)segments * Mathf.PI * 2f, f = i / (float)rings;
+                    Vector3 flat = center + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * (radius * f);
+                    Vector3 p = flat + normal * lift;
+                    if (mortar.GroundHit(flat + up * 2.2f, 5f, out Vector3 hit, out Vector3 hitNormal)) p = hit + hitNormal * lift;
+                    verts.Add(p);
+                    uvs.Add(new Vector2(0.5f + 0.5f * f * Mathf.Cos(a), 0.5f + 0.5f * f * Mathf.Sin(a)));
+                }
+            int V(int ring, int seg) => ring == 0 ? 0 : 1 + (ring - 1) * segments + (seg % segments);
+            var tris = new List<int>();
+            void Tri(int a, int b, int c)
+            {
+                // Face away from the ground.
+                if (Vector3.Dot(Vector3.Cross(verts[b] - verts[a], verts[c] - verts[a]), normal) >= 0f) { tris.Add(a); tris.Add(b); tris.Add(c); }
+                else { tris.Add(a); tris.Add(c); tris.Add(b); }
+            }
+            for (int j = 0; j < segments; j++) Tri(0, V(1, j), V(1, j + 1));
+            for (int i = 1; i < rings; i++)
+                for (int j = 0; j < segments; j++)
+                {
+                    Tri(V(i, j), V(i + 1, j), V(i + 1, j + 1));
+                    Tri(V(i, j), V(i + 1, j + 1), V(i, j + 1));
+                }
+            var mesh = new Mesh { name = "Bomb Marker" };
+            mesh.SetVertices(verts);
+            mesh.SetUVs(0, uvs);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
         }
 
         static Transform Piece(Transform parent, string name, Mesh mesh, Material mat)
@@ -73,8 +125,6 @@ namespace SphereDescent
             if (s >= 1f)
             {
                 if (mortar != null) mortar.Impact(to);
-                if (marker != null) Destroy(marker.gameObject);
-                if (markerMat != null) Destroy(markerMat);
                 Destroy(gameObject);
             }
         }
@@ -83,6 +133,7 @@ namespace SphereDescent
         {
             if (marker != null) Destroy(marker.gameObject);
             if (markerMat != null) Destroy(markerMat);
+            if (markerMesh != null) Destroy(markerMesh);
         }
     }
 }

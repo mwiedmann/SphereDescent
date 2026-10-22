@@ -71,6 +71,7 @@ namespace SphereDescent
         bool exploding;
         Vector3 checkpoint;
         int checkpointLayer = -1;
+        int checkpointOrder = -1; // of the furthest checkpoint pad reached in this world
         bool frozen;
 
         void Awake()
@@ -266,12 +267,20 @@ namespace SphereDescent
             CurrentLayer = Mathf.Max(0, checkpointLayer);
         }
 
-        /// <summary>Makes this the place the ball comes back to on its current layer (a checkpoint pad).</summary>
-        public void SetCheckpoint(Vector3 position)
+        /// <summary>
+        /// Makes this the place the ball comes back to on its current layer (a checkpoint pad), unless it has
+        /// already reached a pad further along the world (a higher <paramref name="order"/>).
+        /// </summary>
+        public void SetCheckpoint(Vector3 position, int order)
         {
+            if (order < checkpointOrder) return;
+            checkpointOrder = order;
             checkpoint = position;
             checkpointLayer = CurrentLayer;
         }
+
+        /// <summary>Forgets which checkpoint pads were reached, for a new world.</summary>
+        public void ForgetCheckpoints() => checkpointOrder = -1;
 
         /// <summary>Sent when the ball first touches down on a layer after dropping through a hole or climbing.</summary>
         public event System.Action LandedOnNewLayer;

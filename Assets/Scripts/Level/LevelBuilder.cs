@@ -812,6 +812,8 @@ namespace SphereDescent
                 pad.inactive = inactive;
                 pad.active = active;
                 pad.pulseRing = ring.transform;
+                // Later along the world is higher, so reaching a skipped pad never moves you back.
+                pad.order = c.Section * 1000 + c.RouteIndex;
             }
         }
 
@@ -1064,9 +1066,11 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// Mortars: a squat dark turret on top of a wall with a red band round its base and a stubby barrel
-        /// pitched up, with a glowing orange mouth. Bombs and their landing markers go in the layer itself, so
-        /// they aren't switched off with the mortar's chunk.
+        /// Mortars: a dark cannon perched on top of a wall, gripping it with two clawed legs, one down each side,
+        /// each ending in two red-tipped claws hooked against the wall. The legs meet at a ball joint, where the
+        /// turret (a domed head with a red band and a stubby barrel pitched up, glowing orange at the mouth)
+        /// swivels to aim. Bombs and their landing markers go in the layer itself, so they aren't switched off
+        /// with the mortar's chunk.
         /// </summary>
         static void CreateMortars(LevelInstance level, MazeLayout layout, LevelSettings s, ShellTerrain[] terrains,
             Transform[] layerRoots, LevelMaterials mats)
@@ -1080,7 +1084,6 @@ namespace SphereDescent
             var markerMat = level.Own(new Material(mats.spot));
             markerMat.SetColor("_Color", new Color(1f, 0.08f, 0.04f));
             markerMat.SetFloat("_Intensity", 1.6f);
-            var markerMesh = level.Own(MeshBuilders.BuildDisc(1f, 40));
             var tmp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             var sphereMesh = tmp.GetComponent<MeshFilter>().sharedMesh;
             Object.DestroyImmediate(tmp);
@@ -1090,36 +1093,61 @@ namespace SphereDescent
                 var go = new GameObject("Mortar");
                 go.transform.SetParent(layerRoots[m.Shell], false);
                 float wallTop = terrains[m.Shell].SurfaceRadius(m.Mount) + s.wallHeight;
-                go.transform.SetPositionAndRotation(m.Mount * wallTop, Quaternion.FromToRotation(Vector3.up, m.Mount));
-                go.transform.localScale = Vector3.one * 1.4f;
+                // Facing along the wall, so its local x runs across it.
+                var wall = layout.Grids[m.Shell].Edges[m.Wall];
+                Vector3 along = Vector3.ProjectOnPlane(wall.P1 - wall.P0, m.Mount).normalized;
+                go.transform.SetPositionAndRotation(m.Mount * wallTop, Quaternion.LookRotation(along, m.Mount));
+                const float scale = 1.4f;
+                go.transform.localScale = Vector3.one * scale;
 
-                var foot = Part(go.transform, PrimitiveType.Cylinder, "Base", metal);
-                foot.localPosition = new Vector3(0f, 0.15f, 0f);
-                foot.localScale = new Vector3(1.2f, 0.15f, 1.2f);
-                var stripe = Part(go.transform, PrimitiveType.Cylinder, "Band", band);
-                stripe.localPosition = new Vector3(0f, 0.31f, 0f);
-                stripe.localScale = new Vector3(1.24f, 0.03f, 1.24f);
+                // The legs: from the joint out over each side of the wall, then two claws down its face.
+                float face = s.wallThickness * 0.5f / scale;
+                Vector3 joint = new Vector3(0f, 0.6f, 0f);
+                var ball = Part(go.transform, PrimitiveType.Sphere, "Joint", metal);
+                ball.localPosition = joint;
+                ball.localScale = Vector3.one * 0.42f;
+                foreach (float side in new[] { -1f, 1f })
+                {
+                    Vector3 hip = new Vector3(side * 0.12f, 0.55f, 0f), knee = new Vector3(side * (face + 0.27f), 0.32f, 0f);
+                    Bone(go.transform, hip, knee, 0.12f, metal);
+                    var kneeBall = Part(go.transform, PrimitiveType.Sphere, "Knee", metal);
+                    kneeBall.localPosition = knee;
+                    kneeBall.localScale = Vector3.one * 0.26f;
+                    foreach (float z in new[] { -0.17f, 0.17f })
+                    {
+                        Vector3 ankle = new Vector3(side * (face + 0.15f), -0.12f, z);
+                        Vector3 tip = new Vector3(side * (face + 0.03f), -0.36f, z * 1.1f);
+                        Bone(go.transform, knee, ankle, 0.09f, metal);
+                        Bone(go.transform, ankle, tip, 0.065f, metal);
+                        var nail = Part(go.transform, PrimitiveType.Sphere, "Claw Tip", band);
+                        nail.localPosition = tip;
+                        nail.localScale = Vector3.one * 0.12f;
+                    }
+                }
 
-                // The turret turns to face its target; the barrel is pitched up inside it.
+                // The turret swivels on the joint to face its target; the barrel is pitched up in it.
                 var turret = new GameObject("Turret").transform;
                 turret.SetParent(go.transform, false);
-                turret.localPosition = new Vector3(0f, 0.3f, 0f);
+                turret.localPosition = joint;
                 var dome = Part(turret, PrimitiveType.Sphere, "Dome", metal);
-                dome.localPosition = new Vector3(0f, 0.1f, 0f);
-                dome.localScale = new Vector3(0.95f, 0.7f, 0.95f);
+                dome.localPosition = new Vector3(0f, 0.12f, 0f);
+                dome.localScale = new Vector3(0.62f, 0.5f, 0.62f);
+                var stripe = Part(turret, PrimitiveType.Cylinder, "Band", band);
+                stripe.localPosition = new Vector3(0f, 0.1f, 0f);
+                stripe.localScale = new Vector3(0.64f, 0.025f, 0.64f);
                 var barrel = new GameObject("Barrel").transform;
                 barrel.SetParent(turret, false);
-                barrel.localPosition = new Vector3(0f, 0.25f, 0f);
+                barrel.localPosition = new Vector3(0f, 0.2f, 0f);
                 barrel.localRotation = Quaternion.Euler(35f, 0f, 0f);
                 var tube = Part(barrel, PrimitiveType.Cylinder, "Tube", metal);
-                tube.localPosition = new Vector3(0f, 0.5f, 0f);
-                tube.localScale = new Vector3(0.38f, 0.5f, 0.38f);
+                tube.localPosition = new Vector3(0f, 0.42f, 0f);
+                tube.localScale = new Vector3(0.32f, 0.42f, 0.32f);
                 var lip = Part(barrel, PrimitiveType.Cylinder, "Mouth", mouth);
-                lip.localPosition = new Vector3(0f, 1.0f, 0f);
-                lip.localScale = new Vector3(0.44f, 0.04f, 0.44f);
+                lip.localPosition = new Vector3(0f, 0.84f, 0f);
+                lip.localScale = new Vector3(0.38f, 0.04f, 0.38f);
                 var muzzle = new GameObject("Muzzle").transform;
                 muzzle.SetParent(barrel, false);
-                muzzle.localPosition = new Vector3(0f, 1.1f, 0f);
+                muzzle.localPosition = new Vector3(0f, 0.94f, 0f);
 
                 var mortar = go.AddComponent<Mortar>();
                 mortar.turret = turret;
@@ -1127,7 +1155,6 @@ namespace SphereDescent
                 mortar.muzzle = muzzle;
                 mortar.bombParent = layerRoots[m.Shell];
                 mortar.bombMesh = sphereMesh;
-                mortar.markerMesh = markerMesh;
                 mortar.bombMaterial = bombMat;
                 mortar.bombLightMaterial = bombLight;
                 mortar.markerMaterial = markerMat;
@@ -1138,6 +1165,16 @@ namespace SphereDescent
                 mortar.flightTime = s.mortarFlightTime;
                 mortar.blastRadius = s.mortarBlastRadius;
             }
+        }
+
+        /// <summary>A cylinder from <paramref name="a"/> to <paramref name="b"/> (local to <paramref name="parent"/>): a limb.</summary>
+        static Transform Bone(Transform parent, Vector3 a, Vector3 b, float radius, Material mat)
+        {
+            var t = Part(parent, PrimitiveType.Cylinder, "Leg", mat);
+            t.localPosition = (a + b) * 0.5f;
+            t.localRotation = Quaternion.FromToRotation(Vector3.up, b - a);
+            t.localScale = new Vector3(radius * 2f, (b - a).magnitude * 0.5f, radius * 2f);
+            return t;
         }
 
         /// <summary>A cell's outline: the corners of its walls, in order around it.</summary>

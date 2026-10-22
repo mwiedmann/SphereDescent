@@ -139,6 +139,7 @@ namespace SphereDescent
             public int Cell;
             public int RouteIndex;     // position along the section's route
             public Vector3 Direction;  // unit direction of the pad's center
+            public bool Main;          // the one halfway along, which splits the section into halves
         }
 
         public struct Cube
@@ -241,7 +242,8 @@ namespace SphereDescent
         /// kind used least so far in the world (ties broken at random) that fits, so every kind turns up about
         /// equally often. A half's first hazard goes as early in it as it fits and a second as late, leaving
         /// room between them; a lone one goes in the middle. Hazards stay two cells clear of a section's ends,
-        /// keep the middle cell free for the checkpoint, and leave at least one clear cell between each other.
+        /// keep the middle cell free for the checkpoint, and leave two clear cells between each other. A mortar
+        /// also keeps its whole range clear of every other major hazard and section middle on its sphere.
         /// </summary>
         static void PlaceMajorHazards(MazeLayout layout, LevelSettings s, Random rng)
         {
@@ -277,10 +279,10 @@ namespace SphereDescent
                             int start, end;
                             bool placed = kind switch
                             {
-                                MajorHazard.LaserGate => TryPlaceLaserGate(layout, i, lo, hi, mid, prefer, rng, out start, out end),
+                                MajorHazard.LaserGate => TryPlaceLaserGate(layout, s, i, lo, hi, mid, prefer, rng, out start, out end),
                                 MajorHazard.CameraRun => TryPlaceCamera(layout, s, i, lo, hi, prefer, rng, out start, out end),
-                                MajorHazard.AcidPool => TryPlaceAcidPool(layout, i, lo, hi, prefer, rng, out start, out end),
-                                _ => TryPlaceMortar(layout, i, lo, hi, prefer, rng, out start, out end),
+                                MajorHazard.AcidPool => TryPlaceAcidPool(layout, s, i, lo, hi, prefer, rng, out start, out end),
+                                _ => TryPlaceMortar(layout, s, i, lo, hi, prefer, rng, out start, out end),
                             };
                             if (!placed) continue;
                             used[(int)kind]++;
@@ -293,11 +295,56 @@ namespace SphereDescent
             }
         }
 
-        /// <summary>Whether route cells <paramref name="a"/> to <paramref name="b"/> keep a clear cell between them and every major hazard already in the section.</summary>
-        bool ClearOfMajorHazards(int section, int a, int b)
+        // Clear route cells kept between two major hazards in a section.
+        const int MajorHazardGap = 2;
+
+        /// <summary>
+        /// Whether route cells <paramref name="a"/> to <paramref name="b"/> of a section keep a couple of clear
+        /// cells between them and every major hazard already in it, and are out of reach of every mortar on the
+        /// sphere (whichever section it's in: mortars fire over walls).
+        /// </summary>
+        bool ClearOfMajorHazards(LevelSettings s, int section, int a, int b)
         {
             foreach (var h in MajorHazards)
-                if (h.Section == section && a <= h.End + 1 && b >= h.Start - 1) return false;
+                if (h.Section == section && a <= h.End + MajorHazardGap && b >= h.Start - MajorHazardGap) return false;
+            int shell = Sections[section].Shell;
+            var route = Route(section);
+            foreach (var m in Mortars)
+                if (m.Shell == shell)
+                    for (int k = a; k <= b; k++)
+                        if (MortarReaches(s, m.Mount, shell, route[k])) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Whether a mortar standing at <paramref name="mount"/> could land a bomb in a cell (anywhere in it, so
+        /// its range plus half a cell from the cell's middle).
+        /// </summary>
+        bool MortarReaches(LevelSettings s, Vector3 mount, int shell, int cell)
+        {
+            float r = s.shellRadii[shell];
+            return Vector3.Angle(mount, Grids[shell].CellCenters[cell]) * Mathf.Deg2Rad * r < s.mortarRange + s.cellSpacing * 0.5f;
+        }
+
+        /// <summary>
+        /// Whether a mortar at <paramref name="mount"/> would reach none of the major hazards already on its
+        /// sphere, nor the middle of any section there (where the checkpoint goes).
+        /// </summary>
+        bool MortarClear(LevelSettings s, Vector3 mount, int shell)
+        {
+            foreach (var h in MajorHazards)
+            {
+                if (Sections[h.Section].Shell != shell) continue;
+                var route = Route(h.Section);
+                for (int k = h.Start; k <= h.End; k++)
+                    if (MortarReaches(s, mount, shell, route[k])) return false;
+            }
+            for (int i = 0; i < Sections.Count; i++)
+            {
+                if (Sections[i].Shell != shell) continue;
+                var route = Route(i);
+                if (MortarReaches(s, mount, shell, route[route.Count / 2])) return false;
+            }
             return true;
         }
 
@@ -319,7 +366,7 @@ namespace SphereDescent
         /// there's a sealed-off cell beside the section to carve one into; otherwise in a side lane, or failing
         /// that on the route.
         /// </summary>
-        static bool TryPlaceLaserGate(MazeLayout layout, int section, int lo, int hi, int keepFree, Prefer prefer, Random rng,
+        static bool TryPlaceLaserGate(MazeLayout layout, LevelSettings s, int section, int lo, int hi, int keepFree, Prefer prefer, Random rng,
             out int start, out int end)
         {
             start = end = -1;
@@ -334,7 +381,7 @@ namespace SphereDescent
             foreach (var (near, edge, reach) in layout.Chokepoints(section))
             {
                 int k = route.IndexOf(near);
-                if (k < lo || k + 1 > hi || !layout.ClearOfMajorHazards(section, k, k + 1)) continue;
+                if (k < lo || k + 1 > hi || !layout.ClearOfMajorHazards(s, section, k, k + 1)) continue;
                 if (layout.ReservedForHazard(shell, route[k]) || layout.ReservedForHazard(shell, route[k + 1])) continue;
                 choices.Add((PreferScore(prefer, k, k + 1, lo, hi, rng), k, near, edge, reach));
             }
@@ -408,7 +455,7 @@ namespace SphereDescent
             float bestScore = float.MaxValue;
             for (int k = lo; k + count <= hi; k++)
             {
-                if (!layout.ClearOfMajorHazards(section, k, k + count)) continue;
+                if (!layout.ClearOfMajorHazards(s, section, k, k + count)) continue;
                 int chokes = 0;
                 bool reserved = false;
                 for (int j = 0; j < count; j++) if (choke[k + j]) chokes++;
@@ -477,10 +524,11 @@ namespace SphereDescent
 
         /// <summary>
         /// An acid pool: a route cell in the window that every way through has to enter, with just two openings
-        /// (in and out), filled wall to wall with acid and crossed by a thin bridge. Cells whose doorways are
-        /// well apart are preferred, so the bridge doesn't fold back on itself.
+        /// (in and out), filled wall to wall with acid and crossed by a thin bridge. The doorway out has to be
+        /// nearly across from the doorway in (the bridge turns by Acid Max Bend at most), and the straighter the
+        /// better.
         /// </summary>
-        static bool TryPlaceAcidPool(MazeLayout layout, int section, int lo, int hi, Prefer prefer, Random rng, out int start, out int end)
+        static bool TryPlaceAcidPool(MazeLayout layout, LevelSettings s, int section, int lo, int hi, Prefer prefer, Random rng, out int start, out int end)
         {
             start = end = -1;
             int shell = layout.Sections[section].Shell;
@@ -491,15 +539,14 @@ namespace SphereDescent
             foreach (var (near, _, _) in layout.Chokepoints(section))
             {
                 int k = route.IndexOf(near) + 1; // every way through enters this cell
-                if (k - 1 < lo || k + 1 > hi || !layout.ClearOfMajorHazards(section, k - 1, k + 1)) continue;
+                if (k - 1 < lo || k + 1 > hi || !layout.ClearOfMajorHazards(s, section, k - 1, k + 1)) continue;
                 int cell = route[k];
                 if (layout.Openings(shell, cell) != 2) continue;
                 if (layout.ReservedForHazard(shell, route[k - 1]) || layout.ReservedForHazard(shell, cell) ||
                     layout.ReservedForHazard(shell, route[k + 1])) continue;
-                Vector3 c0 = grid.CellCenters[cell];
-                float spread = Vector3.Angle(Vector3.ProjectOnPlane(grid.CellCenters[route[k - 1]] - c0, c0),
-                    Vector3.ProjectOnPlane(grid.CellCenters[route[k + 1]] - c0, c0));
-                float score = PreferScore(prefer, k - 1, k + 1, lo, hi, rng) - spread / 180f;
+                float bend = layout.BridgeBend(shell, cell, route[k - 1], route[k + 1]);
+                if (bend > s.acidMaxBend) continue;
+                float score = PreferScore(prefer, k - 1, k + 1, lo, hi, rng) + bend / 180f;
                 if (score < bestScore) { bestScore = score; best = k; }
             }
             if (best < 0) return false;
@@ -515,7 +562,7 @@ namespace SphereDescent
         /// A mortar on top of a wall beside a route cell in the window, on the side wall farthest from the
         /// doorways the route uses, lobbing bombs at the ball while it's in range.
         /// </summary>
-        static bool TryPlaceMortar(MazeLayout layout, int section, int lo, int hi, Prefer prefer, Random rng, out int start, out int end)
+        static bool TryPlaceMortar(MazeLayout layout, LevelSettings s, int section, int lo, int hi, Prefer prefer, Random rng, out int start, out int end)
         {
             start = end = -1;
             int shell = layout.Sections[section].Shell;
@@ -525,7 +572,7 @@ namespace SphereDescent
             float bestScore = float.MaxValue;
             for (int k = lo + 1; k + 1 <= hi; k++)
             {
-                if (!layout.ClearOfMajorHazards(section, k - 1, k + 1) || layout.ReservedForHazard(shell, route[k])) continue;
+                if (!layout.ClearOfMajorHazards(s, section, k - 1, k + 1) || layout.ReservedForHazard(shell, route[k])) continue;
                 int cell = route[k];
                 Vector3 inDoor = DoorMid(grid, cell, route[k - 1]), outDoor = DoorMid(grid, cell, route[k + 1]);
                 int wall = -1;
@@ -535,6 +582,7 @@ namespace SphereDescent
                     int e = grid.EdgeBetween(cell, nb);
                     if (layout.Open[shell][e]) continue;
                     Vector3 m = (grid.Edges[e].P0 + grid.Edges[e].P1).normalized;
+                    if (!layout.MortarClear(s, m, shell)) continue;
                     float d = Mathf.Min(Vector3.Angle(m, inDoor), Vector3.Angle(m, outDoor));
                     if (d > far) { far = d; wall = e; }
                 }
@@ -553,6 +601,19 @@ namespace SphereDescent
             return true;
         }
 
+        /// <summary>
+        /// How sharply an acid pool's bridge turns in its middle, in degrees: 0 when the doorway out is straight
+        /// across from the doorway in, 180 if it came straight back.
+        /// </summary>
+        public float BridgeBend(int shell, int cell, int from, int to)
+        {
+            var grid = Grids[shell];
+            Vector3 c = grid.CellCenters[cell];
+            Vector3 toIn = Vector3.ProjectOnPlane(DoorMid(grid, cell, from) - c, c);
+            Vector3 toOut = Vector3.ProjectOnPlane(DoorMid(grid, cell, to) - c, c);
+            return 180f - Vector3.Angle(toIn, toOut);
+        }
+
         static Vector3 DoorMid(SphereGrid grid, int a, int b)
         {
             var e = grid.Edges[grid.EdgeBetween(a, b)];
@@ -560,9 +621,10 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// A checkpoint on each section: on the route cell nearest its middle that's clear of laser gates and
-        /// camera doorways (mines are placed later and keep clear of it). Sections too short to have a middle
-        /// apart from their ends get none.
+        /// The main checkpoint on each section: on the route cell nearest its middle that's clear of major
+        /// hazards (mines are placed later and keep clear of it). It splits the section into its two halves.
+        /// On the first few spheres, each half also gets one at its own middle (a quarter and three quarters of
+        /// the way along), on a route cell clear of the major hazards and out of every mortar's reach. Sections too short to have a middle apart from their ends get none.
         /// </summary>
         static void PlaceCheckpoints(MazeLayout layout, LevelSettings s)
         {
@@ -571,19 +633,47 @@ namespace SphereDescent
             {
                 int shell = layout.Sections[i].Shell;
                 var route = layout.Route(i);
-                int best = -1;
-                for (int k = 2; k < route.Count - 2; k++)
+                int main = NearestFreeRouteCell(layout, s, i, route, 2, route.Count - 3, route.Count / 2f, mainOnly: true);
+                if (main < 0) continue;
+                void Add(int k, bool isMain) => layout.Checkpoints.Add(new Checkpoint
                 {
-                    if (layout.ReservedForHazard(shell, route[k])) continue;
-                    if (best < 0 || Mathf.Abs(2 * k - route.Count) < Mathf.Abs(2 * best - route.Count)) best = k;
-                }
-                if (best < 0) continue;
-                layout.Checkpoints.Add(new Checkpoint
-                {
-                    Shell = shell, Section = i, Cell = route[best], RouteIndex = best,
-                    Direction = layout.Grids[shell].CellCenters[route[best]],
+                    Shell = shell, Section = i, Cell = route[k], RouteIndex = k, Main = isMain,
+                    Direction = layout.Grids[shell].CellCenters[route[k]],
                 });
+                Add(main, true);
+                if (shell >= s.extraCheckpointSpheres) continue;
+                // Three cells clear of the section's ends and of the main checkpoint, or they'd hardly help.
+                int first = NearestFreeRouteCell(layout, s, i, route, 3, main - 3, main / 2f, mainOnly: false);
+                int second = NearestFreeRouteCell(layout, s, i, route, main + 3, route.Count - 4, (main + route.Count - 1) / 2f, mainOnly: false);
+                if (first >= 0) Add(first, false);
+                if (second >= 0) Add(second, false);
             }
+        }
+
+        /// <summary>
+        /// The route cell from <paramref name="lo"/> to <paramref name="hi"/> nearest <paramref name="target"/>
+        /// that's clear of the section's major hazards (and, unless <paramref name="mainOnly"/>, out of every
+        /// mortar's reach too). -1 if there's none.
+        /// </summary>
+        static int NearestFreeRouteCell(MazeLayout layout, LevelSettings s, int section, List<int> route, int lo, int hi, float target, bool mainOnly)
+        {
+            int shell = layout.Sections[section].Shell;
+            int best = -1;
+            for (int k = lo; k <= hi; k++)
+            {
+                if (layout.ReservedForHazard(shell, route[k])) continue;
+                if (!mainOnly)
+                {
+                    bool inHazard = false;
+                    foreach (var h in layout.MajorHazards)
+                        if (h.Section == section && k >= h.Start && k <= h.End) inHazard = true;
+                    foreach (var m in layout.Mortars)
+                        if (m.Shell == shell && layout.MortarReaches(s, m.Mount, shell, route[k])) inHazard = true;
+                    if (inHazard) continue;
+                }
+                if (best < 0 || Mathf.Abs(k - target) < Mathf.Abs(best - target)) best = k;
+            }
+            return best;
         }
 
         /// <summary>
@@ -605,7 +695,7 @@ namespace SphereDescent
                 var grid = layout.Grids[shell];
                 float radius = s.shellRadii[shell];
                 var route = layout.Route(i);
-                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i);
+                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i && c.Main);
                 int split = checkpoint >= 0 ? layout.Checkpoints[checkpoint].RouteIndex : -1;
 
                 // Every cell of the section: how many steps off the route, and which route cell it branches from.
@@ -714,8 +804,13 @@ namespace SphereDescent
                 var route = layout.Route(i);
                 var mined = new HashSet<int>();
                 foreach (var (mineSection, mineCell) in layout.MineGroups) if (mineSection == i) mined.Add(mineCell);
-                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i);
-                int checkpointAt = checkpoint >= 0 ? layout.Checkpoints[checkpoint].RouteIndex : -1;
+                var checkpointsAt = new List<int>();
+                foreach (var c in layout.Checkpoints) if (c.Section == i) checkpointsAt.Add(c.RouteIndex);
+                bool NearCheckpoint(int k)
+                {
+                    foreach (int at in checkpointsAt) if (Mathf.Abs(k - at) < 2) return true;
+                    return false;
+                }
 
                 bool MineNear(Vector3 p, float range)
                 {
@@ -734,7 +829,7 @@ namespace SphereDescent
                 int next = 1;
                 for (int k = 1; k < route.Count - 1; k++)
                 {
-                    if (k == checkpointAt)
+                    if (checkpointsAt.Contains(k))
                     {
                         // Just past the pad's edge, toward the next cell.
                         Vector3 c = grid.CellCenters[route[k]];
@@ -744,7 +839,7 @@ namespace SphereDescent
                         continue;
                     }
                     if (k < next || mined.Contains(route[k]) || layout.ReservedForHazard(shell, route[k]) ||
-                        Mathf.Abs(k - checkpointAt) < 2 || MineNear(grid.CellCenters[route[k]] * radius, 2.5f)) continue;
+                        NearCheckpoint(k) || MineNear(grid.CellCenters[route[k]] * radius, 2.5f)) continue;
                     Add(grid.CellCenters[route[k]], route[k + 1]);
                     next = k + s.arrowEvery;
                 }
@@ -1064,7 +1159,7 @@ namespace SphereDescent
                     }
                 }
 
-                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i);
+                int checkpoint = layout.Checkpoints.FindIndex(c => c.Section == i && c.Main);
                 int split = checkpoint >= 0 ? layout.Checkpoints[checkpoint].RouteIndex : -1;
                 var halves = split > 0 ? new[] { (2, split - 1), (split + 1, route.Count - 3) } : new[] { (2, route.Count - 3) };
                 foreach (var (from, to) in halves)

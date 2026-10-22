@@ -467,11 +467,13 @@ MonoBehaviour:
     cubeSize: 0.5
     cubeCoreSize: 0.08
     acidBridgeWidth: 2.275
+    acidMaxBend: 45
     mortarRange: 18
     mortarInterval: 1.5
     mortarFlightTime: 1
     mortarBlastRadius: 2.4
     checkpoints: 1
+    extraCheckpointSpheres: 2
     checkpointRadius: 2.8
     arrowEvery: 4
     beamHeight: 100
@@ -490,6 +492,8 @@ MonoBehaviour:
     acid: {fileID: 2100000, guid: a1a7497beaf04269a76567a7a1e9841d, type: 2}
   skyColor: {r: 0.08, g: 0.02, b: 0.16, a: 1}
   baseSeed: 1337
+  worldSeeds:
+  - 733206
   startWorld: 1
   worldTransitionDelay: 2.5
   sun: {fileID: 1079440027}

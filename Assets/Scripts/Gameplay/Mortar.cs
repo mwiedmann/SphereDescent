@@ -16,7 +16,7 @@ namespace SphereDescent
         public Transform muzzle;
         [Tooltip("Where bombs and markers are kept: the layer, so they aren't switched off with the mortar's chunk.")]
         public Transform bombParent;
-        public Mesh bombMesh, markerMesh;
+        public Mesh bombMesh;
         public Material bombMaterial, bombLightMaterial, markerMaterial, glowMaterial;
 
         [Header("Firing")]
@@ -83,17 +83,26 @@ namespace SphereDescent
         Vector3 Ground(Vector3 point)
         {
             Vector3 up = point.normalized;
+            if (GroundHit(point + up * 3f, 8f, out Vector3 ground, out groundNormal)) return ground;
             groundNormal = up;
-            Vector3 from = point + up * 3f;
-            var hits = Physics.RaycastAll(from, -up, 8f, ~0, QueryTriggerInteraction.Ignore);
+            return point - up * 0.5f;
+        }
+
+        /// <summary>
+        /// The first solid surface straight down (toward the world's center) from <paramref name="from"/> within
+        /// <paramref name="length"/>, looking past the ball and triggers.
+        /// </summary>
+        public bool GroundHit(Vector3 from, float length, out Vector3 point, out Vector3 normal)
+        {
+            var hits = Physics.RaycastAll(from, -from.normalized, length, ~0, QueryTriggerInteraction.Ignore);
             float nearest = float.MaxValue;
-            Vector3 ground = point - up * 0.5f;
+            point = normal = Vector3.zero;
             foreach (var h in hits)
             {
                 if (h.rigidbody != null && h.rigidbody == ballBody) continue;
-                if (h.distance < nearest) { nearest = h.distance; ground = h.point; groundNormal = h.normal; }
+                if (h.distance < nearest) { nearest = h.distance; point = h.point; normal = h.normal; }
             }
-            return ground;
+            return nearest < float.MaxValue;
         }
 
         void Face(Vector3 target)

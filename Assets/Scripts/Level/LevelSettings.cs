@@ -124,6 +124,8 @@ namespace SphereDescent
         [Header("Acid pools")]
         [Tooltip("Width of the bridge over the acid (the ball is 1 across).")]
         public float acidBridgeWidth = 2.275f;
+        [Tooltip("The sharpest the bridge may turn in the middle of the pool, in degrees (0 = only dead straight).")]
+        public float acidMaxBend = 45f;
 
         [Header("Mortars")]
         [Tooltip("How near (in units, from the mortar) the ball has to be for it to fire.")]
@@ -138,6 +140,9 @@ namespace SphereDescent
         [Header("Checkpoints")]
         [Tooltip("A checkpoint pad halfway along each section: once you've rolled over it, dying sends you back there.")]
         public bool checkpoints = true;
+        [Tooltip("On this many of the outer spheres, sections also get checkpoints a quarter and three quarters of the " +
+                 "way along. The halfway one still splits the section into halves.")]
+        public int extraCheckpointSpheres = 2;
         public float checkpointRadius = 2.8f;
 
         [Header("Arrows")]
