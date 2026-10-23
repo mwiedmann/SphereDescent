@@ -4,7 +4,7 @@ using UnityEngine;
 namespace SphereDescent
 {
     /// <summary>The four floor patterns a style's zones take turns through.</summary>
-    public enum PatternSet { Geometric, Organic }
+    public enum PatternSet { Geometric, Organic, Crystal }
 
     /// <summary>
     /// The look of a world: zone colors, how surfaces glow, the sky, the light and the air. Worlds take turns
@@ -36,7 +36,8 @@ namespace SphereDescent
         [Tooltip("Brightness of the per-zone line patterns (grid, diagonal, stripes, dots).")]
         [Range(0f, 1f)] public float patternStrength = 1f;
         [Tooltip("Which four floor patterns the zones take turns through: the geometric set (square grid, diagonal " +
-                 "grid, stripes, dots) or the organic one (coral cells, sand ripples, polyp clusters, kelp veins).")]
+                 "grid, stripes, dots), the organic one (coral cells, sand ripples, polyp clusters, kelp veins), or the " +
+                 "crystal one (frost hexagons, cracked ice, snowflakes, wind-blown drifts).")]
         public PatternSet patternSet = PatternSet.Geometric;
         [Tooltip("Shimmering caustic light rippling over the floors and walls, as under water. 0 = none.")]
         [Range(0f, 2f)] public float caustics = 0f;
@@ -58,6 +59,11 @@ namespace SphereDescent
         public float starDrift = 0f;
         [Tooltip("Shafts of light fanning down from overhead. 0 = none.")]
         [Range(0f, 1f)] public float lightRays = 0f;
+        [Tooltip("Rippling curtains of aurora across the sky, from the first color at their foot to the second at " +
+                 "their top. 0 = none.")]
+        [Range(0f, 2f)] public float aurora = 0f;
+        public Color auroraLow = new Color(0.1f, 0.95f, 0.85f);
+        public Color auroraHigh = new Color(0.7f, 0.3f, 1f);
         [Tooltip("Background below the surface, where the layers above are hidden.")]
         public Color innerBackground = Color.black;
 
@@ -71,6 +77,10 @@ namespace SphereDescent
         [Tooltip("Specks drifting in the air around the camera, like marine snow. 0 = none.")]
         public int floatingSpecks = 0;
         public Color speckColor = new Color(0.7f, 0.9f, 1f, 0.6f);
+        [Tooltip("How fast the specks fall (toward the ground, wherever the player is), like snow. 0 = they just drift.")]
+        public float speckFall = 0f;
+        [Tooltip("Size of the specks.")]
+        public Vector2 speckSize = new Vector2(0.03f, 0.09f);
 
         public static VisualStyle Synthwave() => new VisualStyle
         {
@@ -142,6 +152,62 @@ namespace SphereDescent
             fogColor = new Color(0.01f, 0.06f, 0.10f),
             floatingSpecks = 400,
             speckColor = new Color(0.7f, 0.95f, 1f, 0.55f),
+        };
+
+        /// <summary>
+        /// Frozen: an arctic polar night. Frosted blue-grey surfaces etched with crystal patterns glowing in icy
+        /// blues, violets and pinks; a dark sky full of stars with curtains of aurora rippling across it; snow
+        /// falling; a pale frosty haze in the distance. The aurora stays teal and violet, never acid green.
+        /// </summary>
+        public static VisualStyle Frozen() => new VisualStyle
+        {
+            name = "Frozen",
+            zones = new[]
+            {
+                new Zone { name = "Glacier",   color = new Color(0.45f, 0.80f, 1.00f) },
+                new Zone { name = "Rose",      color = new Color(1.00f, 0.50f, 0.75f) },
+                new Zone { name = "Aurora",    color = new Color(0.15f, 0.95f, 0.90f) },
+                new Zone { name = "Lilac",     color = new Color(0.75f, 0.55f, 1.00f) },
+                new Zone { name = "Moonlight", color = new Color(1.00f, 0.95f, 0.65f) },
+                new Zone { name = "Sapphire",  color = new Color(0.25f, 0.40f, 1.00f) },
+                new Zone { name = "Frost",     color = new Color(0.85f, 0.95f, 1.00f) },
+                new Zone { name = "Snowberry", color = new Color(1.00f, 0.30f, 0.55f) },
+                new Zone { name = "Icicle",    color = new Color(0.55f, 1.00f, 1.00f) },
+                new Zone { name = "Twilight",  color = new Color(0.55f, 0.30f, 1.00f) },
+                new Zone { name = "Crystal",   color = new Color(0.95f, 0.80f, 1.00f) },
+                new Zone { name = "Polar",     color = new Color(0.35f, 0.65f, 0.95f) },
+            },
+            darkColor = new Color(0.26f, 0.33f, 0.45f),
+            groundZoneMix = 0.25f,
+            wallZoneMix = 0.35f,
+            glowIntensity = 1.5f,
+            patternStrength = 0.55f,
+            patternSet = PatternSet.Crystal,
+            caustics = 0f,
+            skyTop = new Color(0.005f, 0.01f, 0.05f),
+            skyMid = new Color(0.02f, 0.05f, 0.14f),
+            skyHorizon = new Color(0.16f, 0.26f, 0.42f),
+            skyBelow = new Color(0.04f, 0.07f, 0.13f),
+            sunSize = 0f,
+            sunGlow = 0f,
+            sunTop = new Color(0.8f, 0.9f, 1f),
+            sunBottom = new Color(0.4f, 0.6f, 0.9f),
+            starDensity = 0.008f,
+            starDrift = 0f,
+            lightRays = 0f,
+            aurora = 1f,
+            auroraLow = new Color(0.1f, 0.95f, 0.85f),
+            auroraHigh = new Color(0.75f, 0.3f, 1f),
+            innerBackground = new Color(0.01f, 0.02f, 0.05f),
+            sunLight = new Color(0.75f, 0.85f, 1f),
+            sunLightIntensity = 0.9f,
+            ambientLight = new Color(0.30f, 0.36f, 0.50f),
+            fogDensity = 0.006f,
+            fogColor = new Color(0.22f, 0.30f, 0.44f),
+            floatingSpecks = 700,
+            speckColor = new Color(0.92f, 0.96f, 1f, 0.85f),
+            speckFall = 1.3f,
+            speckSize = new Vector2(0.05f, 0.12f),
         };
     }
 }

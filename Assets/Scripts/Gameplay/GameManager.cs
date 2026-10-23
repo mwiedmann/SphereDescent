@@ -33,7 +33,7 @@ namespace SphereDescent
         public float worldTransitionDelay = 2.5f;
         public Light sun;
         [Tooltip("Looks the worlds take turns through: world 1 uses the first, world 2 the second, and so on, wrapping around.")]
-        public VisualStyle[] styles = { VisualStyle.Synthwave(), VisualStyle.DeepSea() };
+        public VisualStyle[] styles = { VisualStyle.Synthwave(), VisualStyle.DeepSea(), VisualStyle.Frozen() };
         [Tooltip("M (or Start on a gamepad) opens a menu to pick the style and the world to play.")]
         public bool styleMenu = true;
         [Tooltip("Highest world the menu lets you pick.")]
@@ -156,7 +156,7 @@ namespace SphereDescent
         {
             style = s;
             ApplyAtmosphere(s, skyMaterial, sun);
-            SetSpecks(s.floatingSpecks, s.speckColor);
+            SetSpecks(s.floatingSpecks, s.speckColor, s.speckSize);
         }
 
         /// <summary>A style's sky, light and fog. Static so editor tools can preview a style too.</summary>
@@ -175,6 +175,9 @@ namespace SphereDescent
                 skyMaterial.SetFloat("_StarDensity", s.starDensity);
                 skyMaterial.SetFloat("_StarDrift", s.starDrift);
                 skyMaterial.SetFloat("_RayStrength", s.lightRays);
+                skyMaterial.SetFloat("_Aurora", s.aurora);
+                skyMaterial.SetColor("_AuroraLow", s.auroraLow);
+                skyMaterial.SetColor("_AuroraHigh", s.auroraHigh);
             }
             if (sun != null)
             {
@@ -188,8 +191,11 @@ namespace SphereDescent
             RenderSettings.fogColor = s.fogColor;
         }
 
-        /// <summary>Tiny specks drifting in the water around the camera (marine snow). Zero turns them off.</summary>
-        void SetSpecks(int count, Color color)
+        /// <summary>
+        /// Tiny specks drifting around the camera: marine snow under water, or falling snow (see
+        /// <see cref="FallSpecks"/>). Zero turns them off.
+        /// </summary>
+        void SetSpecks(int count, Color color, Vector2 size)
         {
             if (count <= 0)
             {
@@ -230,7 +236,7 @@ namespace SphereDescent
             main.maxParticles = count;
             main.startLifetime = new ParticleSystem.MinMaxCurve(6f, 10f);
             main.startSpeed = new ParticleSystem.MinMaxCurve(0.05f, 0.3f);
-            main.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.09f);
+            main.startSize = new ParticleSystem.MinMaxCurve(size.x, size.y);
             main.startColor = color;
             var emission = specks.emission;
             emission.rateOverTime = count / 8f;
@@ -771,7 +777,28 @@ namespace SphereDescent
 
         void LateUpdate()
         {
-            if (ball != null) UpdateSky(sun, ball.transform.position.normalized);
+            if (ball != null)
+            {
+                UpdateSky(sun, ball.transform.position.normalized);
+                FallSpecks(ball.transform.position.normalized);
+            }
+        }
+
+        /// <summary>
+        /// Makes the specks fall toward the ground, as snow, at the style's speck fall speed. "Down" depends on
+        /// where the player is on the planet, so it's set afresh every frame.
+        /// </summary>
+        void FallSpecks(Vector3 up)
+        {
+            if (specks == null || !specks.gameObject.activeSelf || style == null) return;
+            var velocity = specks.velocityOverLifetime;
+            velocity.enabled = style.speckFall > 0f;
+            if (!velocity.enabled) return;
+            velocity.space = ParticleSystemSimulationSpace.World;
+            Vector3 fall = -up * style.speckFall;
+            velocity.x = new ParticleSystem.MinMaxCurve(fall.x);
+            velocity.y = new ParticleSystem.MinMaxCurve(fall.y);
+            velocity.z = new ParticleSystem.MinMaxCurve(fall.z);
         }
 
         /// <summary>
@@ -1123,7 +1150,7 @@ namespace SphereDescent
             if (GUI.Button(new Rect(box.x + 30, y, w - 60, row - 4), "Start", menuButtonStyle)) StartWorld(menuStyle, menuWorld);
 
             Shadowed(new Rect(box.x - 60, box.yMax + 6, w + 120, 30),
-                "1-3 style   ·   ← → world   ·   Enter start   ·   Esc / M close", sectionStyle);
+                $"1-{options} style   ·   ← → world   ·   Enter start   ·   Esc / M close", sectionStyle);
         }
 
         /// <summary>A plain dark (or <paramref name="tint"/>) panel, see-through by <paramref name="alpha"/>.</summary>
