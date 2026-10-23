@@ -15,7 +15,7 @@ namespace SphereDescent
     public class LavaRain : MonoBehaviour
     {
         public CoreArena arena;
-        public CoreLayout core;
+        [System.NonSerialized] public CoreLayout core; // set by the builder each world, never saved
         [HideInInspector] public int layer;
         public Vector2 interval = new Vector2(3f, 4f);
         [Tooltip("Seconds a blob takes to fall: how long its shadow shows before it lands.")]

@@ -61,7 +61,7 @@ namespace SphereDescent
             float G = core.GroundRadius;
             Vector3 cageUp = core.Cage;
             var glowTemplate = mats.beam;
-            var sparkMat = level.Own(LevelMaterials.MakeSpark());
+            var sparkMat = level.Own(mats.NewSpark());
             int rings = core.RingRadii.Length;
             var barriers = new CoreBarrier[rings];
             for (int i = 0; i < rings; i++)

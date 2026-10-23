@@ -34,6 +34,12 @@ GraphicsSettings:
   - {fileID: 10753, guid: 0000000000000000f000000000000000, type: 0}
   - {fileID: 10770, guid: 0000000000000000f000000000000000, type: 0}
   - {fileID: 10783, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 4800000, guid: 0406db5a14f94604a8c57ccfbc9f3b46, type: 3}
+  - {fileID: 4800000, guid: 120db0cc3c7e64269828e2c9c3579cb9, type: 3}
+  - {fileID: 4800000, guid: 7dd465c5315041be8b16cabc2c091d72, type: 3}
+  - {fileID: 4800000, guid: 74156286b36a47df9566f2a598415b2f, type: 3}
+  - {fileID: 4800000, guid: c697646065c4405ba2799ba26a8b178f, type: 3}
+  - {fileID: 4800000, guid: 393989bbd8ad5407b98c05b086c0859e, type: 3}
   m_PreloadedShaders: []
   m_PreloadShadersBatchTimeLimit: -1
   m_GraphicsStateCollection: {fileID: 0}
@@ -53,7 +59,7 @@ GraphicsSettings:
   m_DefaultMobileRenderingPath: 1
   m_TierSettings: []
   m_LightmapStripping: 0
-  m_FogStripping: 0
+  m_FogStripping: 1
   m_InstancingStripping: 0
   m_BrgStripping: 0
   m_DefaultLightBaker: 0

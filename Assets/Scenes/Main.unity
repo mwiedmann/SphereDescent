@@ -508,6 +508,11 @@ MonoBehaviour:
     beam: {fileID: 2100000, guid: dc0c2fbbf0454fbc899b50aeaf5fd6bb, type: 2}
     spot: {fileID: 2100000, guid: dfc69de9d5514985810f0d456a761aa9, type: 2}
     acid: {fileID: 2100000, guid: a1a7497beaf04269a76567a7a1e9841d, type: 2}
+    softPuff: {fileID: 2100000, guid: 34c36e3ea386643cd861b7e3e83bfee0, type: 2}
+    spark: {fileID: 2100000, guid: d3f9694d5eb4342c08cfd98b3a34bbdd, type: 2}
+    glass: {fileID: 2100000, guid: 5304a92981db04f48acc39131024ff31, type: 2}
+    metal: {fileID: 2100000, guid: 7cdb2353251854ccd91b5fe5a3546e4e, type: 2}
+    black: {fileID: 2100000, guid: 0250445d1cf2946019f2fd2e2625877b, type: 2}
   skyColor: {r: 0.08, g: 0.02, b: 0.16, a: 1}
   baseSeed: 1337
   worldSeeds: 16300b00i
