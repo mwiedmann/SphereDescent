@@ -6,6 +6,8 @@ namespace SphereDescent
     /// The core's boss battle: knows its walls and the energy ball they trap, cheers each wall going down,
     /// blows the ball up if it rolls off a path into the lava, and makes the walls' plaza a checkpoint once the
     /// ball reaches it, so a fall on the way to a key pad doesn't send it all the way back to the landing.
+    /// Reaching the plaza the first time also plays the energy ball's short introduction, after which the lava
+    /// starts to rain.
     /// </summary>
     public class CoreArena : MonoBehaviour
     {
@@ -19,6 +21,11 @@ namespace SphereDescent
         public float cageRadius, groundRadius;
         [Tooltip("Where the ball comes back after reaching the plaza.")]
         public Vector3 plazaCheckpoint;
+        [Tooltip("The key pads, for the introduction to show one.")]
+        public Transform[] pads;
+
+        /// <summary>The energy ball's introduction has played (or been skipped): the lava rain can start.</summary>
+        public bool IntroDone { get; set; }
 
         BallController ball;
         bool plazaReached;
@@ -66,7 +73,8 @@ namespace SphereDescent
                 plazaReached = true;
                 // Past every checkpoint pad in the world.
                 ball.SetCheckpoint(plazaCheckpoint, int.MaxValue);
-                if (GameManager.Instance != null) GameManager.Instance.ShowMessage("Checkpoint!", 1.6f);
+                if (GameManager.Instance != null) GameManager.Instance.PlayCoreIntro(this);
+                else IntroDone = true;
             }
         }
     }

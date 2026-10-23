@@ -99,7 +99,7 @@ namespace SphereDescent
                 drop.position = to + up * 0.3f;
                 drop.localScale = Vector3.one * Random.Range(0.3f, 0.55f);
                 Vector3 side = Vector3.ProjectOnPlane(Random.onUnitSphere, up).normalized;
-                drop.gameObject.AddComponent<LavaDroplet>().velocity = side * Random.Range(2.5f, 5f) + up * Random.Range(3f, 6f);
+                drop.gameObject.AddComponent<Debris>().velocity = side * Random.Range(2.5f, 5f) + up * Random.Range(3f, 6f);
             }
         }
 
@@ -110,27 +110,6 @@ namespace SphereDescent
             if (shadowMat != null) Destroy(shadowMat);
             if (rimMat != null) Destroy(rimMat);
             if (discMesh != null) Destroy(discMesh);
-        }
-    }
-
-    /// <summary>A harmless splash of lava: flies off, falls back toward the core and shrinks away to nothing.</summary>
-    public class LavaDroplet : MonoBehaviour
-    {
-        public Vector3 velocity;
-        public float life = 1.1f;
-
-        float age;
-        Vector3 startScale;
-
-        void Start() => startScale = transform.localScale;
-
-        void Update()
-        {
-            age += Time.deltaTime;
-            velocity -= transform.position.normalized * (25f * Time.deltaTime);
-            transform.position += velocity * Time.deltaTime;
-            transform.localScale = startScale * Mathf.Clamp01(1f - age / life);
-            if (age >= life) Destroy(gameObject);
         }
     }
 }

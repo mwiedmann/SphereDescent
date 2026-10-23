@@ -8,7 +8,7 @@ namespace SphereDescent
     /// <summary>
     /// Thin input layer so gameplay code works with either the legacy Input Manager or the Input System package.
     /// The project uses the Input System, which gives full keyboard + mouse and gamepad support. The legacy
-    /// fallback only handles keyboard + mouse (plus left-stick movement and jump on a gamepad).
+    /// fallback only handles keyboard + mouse (plus left-stick movement on a gamepad).
     /// </summary>
     public static class GameInput
     {
@@ -45,10 +45,6 @@ namespace SphereDescent
             return v;
         }
 
-        public static bool JumpPressed() =>
-            (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame) ||
-            (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame);
-
         public static bool RespawnPressed() =>
             (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame) ||
             (Gamepad.current != null && Gamepad.current.selectButton.wasPressedThisFrame);
@@ -76,10 +72,17 @@ namespace SphereDescent
             (Keyboard.current != null && (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame)) ||
             (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame);
 
-        /// <summary>Any key, mouse button or gamepad button pressed this frame.</summary>
-        public static bool AnyPressed()
+        /// <summary>
+        /// Any key, mouse button or gamepad button pressed this frame, other than the ones that steer the ball
+        /// or turn the camera (WASD, the arrows, Q and E; the sticks and D-pad), so a player still steering
+        /// doesn't skip past "press any button" by accident.
+        /// </summary>
+        public static bool ContinuePressed()
         {
-            if (Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame) return true;
+            var k = Keyboard.current;
+            if (k != null && k.anyKey.wasPressedThisFrame)
+                foreach (var key in k.allKeys)
+                    if (key != null && key.wasPressedThisFrame && !SteeringKey(key.keyCode)) return true;
             var m = Mouse.current;
             if (m != null && (m.leftButton.wasPressedThisFrame || m.rightButton.wasPressedThisFrame)) return true;
             var g = Gamepad.current;
@@ -87,6 +90,10 @@ namespace SphereDescent
                                  g.buttonNorth.wasPressedThisFrame || g.startButton.wasPressedThisFrame || g.selectButton.wasPressedThisFrame ||
                                  g.leftShoulder.wasPressedThisFrame || g.rightShoulder.wasPressedThisFrame);
         }
+
+        static bool SteeringKey(Key key) =>
+            key == Key.W || key == Key.A || key == Key.S || key == Key.D || key == Key.Q || key == Key.E ||
+            key == Key.UpArrow || key == Key.DownArrow || key == Key.LeftArrow || key == Key.RightArrow;
 
         /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
         public static int NumberPressed()
@@ -113,7 +120,6 @@ namespace SphereDescent
             return v;
         }
 
-        public static bool JumpPressed() => Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0);
         public static bool RespawnPressed() => Input.GetKeyDown(KeyCode.R);
         public static bool SkipWorldPressed() => Input.GetKeyDown(KeyCode.N);
         public static bool UnlockCursorPressed() => Input.GetKeyDown(KeyCode.Escape);
@@ -126,8 +132,15 @@ namespace SphereDescent
 
         public static bool ConfirmPressed() => Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
 
-        /// <summary>Any key, mouse button or gamepad button pressed this frame.</summary>
-        public static bool AnyPressed() => Input.anyKeyDown;
+        /// <summary>Any key or mouse button pressed this frame, other than the ones that steer or turn the camera.</summary>
+        public static bool ContinuePressed()
+        {
+            if (!Input.anyKeyDown) return false;
+            foreach (var key in new[] { KeyCode.W, KeyCode.A, KeyCode.S, KeyCode.D, KeyCode.Q, KeyCode.E,
+                         KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.LeftArrow, KeyCode.RightArrow })
+                if (Input.GetKeyDown(key)) return false;
+            return true;
+        }
 
         /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
         public static int NumberPressed()

@@ -9,8 +9,8 @@ namespace SphereDescent
     /// dark shadow with a red rim spreads on the ground where it will land, so it can be dodged. A hit burns the
     /// ball up; the blob splats into smaller blobs that dissolve harmlessly. Blobs only ever land on the paths
     /// and plazas: one aimed out over the lava comes down on the nearest spot of the path the ball is on, and
-    /// none land inside the walls still standing (or on the energy ball). It stops once the energy ball is
-    /// freed.
+    /// none land inside the walls still standing (or on the energy ball). It starts once the ball has reached
+    /// the walls and the energy ball's introduction is over, and stops once the energy ball is freed.
     /// </summary>
     public class LavaRain : MonoBehaviour
     {
@@ -51,7 +51,7 @@ namespace SphereDescent
                 return;
             }
             falling.RemoveAll(b => b == null);
-            if (ball.CurrentLayer != layer || ball.IsDestroyed)
+            if (ball.CurrentLayer != layer || ball.IsDestroyed || (arena != null && !arena.IntroDone))
             {
                 cooldown = firstDelay;
                 return;

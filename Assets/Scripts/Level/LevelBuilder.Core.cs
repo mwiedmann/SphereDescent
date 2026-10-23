@@ -113,6 +113,7 @@ namespace SphereDescent
             // Key pads, each with its cable to its wall.
             var pads = new SwitchPadKit(level);
             var pressable = new List<LaserSwitch>();
+            var padTransforms = new List<Transform>();
             for (int p = 0; p < core.Pads.Length; p++)
             {
                 Vector3 dir = core.Pads[p];
@@ -129,6 +130,7 @@ namespace SphereDescent
                 sw.cableDistances = cableDistances;
                 sw.wallDistances = wallDistances;
                 pressable.Add(sw);
+                padTransforms.Add(sw.transform);
             }
 
             var cubes = new CubeKit(level, glowTemplate);
@@ -167,6 +169,7 @@ namespace SphereDescent
             // Where the ball comes back once it has reached the plaza: just inside its edge, where the path from
             // the landing comes in.
             arena.plazaCheckpoint = core.Paths[0][0] * (G + 0.5f);
+            arena.pads = padTransforms.ToArray();
             orb.arena = arena;
             foreach (var sw in pressable) sw.arena = arena;
         }
