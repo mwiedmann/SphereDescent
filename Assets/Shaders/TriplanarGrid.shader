@@ -1,7 +1,8 @@
 // Triplanar patterns for procedurally generated meshes that have no UVs.
 // Zone mode is the synthwave look for the world: dark surfaces with glowing, anti-aliased neon lines in
-// the color of the world zone (ZoneMap, set as global arrays) they face, one of four line patterns per
-// zone, and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
+// the color of the world zone (ZoneMap, set as global arrays) they face, one of four patterns per zone
+// (from the geometric set, grids, stripes and dots, or the organic one, coral cells, sand ripples, polyp
+// clusters and kelp veins), and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
 // along the top edge, a dimmer one at the base, and faintly glowing panel lines on the sides. Ball mode
 // draws the player's ball: eight equal segments split by three great circles (so rolling is easy to
 // see), alternating glossy black and neon in the color of the zone the ball is in, fading across zone
@@ -32,6 +33,7 @@ Shader "SphereDescent/TriplanarGrid"
         [Toggle] _BallMode ("Ball Mode", Float) = 0
         _RimStrength ("Ball Rim Glow", Float) = 1.6
         _PatternStrength ("Zone Pattern Strength", Range(0, 1)) = 1
+        [Enum(Geometric,0,Organic,1)] _PatternSet ("Zone Pattern Set", Float) = 0
         _Caustics ("Caustic Light", Range(0, 2)) = 0
         _CausticScale ("Caustic Size", Float) = 6
     }
@@ -62,6 +64,7 @@ Shader "SphereDescent/TriplanarGrid"
             float _WallHeight;
             float _StripWidth;
             float _PatternStrength;
+            float _PatternSet;
             float _Caustics;
             float _CausticScale;
             float _SeamGlow;
@@ -159,6 +162,73 @@ Shader "SphereDescent/TriplanarGrid"
                 }
                 float2 c = floor(q);
                 return fmod(abs(c.x + c.y), 2.0);
+            }
+
+            float2 Hash22 (float2 p)
+            {
+                float3 p3 = frac(p.xyx * float3(0.1031, 0.1030, 0.0973));
+                p3 += dot(p3, p3.yzx + 33.33);
+                return frac((p3.xx + p3.yz) * p3.zy);
+            }
+
+            // Fades a pattern to its average coverage where its cells get down to a few pixels, so distant floors
+            // don't shimmer (g is the pattern's own cell coordinates).
+            float FadeOut (float v, float average, float2 g)
+            {
+                return lerp(average, v, saturate(1.0 - max(fwidth(g.x), fwidth(g.y)) * 3.0));
+            }
+
+            // The deep sea's patterns, rounder and less regular than the grids:
+            // 0 = coral cells, 1 = sand ripples, 2 = polyp clusters, 3 = kelp veins.
+            float OrganicPattern (float2 p, int kind)
+            {
+                float2 q = p / _GridSize;
+                if (kind == 0)
+                {
+                    // Irregular rounded cells with glowing borders: where the nearest two cell seeds are about
+                    // as near as each other.
+                    float2 g = q * 0.55, c = floor(g), f = frac(g);
+                    float f1 = 8.0, f2 = 8.0;
+                    for (int y = -1; y <= 1; y++)
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        float2 o = float2(x, y);
+                        float d = length(o + 0.1 + 0.8 * Hash22(c + o) - f);
+                        if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+                    }
+                    float edge = f2 - f1, w = fwidth(edge), width = _LineWidth * 2.2;
+                    return FadeOut(1.0 - smoothstep(width - w, width + w, edge), 0.15, g);
+                }
+                if (kind == 1)
+                {
+                    // Ripples in sand: wavy, wandering parallel lines.
+                    float y = q.y * 1.1 + 0.9 * sin(q.x * 0.7 + 1.7 * sin(q.y * 0.3)) + 0.35 * sin(q.x * 1.6 - q.y * 0.5);
+                    return Lines1D(y, _LineWidth * 1.2);
+                }
+                if (kind == 2)
+                {
+                    // Round spots of every size, scattered in loose clumps.
+                    float2 g = q * 1.2, c = floor(g), f = frac(g);
+                    float spot = 0.0, aa = max(fwidth(g.x), fwidth(g.y));
+                    for (int y = -1; y <= 1; y++)
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        float2 o = float2(x, y), cell = c + o;
+                        float2 h = Hash22(cell), h2 = Hash22(cell + 17.13);
+                        float clump = 0.5 + 0.5 * sin(cell.x * 0.31 + 1.3) * sin(cell.y * 0.27 - 0.7);
+                        if (h2.x > 0.3 + 0.6 * clump) continue;
+                        float r = 0.1 + 0.2 * h2.y;
+                        float d = length(o + 0.15 + 0.7 * h - f);
+                        spot = max(spot, 1.0 - smoothstep(r - aa, r + aa, d));
+                    }
+                    return FadeOut(spot, 0.1, g);
+                }
+                // A flowing net of thin crossing strands, like kelp or a jellyfish's nerve net.
+                float2 v = q * 0.8;
+                v += 0.35 * float2(sin(v.y * 1.3 + sin(v.x * 0.7)), sin(v.x * 1.1 + 1.2 * sin(v.y * 0.9)));
+                float a = Lines1D(v.x + 0.3 * sin(v.y * 2.1), _LineWidth);
+                float b = Lines1D(v.x * 0.5 + v.y * 0.87 + 0.4 * sin(v.x * 1.7), _LineWidth);
+                return max(a, b);
             }
 
             float Triplanar (float3 p, float3 n, int kind)
@@ -276,7 +346,8 @@ Shader "SphereDescent/TriplanarGrid"
                     else
                     {
                         // Floors: the zone's pattern projected down from the zone's center, one copy only.
-                        float m = saturate(Pattern(PlaneCoords(i.gridPos, _ZoneDirs[zone].xyz), zone % 4)) * _PatternStrength;
+                        float2 zp = PlaneCoords(i.gridPos, _ZoneDirs[zone].xyz);
+                        float m = saturate(_PatternSet > 0.5 ? OrganicPattern(zp, zone % 4) : Pattern(zp, zone % 4)) * _PatternStrength;
                         float bw = fwidth(borderDist);
                         float border = 1.0 - smoothstep(_ZoneBorder - bw, _ZoneBorder + bw, borderDist);
                         emission = lerp(neon * m, neon * 1.5, border) + causticLight;

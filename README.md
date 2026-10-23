@@ -54,7 +54,7 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 |---|---|
 | ![The corner scores, with a finished section's score and the world total mid-screen](Docs/screenshots/scores.png) | ![A bar graph of each section's score and the world total](Docs/screenshots/world_complete.png) |
 
-To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in along the top, and your scores in the top-left corner.
+To help you find your way, each sphere is split into 12 zones, each with its own neon color and floor pattern: square grid, diagonal grid, stripes or dots in Synthwave, and rounder shapes in Deep Sea (coral cells, sand ripples, clumps of polyps, or a net of kelp veins). The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in along the top, and your scores in the top-left corner.
 
 ## Look
 
