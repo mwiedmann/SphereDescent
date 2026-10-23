@@ -5,7 +5,7 @@ using UnityEngine.Rendering;
 namespace SphereDescent
 {
     /// <summary>Turns a <see cref="MazeLayout"/> into GameObjects: shells, walls, hole rings, boost pads and the core (the exit).</summary>
-    public static class LevelBuilder
+    public static partial class LevelBuilder
     {
         public static LevelInstance Build(MazeLayout layout, LevelSettings s, LevelMaterials mats, int world, VisualStyle style = null)
         {
@@ -176,11 +176,8 @@ namespace SphereDescent
             CreateAcidPools(level, layout, s, layerRoots, mats);
             CreateMortars(level, layout, s, terrains, layerRoots, mats);
 
-            // The whole core is the exit: it glows gold, and landing on it completes the world.
-            var coreRoot = layerRoots[layout.ShellCount];
-            var coreMat = level.Own(LevelMaterials.MakeEmissive(mats.exit.color, 0.8f));
-            var coreMesh = level.Own(MeshBuilders.BuildSphere(IcoSphere.Get(s.coreMeshSubdivisions), s.coreRadius));
-            CreateMeshObject(coreRoot, "Core (Exit)", coreMesh, coreMat, true, ShadowCastingMode.Off);
+            // The core: the boss battle that ends the world.
+            CreateCore(level, layout, s, layerRoots[layout.ShellCount], mats, style);
 
             // Everything else on a shell (hazards, pickups, pads, rings) goes into the chunk it sits in, so it's
             // switched off with it. Exit beams and cables stay out: they're meant to be seen from afar.
@@ -262,29 +259,46 @@ namespace SphereDescent
             Transform[] layerRoots, Material glowTemplate)
         {
             if (layout.Mines.Count == 0) return;
-            var bodyMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
-            var red = new Color(1f, 0.03f, 0.01f);
-            var ringMat = level.Own(LevelMaterials.MakeEmissive(red, 0.5f));
-            var lightOn = level.Own(LevelMaterials.MakeEmissive(red, 2.5f));
-            var lightOff = level.Own(LevelMaterials.MakeEmissive(new Color(0.25f, 0.01f, 0.01f), 0.2f));
-            var glowOn = level.Own(BeamMaterial(glowTemplate, red, 0f));
-            glowOn.SetFloat("_Intensity", 1.2f);
-            var glowOff = level.Own(BeamMaterial(glowTemplate, red, 0f));
-            glowOff.SetFloat("_Intensity", 0.15f);
-            float r = s.mineRadius;
-            float bodyTop = s.mineHeight * 0.6f, sink = 0.35f;
-            var bodyMesh = level.Own(MineBodyMesh(r, bodyTop, sink, s.mineHeight));
-            var ringMesh = level.Own(MeshBuilders.BuildTorus(r * 0.72f, 0.04f, 32, 6));
-            var glowMesh = level.Own(MeshBuilders.BuildBeam(r * 1.6f, 0.4f));
-
+            var kit = new MineKit(level, s, glowTemplate);
             foreach (var m in layout.Mines)
-            {
-                Vector3 dir = m.Direction;
-                var go = new GameObject("Mine");
-                go.transform.SetParent(layerRoots[m.Shell], false);
                 // Tilted to lie flush with the ground, on a hillside too.
-                go.transform.SetPositionAndRotation(dir * terrains[m.Shell].SurfaceRadius(dir),
-                    Quaternion.FromToRotation(Vector3.up, terrains[m.Shell].Normal(dir)));
+                kit.Create(level, s, layerRoots[m.Shell], m.Direction * terrains[m.Shell].SurfaceRadius(m.Direction),
+                    terrains[m.Shell].Normal(m.Direction));
+        }
+
+        /// <summary>The materials and meshes every mine shares.</summary>
+        sealed class MineKit
+        {
+            readonly Material bodyMat, ringMat, lightOn, lightOff, glowOn, glowOff;
+            readonly Mesh bodyMesh, ringMesh, glowMesh;
+            readonly float bodyTop;
+
+            public MineKit(LevelInstance level, LevelSettings s, Material glowTemplate)
+            {
+                bodyMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
+                var red = new Color(1f, 0.03f, 0.01f);
+                ringMat = level.Own(LevelMaterials.MakeEmissive(red, 0.5f));
+                lightOn = level.Own(LevelMaterials.MakeEmissive(red, 2.5f));
+                lightOff = level.Own(LevelMaterials.MakeEmissive(new Color(0.25f, 0.01f, 0.01f), 0.2f));
+                glowOn = level.Own(BeamMaterial(glowTemplate, red, 0f));
+                glowOn.SetFloat("_Intensity", 1.2f);
+                glowOff = level.Own(BeamMaterial(glowTemplate, red, 0f));
+                glowOff.SetFloat("_Intensity", 0.15f);
+                float r = s.mineRadius;
+                bodyTop = s.mineHeight * 0.6f;
+                const float sink = 0.35f;
+                bodyMesh = level.Own(MineBodyMesh(r, bodyTop, sink, s.mineHeight));
+                ringMesh = level.Own(MeshBuilders.BuildTorus(r * 0.72f, 0.04f, 32, 6));
+                glowMesh = level.Own(MeshBuilders.BuildBeam(r * 1.6f, 0.4f));
+            }
+
+            /// <summary>A mine on the ground at <paramref name="position"/>, lying square to <paramref name="up"/>.</summary>
+            public Mine Create(LevelInstance level, LevelSettings s, Transform parent, Vector3 position, Vector3 up)
+            {
+                float r = s.mineRadius;
+                var go = new GameObject("Mine");
+                go.transform.SetParent(parent, false);
+                go.transform.SetPositionAndRotation(position, Quaternion.FromToRotation(Vector3.up, up));
 
                 CreateMeshObject(go.transform, "Body", bodyMesh, bodyMat, false, ShadowCastingMode.Off);
                 var ring = CreateMeshObject(go.transform, "Ring", ringMesh, ringMat, false, ShadowCastingMode.Off);
@@ -307,6 +321,7 @@ namespace SphereDescent
                 mine.glowRenderer = glow.GetComponent<Renderer>();
                 mine.glowOn = glowOn;
                 mine.glowOff = glowOff;
+                return mine;
             }
         }
 
@@ -477,13 +492,7 @@ namespace SphereDescent
             Transform[] layerRoots, ZoneMap zones, Material glowTemplate)
         {
             if (layout.LaserGates.Count == 0) return;
-            var offColor = new Color(0.05f, 1f, 0.2f);
-            var warning = new Color(1f, 0.04f, 0.02f);
-            var disarmedMat = level.Own(LevelMaterials.MakeEmissive(offColor, 1.4f));
-            var cableMat = level.Own(LevelMaterials.MakeEmissive(offColor, 2.4f));
-            var metalMat = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
-            var ringMesh = level.Own(MeshBuilders.BuildTorus(1.05f, 0.07f, 40, 8));
-            var keyMesh = level.Own(KeyMesh());
+            var pads = new SwitchPadKit(level);
             var glowMesh = level.Own(MeshBuilders.BuildBeam(0.5f, 1f, 12));
             var holeMesh = level.Own(MeshBuilders.BuildDisc(0.1f, 16));
             var emberMesh = level.Own(MeshBuilders.BuildDisc(0.05f, 12));
@@ -564,21 +573,55 @@ namespace SphereDescent
                 gate.glowMaterial = glowMat;
                 gate.coreColor = coreColor;
 
-                // The switch pad, with its own warning material so it can pulse.
-                var armedMat = level.Own(LevelMaterials.MakeEmissive(warning, 1.5f));
                 Vector3 dir = grid.CellCenters[g.SwitchCell];
-                var pad = new GameObject("Laser Switch");
-                pad.transform.SetParent(layerRoots[g.Shell], false);
-                pad.transform.SetPositionAndRotation(dir * radius, Quaternion.FromToRotation(Vector3.up, dir));
-                var disc = Part(pad.transform, PrimitiveType.Cylinder, "Base", metalMat);
+                var sw = pads.Create(level, layerRoots[g.Shell], "Laser Switch", dir * radius, dir);
+                sw.gate = gate;
+
+                // The cable from the pad to the gate, hidden until the pad is used.
+                var cableMesh = level.Own(CableMesh(layout, s, terrains, g, 0.26f, out int[] cableTriangles, out float[] cableDistances));
+                var cable = CreateMeshObject(layerRoots[g.Shell], "Cable", cableMesh, pads.cable, false, ShadowCastingMode.Off);
+                sw.cable = cable.GetComponent<MeshFilter>().sharedMesh;
+                sw.cableTriangles = cableTriangles;
+                sw.cableDistances = cableDistances;
+            }
+        }
+
+        /// <summary>
+        /// What every switch pad shares (laser switches and the core's key pads): a metal disc with a ring and a
+        /// key symbol pulsing warning red, turning green once rolled over, and the green cable it lights.
+        /// </summary>
+        sealed class SwitchPadKit
+        {
+            public readonly Material disarmed, cable, metal;
+            public readonly Mesh ring, key;
+            public static readonly Color Warning = new Color(1f, 0.04f, 0.02f);
+
+            public SwitchPadKit(LevelInstance level)
+            {
+                var offColor = new Color(0.05f, 1f, 0.2f);
+                disarmed = level.Own(LevelMaterials.MakeEmissive(offColor, 1.4f));
+                cable = level.Own(LevelMaterials.MakeEmissive(offColor, 2.4f));
+                metal = level.Own(LevelMaterials.MakeMetal(new Color(0.06f, 0.06f, 0.07f), 0.85f, 0.55f));
+                ring = level.Own(MeshBuilders.BuildTorus(1.05f, 0.07f, 40, 8));
+                key = level.Own(KeyMesh());
+            }
+
+            /// <summary>A pad lying on the ground at <paramref name="position"/>, with its own warning material so it can pulse.</summary>
+            public LaserSwitch Create(LevelInstance level, Transform parent, string name, Vector3 position, Vector3 up)
+            {
+                var armedMat = level.Own(LevelMaterials.MakeEmissive(Warning, 1.5f));
+                var pad = new GameObject(name);
+                pad.transform.SetParent(parent, false);
+                pad.transform.SetPositionAndRotation(position, Quaternion.FromToRotation(Vector3.up, up));
+                var disc = Part(pad.transform, PrimitiveType.Cylinder, "Base", metal);
                 disc.localPosition = new Vector3(0f, -0.12f, 0f);
                 disc.localScale = new Vector3(2.6f, 0.2f, 2.6f);
-                var ring = CreateMeshObject(pad.transform, "Ring", ringMesh, armedMat, false, ShadowCastingMode.Off);
-                ring.transform.localPosition = new Vector3(0f, 0.08f, 0f);
+                var ringObject = CreateMeshObject(pad.transform, "Ring", ring, armedMat, false, ShadowCastingMode.Off);
+                ringObject.transform.localPosition = new Vector3(0f, 0.08f, 0f);
                 // A key symbol inside the ring, lying flat, so it reads as "unlock".
-                var key = CreateMeshObject(pad.transform, "Key", keyMesh, armedMat, false, ShadowCastingMode.Off);
-                key.transform.localPosition = new Vector3(0f, 0.06f, 0f);
-                key.transform.localRotation = Quaternion.Euler(0f, 35f, 0f);
+                var keyObject = CreateMeshObject(pad.transform, "Key", key, armedMat, false, ShadowCastingMode.Off);
+                keyObject.transform.localPosition = new Vector3(0f, 0.06f, 0f);
+                keyObject.transform.localRotation = Quaternion.Euler(0f, 35f, 0f);
 
                 var trigger = pad.AddComponent<SphereCollider>();
                 trigger.isTrigger = true;
@@ -586,18 +629,11 @@ namespace SphereDescent
                 trigger.center = new Vector3(0f, 0.3f, 0f);
 
                 var sw = pad.AddComponent<LaserSwitch>();
-                sw.gate = gate;
-                sw.indicators = new[] { ring.GetComponent<Renderer>(), key.GetComponent<Renderer>() };
+                sw.indicators = new[] { ringObject.GetComponent<Renderer>(), keyObject.GetComponent<Renderer>() };
                 sw.armed = armedMat;
-                sw.disarmed = disarmedMat;
-                sw.warningColor = warning;
-
-                // The cable from the pad to the gate, hidden until the pad is used.
-                var cableMesh = level.Own(CableMesh(layout, s, terrains, g, 0.26f, out int[] cableTriangles, out float[] cableDistances));
-                var cable = CreateMeshObject(layerRoots[g.Shell], "Cable", cableMesh, cableMat, false, ShadowCastingMode.Off);
-                sw.cable = cable.GetComponent<MeshFilter>().sharedMesh;
-                sw.cableTriangles = cableTriangles;
-                sw.cableDistances = cableDistances;
+                sw.disarmed = disarmed;
+                sw.warningColor = Warning;
+                return sw;
             }
         }
 
@@ -695,45 +731,61 @@ namespace SphereDescent
             Material glowTemplate)
         {
             if (layout.Cubes.Count == 0) return;
-            var gold = new Color(1f, 0.78f, 0.15f);
-            var magenta = new Color(1f, 0.2f, 0.85f);
-            var edgeGold = level.Own(LevelMaterials.MakeEmissive(gold, 2.2f));
-            var edgeMagenta = level.Own(LevelMaterials.MakeEmissive(magenta, 2.6f));
-            var faceGold = level.Own(LevelMaterials.MakeGlass(gold, 0.08f, 0.15f));
-            var faceMagenta = level.Own(LevelMaterials.MakeGlass(magenta, 0.1f, 0.2f));
-            // The point inside: white-hot, tinted just slightly.
-            var pointGold = level.Own(LevelMaterials.MakeEmissive(Color.Lerp(gold, Color.white, 0.7f), 12f));
-            var pointMagenta = level.Own(LevelMaterials.MakeEmissive(Color.Lerp(magenta, Color.white, 0.6f), 12f));
-            Material Glow(Color c, float intensity)
-            {
-                var m = level.Own(new Material(glowTemplate));
-                m.SetFloat("_Soft", 1f);
-                m.SetColor("_Color", c);
-                m.SetFloat("_Intensity", intensity);
-                return m;
-            }
-            var glowGold = Glow(gold, 1.6f);
-            var glowMagenta = Glow(magenta, 2f);
-            var glowMesh = level.Own(MeshBuilders.BuildDisc(1f, 24));
-            var frameMesh = level.Own(CubeFrameMesh(0.04f));
+            var kit = new CubeKit(level, glowTemplate);
             foreach (var c in layout.Cubes)
+                kit.Create(level, s, layerRoots[c.Shell], c.Direction * terrains[c.Shell].SurfaceRadius(c.Direction), c.Direction,
+                    c.Super, c.Section);
+        }
+
+        /// <summary>The materials and meshes every energy cube shares.</summary>
+        sealed class CubeKit
+        {
+            readonly Material edgeGold, edgeMagenta, faceGold, faceMagenta, pointGold, pointMagenta, glowGold, glowMagenta;
+            readonly Mesh glowMesh, frameMesh;
+
+            public CubeKit(LevelInstance level, Material glowTemplate)
             {
-                float size = s.cubeSize * (c.Super ? 1.4f : 1f);
+                var gold = new Color(1f, 0.78f, 0.15f);
+                var magenta = new Color(1f, 0.2f, 0.85f);
+                edgeGold = level.Own(LevelMaterials.MakeEmissive(gold, 2.2f));
+                edgeMagenta = level.Own(LevelMaterials.MakeEmissive(magenta, 2.6f));
+                faceGold = level.Own(LevelMaterials.MakeGlass(gold, 0.08f, 0.15f));
+                faceMagenta = level.Own(LevelMaterials.MakeGlass(magenta, 0.1f, 0.2f));
+                // The point inside: white-hot, tinted just slightly.
+                pointGold = level.Own(LevelMaterials.MakeEmissive(Color.Lerp(gold, Color.white, 0.7f), 12f));
+                pointMagenta = level.Own(LevelMaterials.MakeEmissive(Color.Lerp(magenta, Color.white, 0.6f), 12f));
+                Material Glow(Color c, float intensity)
+                {
+                    var m = level.Own(new Material(glowTemplate));
+                    m.SetFloat("_Soft", 1f);
+                    m.SetColor("_Color", c);
+                    m.SetFloat("_Intensity", intensity);
+                    return m;
+                }
+                glowGold = Glow(gold, 1.6f);
+                glowMagenta = Glow(magenta, 2f);
+                glowMesh = level.Own(MeshBuilders.BuildDisc(1f, 24));
+                frameMesh = level.Own(CubeFrameMesh(0.04f));
+            }
+
+            /// <summary>A cube floating over the ground at <paramref name="ground"/>, scoring for <paramref name="section"/>.</summary>
+            public EnergyCube Create(LevelInstance level, LevelSettings s, Transform parent, Vector3 ground, Vector3 up, bool super, int section)
+            {
+                float size = s.cubeSize * (super ? 1.4f : 1f);
                 float lift = 0.45f + size * 0.6f;
-                var go = new GameObject(c.Super ? "Super Cube" : "Energy Cube");
-                go.transform.SetParent(layerRoots[c.Shell], false);
-                go.transform.SetPositionAndRotation(c.Direction * terrains[c.Shell].SurfaceRadius(c.Direction),
-                    Quaternion.FromToRotation(Vector3.up, c.Direction));
+                var go = new GameObject(super ? "Super Cube" : "Energy Cube");
+                go.transform.SetParent(parent, false);
+                go.transform.SetPositionAndRotation(ground, Quaternion.FromToRotation(Vector3.up, up));
                 var visual = new GameObject("Visual").transform;
                 visual.SetParent(go.transform, false);
                 visual.localPosition = new Vector3(0f, lift, 0f);
-                var frame = CreateMeshObject(visual, "Outline", frameMesh, c.Super ? edgeMagenta : edgeGold, false, ShadowCastingMode.Off);
+                var frame = CreateMeshObject(visual, "Outline", frameMesh, super ? edgeMagenta : edgeGold, false, ShadowCastingMode.Off);
                 frame.transform.localScale = Vector3.one * size;
-                var faces = Part(visual, PrimitiveType.Cube, "Faces", c.Super ? faceMagenta : faceGold);
+                var faces = Part(visual, PrimitiveType.Cube, "Faces", super ? faceMagenta : faceGold);
                 faces.localScale = Vector3.one * size * 0.98f;
-                var point = Part(visual, PrimitiveType.Sphere, "Singularity", c.Super ? pointMagenta : pointGold);
-                point.localScale = Vector3.one * s.cubeCoreSize * (c.Super ? 1.3f : 1f);
-                var glow = CreateMeshObject(go.transform, "Glow", glowMesh, c.Super ? glowMagenta : glowGold, false, ShadowCastingMode.Off);
+                var point = Part(visual, PrimitiveType.Sphere, "Singularity", super ? pointMagenta : pointGold);
+                point.localScale = Vector3.one * s.cubeCoreSize * (super ? 1.3f : 1f);
+                var glow = CreateMeshObject(go.transform, "Glow", glowMesh, super ? glowMagenta : glowGold, false, ShadowCastingMode.Off);
                 glow.transform.localScale = Vector3.one * s.cubeCoreSize * 5f;
 
                 var trigger = go.AddComponent<SphereCollider>();
@@ -745,10 +797,11 @@ namespace SphereDescent
                 var cube = go.AddComponent<EnergyCube>();
                 cube.visual = visual;
                 cube.halo = glow.transform;
-                cube.isSuper = c.Super;
-                cube.points = c.Super ? s.superCubePoints : s.cubePoints;
-                cube.section = c.Section;
-                if (c.Super) cube.spinSpeed = 80f;
+                cube.isSuper = super;
+                cube.points = super ? s.superCubePoints : s.cubePoints;
+                cube.section = section;
+                if (super) cube.spinSpeed = 80f;
+                return cube;
             }
         }
 

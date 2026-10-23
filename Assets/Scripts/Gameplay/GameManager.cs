@@ -4,8 +4,9 @@ using UnityEngine;
 namespace SphereDescent
 {
     /// <summary>
-    /// Owns the game loop: spawns the ball and camera, generates each world from a seed, advances to the
-    /// next world when the exit is reached, keeps the sun overhead, and draws a minimal HUD.
+    /// Owns the game loop: spawns the ball and camera, generates each world from a seed, plays out the end of
+    /// each world once the core's energy ball is freed and moves on to the next, keeps the sun overhead, and
+    /// draws a minimal HUD.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -89,6 +90,14 @@ namespace SphereDescent
         [Tooltip("Seconds the end-of-world score screens stay up before any button moves on.")]
         public float summaryMinSeconds = 3f;
         int climbingThrough = -1; // the hole a boost-pad launch is heading up through, until the ball lands
+        float thanksShownAt = -1f;  // when the freed energy ball's thanks came up (-1 = not showing)
+        GUIStyle thanksTitleStyle, thanksStyle;
+        [Tooltip("Seconds the freed energy ball's thanks stay up before any button moves on.")]
+        public float thanksMinSeconds = 3f;
+        [Tooltip("Seconds the camera watches the freed energy ball fly away.")]
+        public float flyAwaySeconds = 4f;
+        [Tooltip("How much higher (and farther back) the camera hovers on the core, to see more of the path ahead.")]
+        public float coreCameraLift = 2.5f;
 
         public int World => world;
 
@@ -315,6 +324,53 @@ namespace SphereDescent
             ShowMessage("Checkpoint!", 1.6f);
         }
 
+        public void KeyPadPressed(LaserSwitch pad)
+        {
+            scores.Add(pad.section, pad.points);
+            ShowPoints(pad.transform.position + pad.transform.up * 0.8f, pad.points, false, new Color(0.4f, 1f, 0.3f));
+        }
+
+        /// <summary>
+        /// The ball has rolled into the core's energy ball with every wall down: score the rescue, show its
+        /// thanks until a button is pressed, watch it fly away, then bank the core and show the world's scores.
+        /// </summary>
+        public void EnergyFreed(EnergyOrb orb)
+        {
+            if (!transitioning) StartCoroutine(FreeEnergy(orb));
+        }
+
+        IEnumerator FreeEnergy(EnergyOrb orb)
+        {
+            transitioning = true;
+            ball.SetFrozen(true);
+            var w = scores.Current;
+            scores.Add(w.CoreIndex, settings.rescuePoints);
+            ShowPoints(orb.body.position, settings.rescuePoints, true, orb.color);
+            message = null;
+
+            thanksShownAt = Time.time;
+            yield return null;
+            while (Time.time - thanksShownAt < thanksMinSeconds || !GameInput.AnyPressed()) yield return null;
+            thanksShownAt = -1f;
+
+            // The camera stays put and turns to follow it up and away.
+            orbit.enabled = false;
+            Vector3 up = ball.transform.position.normalized;
+            var flight = StartCoroutine(orb.FlyAway(flyAwaySeconds));
+            for (float t = 0f; t < flyAwaySeconds; t += Time.deltaTime)
+            {
+                Vector3 look = orb.body.position - cam.transform.position;
+                if (look.sqrMagnitude > 1e-4f)
+                    cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, Quaternion.LookRotation(look, up), 1f - Mathf.Exp(-6f * Time.deltaTime));
+                yield return null;
+            }
+            yield return flight;
+            orbit.enabled = true;
+
+            scores.Finish(w.CoreIndex);
+            yield return AdvanceWorld();
+        }
+
         void ShowPoints(Vector3 position, int points, bool super, Color color) =>
             popups.Add(new Popup { Position = position, Points = points, BornAt = Time.time, Super = super, Color = color });
 
@@ -446,10 +502,12 @@ namespace SphereDescent
             }
             if (level != null && ball != null)
             {
-                // Landing anywhere on the core completes the world.
-                if (ball.IsGrounded && ball.CurrentLayer >= level.LayerCount - 1) OnExitReached();
                 int s = level.Layout.SectionAt(ball.CurrentLayer, ball.transform.position);
                 if (s >= 0) section = s;
+                // The core scores as one more section after the last.
+                bool onCore = ball.CurrentLayer >= level.LayerCount - 1;
+                if (onCore) section = level.Layout.Sections.Count;
+                orbit.lift = onCore ? coreCameraLift : 0f;
                 level.SetBeamSection(section);
                 // A climb seals its pad and the hole above once the ball has landed up there.
                 if (climbingThrough >= 0 && ball.IsGrounded && !ball.IsLaunching &&
@@ -511,7 +569,8 @@ namespace SphereDescent
 
             int layer = Mathf.Clamp(ball.CurrentLayer, 0, level.LayerCount - 1);
             string zone = level.Zones.Names[level.Zones.ZoneAt(ball.transform.position)];
-            string status = $"World {world}   ·   Section {section + 1}/{level.Layout.Sections.Count}   ·   " +
+            string where = section >= level.Layout.Sections.Count ? "The Core" : $"Section {section + 1}/{level.Layout.Sections.Count}";
+            string status = $"World {world}   ·   {where}   ·   " +
                             $"{level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone";
             Shadowed(new Rect(16, 12, 900, 30), status, hudStyle);
             if (summaryPage > 0)
@@ -541,6 +600,28 @@ namespace SphereDescent
             if (Time.time < messageUntil && !string.IsNullOrEmpty(message))
                 Shadowed(new Rect(0, Screen.height * 0.18f, Screen.width, 60), message, bannerStyle);
             if (tally != null) DrawTally();
+            if (thanksShownAt >= 0f) DrawThanks();
+        }
+
+        /// <summary>The freed energy ball's thanks, mid-screen, until a button is pressed.</summary>
+        void DrawThanks()
+        {
+            thanksTitleStyle ??= new GUIStyle(bannerStyle) { fontSize = 64, normal = { textColor = new Color(0.6f, 0.97f, 1f) } };
+            thanksStyle ??= new GUIStyle(bannerStyle) { fontSize = 40, wordWrap = true };
+            promptStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.MiddleCenter };
+            promptStyle.fontSize = 32;
+            float t = Time.time - thanksShownAt;
+            var old = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, Mathf.Clamp01(t / 0.5f));
+            float width = Mathf.Min(1200f, Screen.width * 0.94f), height = 330f;
+            var box = new Rect((Screen.width - width) * 0.5f, Screen.height * 0.3f, width, height);
+            Panel(box, 0.8f);
+            Shadowed(new Rect(box.x, box.y + 30f, width, 80f), "Thank you for freeing me!", thanksTitleStyle);
+            Shadowed(new Rect(box.x + 40f, box.y + 120f, width - 80f, 110f),
+                "More of my kind are still trapped in other worlds.", thanksStyle);
+            if (t >= thanksMinSeconds && Mathf.Repeat(Time.time, 1.2f) < 0.85f)
+                Shadowed(new Rect(box.x, box.y + 250f, width, 60f), "Press any button to continue", promptStyle);
+            GUI.color = old;
         }
 
         /// <summary>
@@ -603,7 +684,7 @@ namespace SphereDescent
             {
                 ("Game", Scoreboard.Format(gameGot, gameOf)),
                 ("World", Scoreboard.Format(worldGot, worldOf)),
-                ("Section", Scoreboard.Format(w.Earned[s], w.Possible[s])),
+                (s == w.CoreIndex ? "Core" : "Section", Scoreboard.Format(w.Earned[s], w.Possible[s])),
             };
             const float rowH = 42f;
             var box = new Rect(12, 46, 470, 20 + rows.Length * rowH);
@@ -657,7 +738,7 @@ namespace SphereDescent
             if (summaryPage == 1)
             {
                 heading = $"World {w.World} complete";
-                for (int i = 0; i < w.Earned.Length; i++) rows.Add(($"Section {i + 1}", w.Earned[i], w.Possible[i], w.Finished[i]));
+                for (int i = 0; i < w.Earned.Length; i++) rows.Add((w.Label(i), w.Earned[i], w.Possible[i], w.Finished[i]));
                 totalLabel = "World";
                 totalGot = w.Banked;
                 totalOf = w.PossibleSoFar;

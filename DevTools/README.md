@@ -51,6 +51,8 @@ swiftc -O sheet.swift -o sheet
 
 ## Others
 
+- `Editor/CoreShot.cs`: renders a world's core (`WORLD=n PREVIEW_DIR=<dir>`) from above, from the landing, at the walls and at two key pads, with every cable lit.
+- `Runtime/CoreProbe.cs.txt`: a `PlayProbe` body that plays out the core: lava, all six key pads, the cubes, freeing the energy ball and the score screens, logging each step. Batch mode starts with the keyboard disabled, so it enables it before simulating a press.
 - `Editor/AcidShot.cs`: renders acid pools from several angles. A magenta background shows up see-through gaps.
 - `Editor/StyleShot.cs`: renders the visual styles.
 - `Runtime/PerfProbe.cs`: measures frame time in Play mode.

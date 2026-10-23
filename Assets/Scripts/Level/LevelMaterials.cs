@@ -123,6 +123,18 @@ namespace SphereDescent
             return m;
         }
 
+        /// <summary>Glowing sparks for particles: the same soft blob, added on top, so it only ever brightens.</summary>
+        public static Material MakeSpark()
+        {
+            var m = MakeSoftPuff();
+            m.SetFloat("_Blend", 2f);
+            m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
+            m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
+            // Over 1, so bloom makes them glow.
+            m.SetColor("_BaseColor", new Color(3f, 3f, 3f, 1f));
+            return m;
+        }
+
         static Texture2D softDot;
 
         /// <summary>A white disc whose alpha falls smoothly from the middle to nothing at the edge.</summary>

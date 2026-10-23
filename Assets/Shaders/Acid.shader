@@ -1,6 +1,7 @@
 // The surface of an acid pool, boiling: dark green churning with brighter toxic currents, and crowded with
 // bubbles of two sizes that swell (a bright rim around a faint dome) and then pop into a quickly spreading
-// ring. Unlit; the bright parts are over 1 so bloom makes them glow.
+// ring. Unlit; the bright parts are over 1 so bloom makes them glow. The core's lava is the same surface in
+// reds and oranges, with fewer, bigger bubbles.
 Shader "SphereDescent/Acid"
 {
     Properties
@@ -9,6 +10,8 @@ Shader "SphereDescent/Acid"
         _Glow ("Glow Color", Color) = (0.45,1,0.1,1)
         _Intensity ("Glow Intensity", Float) = 2.2
         _Scale ("Swirl Size", Float) = 2.5
+        _BubbleSize ("Bubble Size", Float) = 1
+        _BubbleAmount ("Bubble Amount", Range(0, 1)) = 1
     }
     SubShader
     {
@@ -30,6 +33,8 @@ Shader "SphereDescent/Acid"
                 float4 _Glow;
                 float _Intensity;
                 float _Scale;
+                float _BubbleSize;
+                float _BubbleAmount;
             CBUFFER_END
 
             struct Attributes { float4 positionOS : POSITION; };
@@ -114,8 +119,8 @@ Shader "SphereDescent/Acid"
                 float churn = smoothstep(0.4, 2.6, w);
 
                 float popsBig, popsSmall;
-                float big = Bubbles(i.positionWS, 1.2, 0.18, 0.5, popsBig);
-                float small = Bubbles(i.positionWS + 17.3, 0.5, 0.25, 0.3, popsSmall);
+                float big = Bubbles(i.positionWS, 1.2 * _BubbleSize, 0.18, 0.5 * _BubbleAmount, popsBig);
+                float small = Bubbles(i.positionWS + 17.3, 0.5 * _BubbleSize, 0.25, 0.3 * _BubbleAmount, popsSmall);
                 float bubbles = max(big, small * 0.8);
                 float pops = max(popsBig, popsSmall * 0.8);
 

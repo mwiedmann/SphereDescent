@@ -8,7 +8,10 @@ The words we use when talking about Sphere Descent, and what each is called in t
 |---|---|---|
 | **World** | One full run, from the surface down to the core. Each world has a new maze. | `world` in `GameManager` |
 | **Sphere** | One walkable maze layer. There are four, from the **surface** inward. | *shell* (`shellRadii`); *layer* when the core is counted too |
-| **Core** | The gold sphere at the center. Landing anywhere on it finishes the world. | *core*, the last layer |
+| **Core** | The ball of lava at the center, with hilly wall-less paths over it: the boss battle that ends each world. | *core*, the last layer; `CoreLayout` |
+| **Energy ball** | The pulsing ball trapped in the middle of the core's walls. Rolling into it once the walls are down frees it and ends the world. | `EnergyOrb` |
+| **Core walls** | The six concentric glowing walls around the energy ball. Each key pad's cable breaks the outermost one still standing. | `CoreBarrier` |
+| **Lava** | Everything on the core off the paths. Rolling into it blows the ball up, and it comes back where it landed. | `CoreArena` |
 | **Section** | The stretch of maze from where you arrive on a sphere (through a hole or off a pad) to the hole or pad that takes you to the next one. A world is a chain of them. | `MazeLayout.Section` |
 | **First half / second half** | The part of a section before or after its main (halfway) checkpoint. Cubes and major hazards are placed per half. | `cubesPerHalfSection`, `majorHazardsPerHalf` |
 
@@ -53,8 +56,8 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | **Major hazard** | A laser gate, camera run, acid pool or mortar: the big obstacles, two in each half section on the first two spheres and one on the innermost ones, never the same kind twice in a half, each kind used about equally. Mines are not major hazards; they're spread through every section. | `MazeLayout.MajorHazard`, `majorHazardsPerHalf` |
 | **Mine group** | A cluster of mines in one cell, including its **wall mines** (one beside each wall, so you can't hug the wall past). | `MineGroups`, `Mine.NearWall` |
 | **Laser gate** | Horizontal lasers filling a choke point. | `LaserGate` |
-| **Key pad** | The pad that switches a laser gate off, marked with a key, usually down a spur. | `LaserSwitch` |
-| **Cable** | The glowing line that lights up along the floor from the key pad to the gate; the lasers go off when it arrives. | the switch's cable mesh |
+| **Key pad** | The pad that switches a laser gate off, marked with a key, usually down a spur. The core has six more, one per core wall, worth 10 points each. | `LaserSwitch` |
+| **Cable** | The glowing line that lights up along the floor from the key pad to the gate (or core wall); the lasers go off, or the wall breaks, when it arrives. | the switch's cable mesh |
 | **Camera run** | Three security cameras in a row, on poles above the walls on alternating sides. | `SecurityCamera`, `camerasPerGroup` |
 | **Sweep pattern** | How a camera's **spotlight** moves: **figure-8**, **orbit** or **sweep**. | `SweepPattern` |
 | **Acid pool** | A cell on the route (entered through a choke point) sunk into a pit of acid; falling in destroys the ball. | `AcidPool`, `MazeLayout.AcidPools` |
@@ -75,7 +78,8 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | Term | Meaning | In the code |
 |---|---|---|
 | **Section score** | Points from the cubes and checkpoints (5 each) of the section you're in, out of everything in it. Counts up live. | `Scoreboard.WorldScore.Earned` |
-| **Finishing a section** | Dropping through its hole, launching off its pad, or landing on the core: only then do its points count toward the world and game. | `Scoreboard.Finish` |
+| **Core score** | The core, scored like one more section after the last: its cubes, key pads and freeing the energy ball (100). Shown as **The Core** on the score screen. | `WorldScore.CoreIndex` |
+| **Finishing a section** | Dropping through its hole, launching off its pad, or (for the core) freeing the energy ball: only then do its points count toward the world and game. | `Scoreboard.Finish` |
 | **World score** | Points from the world's finished sections, out of what those sections were worth: how well you've done so far. | `WorldScore.Banked`, `PossibleSoFar` |
 | **Game score** | The world scores of this run added up, the same way. Picking a world from the M menu starts a new run. | `Scoreboard.GameBanked`, `GamePossible` |
 | **Tally** | A finished section's score shown mid-screen, with the world score counting up to include it. | `GameManager.ShowTally` |

@@ -400,12 +400,74 @@ namespace SphereDescent.EditorTools
                     routes.Append($" {sec.Shell}{(sec.ExitsUp ? "^" : "v")}{sec.RouteCells}/{sec.CellCount}");
                     allRoutes.Add(sec.RouteCells);
                 }
+                // The core: everything stands above the lava, every pad's cable runs over ground to its own wall.
+                var core = layout.Core;
+                string coreInfo = "none";
+                if (core == null) problems.Append(" no core;");
+                else
+                {
+                    float above = core.LavaRadius + 0.3f;
+                    if (Vector3.Angle(core.Landing, layout.Holes[layout.Sections.Count - 1].Direction) > 0.01f) problems.Append(" core landing not under the last hole;");
+                    if (Mathf.Abs(core.SurfaceRadius(core.Landing) - core.GroundRadius) > 0.01f) problems.Append(" core landing not flat;");
+                    if (core.Pads.Length != settings.coreKeyPads) problems.Append($" {core.Pads.Length} core key pads;");
+                    if (core.Cubes.Count != settings.coreCubes) problems.Append($" {core.Cubes.Count} core cubes;");
+                    if (core.Pads.Length != core.RingRadii.Length) problems.Append(" core walls not one per pad;");
+                    float lowest = float.MaxValue, padGap = float.MaxValue;
+                    foreach (var c in core.Cubes) lowest = Mathf.Min(lowest, core.SurfaceRadius(c));
+                    for (int p = 0; p < core.Pads.Length; p++)
+                    {
+                        lowest = Mathf.Min(lowest, core.SurfaceRadius(core.Pads[p]));
+                        for (int q = p + 1; q < core.Pads.Length; q++)
+                            padGap = Mathf.Min(padGap, Vector3.Angle(core.Pads[p], core.Pads[q]) * Mathf.Deg2Rad * core.GroundRadius);
+                        var cable = core.Cables[p];
+                        if (cable.Count < 2) problems.Append($" core pad {p + 1} has no cable;");
+                        foreach (var d in cable)
+                            if (core.SurfaceRadius(d) < above) { problems.Append($" core pad {p + 1}'s cable crosses lava;"); break; }
+                        // Clear of every other pad and every other cable.
+                        for (int q = 0; q < core.Pads.Length; q++)
+                        {
+                            if (q == p) continue;
+                            foreach (var d in cable)
+                                if (Vector3.Angle(d, core.Pads[q]) * Mathf.Deg2Rad * core.GroundRadius < 4f) { problems.Append($" core pad {p + 1}'s cable passes pad {q + 1};"); break; }
+                            foreach (var d in cable)
+                                foreach (var e2 in core.Cables[q])
+                                    if (Vector3.Angle(d, e2) * Mathf.Deg2Rad * core.GroundRadius < 0.8f) { problems.Append($" core cables {p + 1} and {q + 1} touch;"); goto nextPad; }
+                            nextPad:;
+                        }
+                        float end = Vector3.Angle(cable[cable.Count - 1], core.Cage) * Mathf.Deg2Rad * core.GroundRadius;
+                        if (Mathf.Abs(end - core.RingRadii[0]) > 0.8f) problems.Append($" core pad {p + 1}'s cable stops {end:F1} from the middle;");
+                    }
+                    foreach (var m in core.Mines)
+                    {
+                        lowest = Mathf.Min(lowest, core.SurfaceRadius(m));
+                        foreach (var pad in core.Pads)
+                            if (Vector3.Angle(m, pad) * Mathf.Deg2Rad * core.GroundRadius < core.PadRadius) problems.Append(" a core mine by a key pad;");
+                    }
+                    if (core.Mines.Count < core.Paths.Count * settings.coreMinesMin || core.Mines.Count > core.Paths.Count * settings.coreMinesMax)
+                        problems.Append($" {core.Mines.Count} core mines;");
+                    if (lowest < above) problems.Append(" a core pad, cube or mine over lava;");
+                    // Away from the plaza, no two paths come together.
+                    float pathGap = core.ClosestPaths();
+                    if (pathGap < settings.corePathWidth + 2f * CoreLayout.SideWidth + 1.5f) problems.Append($" core paths {pathGap:F1} apart;");
+                    float pathLength = 0f, shortest = float.MaxValue;
+                    for (int k = 0; k < core.Paths.Count; k++)
+                    {
+                        float len = 0f;
+                        for (int j = 1; j < core.Paths[k].Count; j++) len += Vector3.Angle(core.Paths[k][j - 1], core.Paths[k][j]) * Mathf.Deg2Rad * core.GroundRadius;
+                        pathLength += len;
+                        if (k > 0) shortest = Mathf.Min(shortest, len);
+                    }
+                    coreInfo = $"{core.Paths.Count} paths, {core.Mines.Count} mines ({pathLength:F0} units, pad branches {shortest:F0}+ long, {pathGap:F1}+ apart past the plaza), pads {padGap:F0}+ apart, lowest pickup {lowest - core.LavaRadius:F1} over the lava, " +
+                               $"cage {Vector3.Angle(core.Cage, core.Landing):F0} degrees round from the landing";
+                }
+
                 if (problems.Length > 0) failures++;
                 string msg = $"[Validate] World {world}: seed {layout.Seed}, attempts {layout.AttemptsUsed}, {layout.Sections.Count} sections, " +
                              $"{layout.Climbs} climbs, layout {genMs} ms. shell/dir/route/cells:{routes}" +
                              $" cubes per section (hidden):{cubeCounts};" +
                              $" major hazards (G gate, C cameras, A acid, M mortar; | = checkpoint){hazardPlan}; gates/cameras/acid/mortars {kindCounts[0]}/{kindCounts[1]}/{kindCounts[2]}/{kindCounts[3]} (spread {kindMax - kindMin}; {spurs} switches in side spurs);" +
                              $" mines per section:{mineCounts} ({wallMines} by walls; gap {minGap:F1}, other mines to wall {minWall:F1}, wall mines to wall max {maxWallMineGap:F2}, hole {minHole:F1})" +
+                             $"; core: {coreInfo}" +
                              (problems.Length > 0 ? " PROBLEMS:" + problems : "");
 
                 if (world <= 2)
@@ -560,7 +622,9 @@ namespace SphereDescent.EditorTools
             for (int i = 0; i < layout.Holes.Count; i++)
             {
                 var h = layout.Holes[i];
-                float above = settings.shellRadii[h.Shell], below = settings.SurfaceRadius(h.Shell + 1);
+                // Into the core, the ball lands on its landing plaza.
+                float above = settings.shellRadii[h.Shell],
+                    below = h.LandingCell < 0 ? layout.Core.GroundRadius : settings.SurfaceRadius(h.Shell + 1);
                 Report($"section {i + 1} drop (shell {h.Shell}{(h.LandingCell < 0 ? " into core" : "")})",
                     Simulate(level, h.Direction * (above + 3f), 4f, null), below + 0.5f);
                 // Rolling into the hole fast must still land right under it, not carry on over a wall.
@@ -843,8 +907,9 @@ namespace SphereDescent.EditorTools
                 else shotDrop = true;
             }
             Vector3 e = layout.Holes[layout.Holes.Count - 1].Direction;
-            Vector3 nearExit = (e + Tangent(e) * (5f / gm.settings.coreRadius)).normalized;
-            Shot("5_core_exit", nearExit * (gm.settings.coreRadius + 0.5f), nearExit * (gm.settings.coreRadius + 4f) + Tangent(e) * 7f);
+            float coreGround = layout.Core.GroundRadius;
+            Vector3 nearExit = (e + Tangent(e) * (3f / coreGround)).normalized;
+            Shot("5_core_exit", nearExit * (coreGround + 0.5f), nearExit * (coreGround + 4f) + Tangent(e) * 7f);
 
             Object.DestroyImmediate(ball);
             Object.DestroyImmediate(level.gameObject);
@@ -1000,12 +1065,20 @@ namespace SphereDescent.EditorTools
                 Render("horizon", sunBall, sunEye, Quaternion.LookRotation(look, start), 0);
             }
 
-            // Touching down on the core.
-            Vector3 coreDir = layout.Holes[layout.Holes.Count - 1].Direction;
-            Vector3 coreSide = Vector3.ProjectOnPlane(new Vector3(0.3f, 0.1f, 1f), coreDir).normalized;
-            Vector3 corePos = coreDir * (settings.coreRadius + 0.5f);
-            Vector3 coreEye = coreDir * (settings.coreRadius + 4f) - coreSide * 7f;
-            Render("core", corePos, coreEye, Quaternion.LookRotation(corePos + coreDir * 0.6f - coreEye, coreDir), layout.ShellCount);
+            // The core's boss battle: on the way into the plaza, looking at the walls around the energy ball.
+            {
+                var core = layout.Core;
+                float g = core.GroundRadius;
+                Vector3 toCage = core.Cage;
+                // On the path from the landing (the first), a few units out from the plaza's edge.
+                Vector3 coreDir = core.Paths[0][0];
+                foreach (var p in core.Paths[0])
+                    if (Vector3.Angle(p, toCage) * Mathf.Deg2Rad * g > core.CageRadius + 5f) { coreDir = p; break; }
+                Vector3 ahead = Vector3.ProjectOnPlane(toCage - coreDir, coreDir).normalized;
+                Vector3 corePos = coreDir * (core.SurfaceRadius(coreDir) + 0.5f);
+                Vector3 coreEye = corePos + coreDir * 4.5f - ahead * 7f;
+                Render("core", corePos, coreEye, Quaternion.LookRotation(toCage * (g + 2f) - coreEye, coreDir), layout.ShellCount);
+            }
 
             // Hazards. Mines: rolling up to the first group on the surface, with some of their lights lit.
             foreach (var m in level.GetComponentsInChildren<Mine>())

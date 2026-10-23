@@ -1,0 +1,109 @@
+using System.Collections;
+using System.Reflection;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+
+namespace SphereDescent
+{
+    public class PlayProbe : MonoBehaviour
+    {
+        public static bool Done;
+
+        void Start() => StartCoroutine(Run());
+
+        static T Get<T>(object o, string f) => (T)o.GetType().GetField(f, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(o);
+
+        IEnumerator Press()
+        {
+            InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+            InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            if (!Keyboard.current.enabled) InputSystem.EnableDevice(Keyboard.current);
+            InputSystem.QueueStateEvent(Keyboard.current, new KeyboardState(Key.Space));
+            Debug.Log($"[Probe] after manual update: {Keyboard.current.spaceKey.isPressed} enabled {Keyboard.current.enabled} mode {InputSystem.settings.updateMode}");
+            yield return null;
+            Debug.Log($"[Probe] space pressed {Keyboard.current.spaceKey.isPressed} any {GameInput.AnyPressed()}");
+            yield return null;
+            InputSystem.QueueStateEvent(Keyboard.current, new KeyboardState());
+            yield return null;
+        }
+
+        IEnumerator Run()
+        {
+            Application.runInBackground = true;
+            if (Keyboard.current == null) InputSystem.AddDevice<Keyboard>();
+            yield return new WaitForSeconds(1f);
+            var gm = GameManager.Instance;
+            var ball = FindFirstObjectByType<BallController>();
+            var rb = ball.GetComponent<Rigidbody>();
+            var level = FindFirstObjectByType<LevelInstance>();
+            var core = level.Layout.Core;
+            float G = core.GroundRadius;
+            ball.Teleport(level.Layout.Holes[level.Layout.Sections.Count - 1].Direction * 36f);
+            yield return new WaitForSeconds(2.5f);
+            var w = gm.Scores.Current;
+            Debug.Log($"[Probe] landed: layer {ball.CurrentLayer} grounded {ball.IsGrounded} r {ball.transform.position.magnitude:F2} G {G:F2} section {Get<int>(gm, "section")} coreIndex {w.CoreIndex} possible {w.Possible[w.CoreIndex]}");
+            Vector3 landedAt = ball.transform.position;
+
+            // Find lava near the landing and drop in.
+            Vector3 lava = Vector3.zero;
+            for (float d = 6f; d < 40f && lava == Vector3.zero; d += 0.5f)
+                for (int a = 0; a < 36; a++)
+                {
+                    Vector3 side = Quaternion.AngleAxis(a * 10f, core.Landing) * Vector3.ProjectOnPlane(Vector3.up, core.Landing).normalized;
+                    Vector3 dir = (core.Landing + side * d / G).normalized;
+                    if (core.SurfaceRadius(dir) < core.LavaRadius - 1f) { lava = dir; break; }
+                }
+            rb.position = lava * (core.LavaRadius + 2f); rb.linearVelocity = Vector3.zero;
+            float t0 = Time.time;
+            while (!ball.IsDestroyed && Time.time - t0 < 3f) yield return null;
+            Debug.Log($"[Probe] lava: destroyed {ball.IsDestroyed} after {Time.time - t0:F2}s");
+            yield return new WaitForSeconds(1.6f);
+            Debug.Log($"[Probe] respawned {Vector3.Distance(ball.transform.position, landedAt):F2} from landing, layer {ball.CurrentLayer}");
+
+            var arena = FindFirstObjectByType<CoreArena>();
+            var order = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < arena.barriers.Length; i++) { int k = i; arena.barriers[i].Broke += b => order.Add(k); }
+            foreach (var p in core.Pads)
+            {
+                rb.position = p * (core.SurfaceRadius(p) + 0.6f); rb.linearVelocity = Vector3.zero;
+                yield return new WaitForSeconds(0.4f);
+            }
+            Debug.Log($"[Probe] pads pressed, core earned {w.Earned[w.CoreIndex]}, walls left {arena.Remaining}");
+            rb.position = core.Cage * (G + 0.6f) + Vector3.Cross(core.Cage, Vector3.up).normalized * 9.5f;
+            t0 = Time.time;
+            while (arena.Remaining > 0 && Time.time - t0 < 30f) yield return null;
+            Debug.Log($"[Probe] break order (0 = innermost): {string.Join(",", order)}"); Debug.Log($"[Probe] walls all down after {Time.time - t0:F1}s: {arena.Remaining} left");
+            foreach (var c in core.Cubes)
+            {
+                rb.position = c * (core.SurfaceRadius(c) + 0.9f); rb.linearVelocity = Vector3.zero;
+                yield return new WaitForSeconds(0.25f);
+            }
+            Debug.Log($"[Probe] cubes, core earned {w.Earned[w.CoreIndex]}");
+            float fps0 = Time.frameCount; float ft = Time.realtimeSinceStartup;
+            yield return new WaitForSeconds(2f);
+            Debug.Log($"[Probe] fps on core ~{(Time.frameCount - fps0) / (Time.realtimeSinceStartup - ft):F0}");
+
+            while (ball.IsDestroyed) yield return null;
+            yield return new WaitForSeconds(0.3f);
+            rb.position = core.Cage * (G + 0.6f); rb.linearVelocity = Vector3.zero;
+            yield return new WaitForSeconds(0.5f);
+            Debug.Log($"[Probe] at orb: destroyed {ball.IsDestroyed} dist {Vector3.Distance(ball.transform.position, arena.orb.body.position):F2} allBroken {arena.AllBroken} r {ball.transform.position.magnitude:F2} broken {string.Join(",", System.Array.ConvertAll(arena.barriers, b => b.Broken))} walls active {string.Join(",", System.Array.ConvertAll(arena.barriers, b => b.wall.activeSelf))}");
+            Debug.Log($"[Probe] orb freed {arena.orb.Freed}, thanks {Get<float>(gm, "thanksShownAt"):F1}, core earned {w.Earned[w.CoreIndex]}");
+            yield return Press();
+            yield return new WaitForSeconds(0.5f);
+            Debug.Log($"[Probe] early press ignored: thanks still {Get<float>(gm, "thanksShownAt") >= 0f}");
+            yield return new WaitForSeconds(3f);
+            yield return Press();
+            yield return new WaitForSeconds(0.5f);
+            Debug.Log($"[Probe] thanks gone {Get<float>(gm, "thanksShownAt") < 0f}; orbit enabled {Camera.main.GetComponent<OrbitCamera>().enabled}");
+            yield return new WaitForSeconds(4.5f);
+            Debug.Log($"[Probe] summary page {Get<int>(gm, "summaryPage")}, core finished {w.Finished[w.CoreIndex]}, world banked {w.Banked}/{w.PossibleSoFar}, label {w.Label(w.CoreIndex)}");
+            yield return new WaitForSeconds(3.2f);
+            yield return Press();
+            yield return new WaitForSeconds(2f);
+            Debug.Log($"[Probe] now world {gm.World}, worlds scored {gm.Scores.Worlds.Count}, ball layer {ball.CurrentLayer}");
+            Done = true;
+        }
+    }
+}
