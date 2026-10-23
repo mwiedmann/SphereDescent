@@ -332,6 +332,14 @@ namespace SphereDescent.EditorTools
                     foreach (var cp in layout.Checkpoints)
                         if (cp.Shell == m.Shell && Vector3.Angle(m.Mount, cp.Direction) * Mathf.Deg2Rad * r < reach)
                             problems.Append($" a mortar in section {m.Section + 1} reaches a checkpoint in section {cp.Section + 1};");
+                    for (int i = 0; i < layout.Sections.Count; i++)
+                    {
+                        var sec = layout.Sections[i];
+                        if (sec.Shell != m.Shell) continue;
+                        foreach (int end in new[] { sec.EntryCell, sec.ExitCell })
+                            if (Vector3.Angle(m.Mount, layout.Grids[m.Shell].CellCenters[end]) * Mathf.Deg2Rad * r < reach)
+                                problems.Append($" a mortar in section {m.Section + 1} reaches where section {i + 1} starts or ends;");
+                    }
                 }
                 // Major hazards: the right number in each half section (shortfalls are counted, not failures),
                 // never the same kind twice in a half, apart from each other and the checkpoint, and each kind used

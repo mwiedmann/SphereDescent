@@ -328,7 +328,8 @@ namespace SphereDescent
 
         /// <summary>
         /// Whether a mortar at <paramref name="mount"/> would reach none of the major hazards already on its
-        /// sphere, nor the middle of any section there (where the checkpoint goes).
+        /// sphere, nor the middle of any section there (where the checkpoint goes), nor where any section there
+        /// starts or ends (landing spots, holes and pads: you'd arrive, leave or respawn under fire).
         /// </summary>
         bool MortarClear(LevelSettings s, Vector3 mount, int shell)
         {
@@ -344,6 +345,7 @@ namespace SphereDescent
                 if (Sections[i].Shell != shell) continue;
                 var route = Route(i);
                 if (MortarReaches(s, mount, shell, route[route.Count / 2])) return false;
+                if (MortarReaches(s, mount, shell, Sections[i].EntryCell) || MortarReaches(s, mount, shell, Sections[i].ExitCell)) return false;
             }
             return true;
         }
