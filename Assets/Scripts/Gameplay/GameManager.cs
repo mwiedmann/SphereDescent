@@ -115,6 +115,20 @@ namespace SphereDescent
             if (sun == null) sun = RenderSettings.sun;
             // Styles recolor the sky, so work on a copy rather than the material asset.
             if (RenderSettings.skybox != null) RenderSettings.skybox = skyMaterial = new Material(RenderSettings.skybox);
+            postProcessing = FindAnyObjectByType<UnityEngine.Rendering.Volume>();
+            GraphicsQuality.Apply(GraphicsQuality.Saved, sun, postProcessing);
+        }
+
+        void OnDestroy() => GraphicsQuality.Restore();
+
+        UnityEngine.Rendering.Volume postProcessing;
+
+        /// <summary>Switches graphics quality now (from the menu), keeping it for next time.</summary>
+        void SetGraphics(GraphicsLevel level)
+        {
+            if (level == GraphicsQuality.Level) return;
+            GraphicsQuality.Apply(level, sun, postProcessing);
+            if (style != null) SetSpecks(style.floatingSpecks, style.speckColor, style.speckSize, style.speckTwinkle);
         }
 
         /// <summary>
@@ -234,16 +248,9 @@ namespace SphereDescent
                 noise.strength = 0.25f;
                 noise.frequency = 0.3f;
                 var r = go.GetComponent<ParticleSystemRenderer>();
-                var mat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
                 // Additive, so specks glow softly and never darken what's behind them.
-                mat.SetFloat("_Surface", 1f);
-                mat.SetFloat("_Blend", 2f);
-                mat.SetOverrideTag("RenderType", "Transparent");
-                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.One);
-                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);
-                mat.SetInt("_ZWrite", 0);
-                mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                var mat = materials.NewSpark();
+                mat.SetColor("_BaseColor", Color.white);
                 r.sharedMaterial = mat;
                 r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
@@ -251,6 +258,8 @@ namespace SphereDescent
             var main = specks.main;
             main.loop = true;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
+            // Fewer on low graphics quality.
+            if (GraphicsQuality.Level == GraphicsLevel.Low) count = Mathf.Max(1, count / 2);
             main.maxParticles = count;
             main.startLifetime = new ParticleSystem.MinMaxCurve(6f, 10f);
             main.startSpeed = new ParticleSystem.MinMaxCurve(0.05f, 0.3f);
@@ -448,7 +457,7 @@ namespace SphereDescent
                 meteorGlow.SetColor("_Color", new Color(1f, 0.55f, 0.15f));
                 meteorGlow.SetFloat("_FadeStart", 1f);
                 meteorGlow.SetFloat("_Intensity", meteorGlow.GetFloat("_Intensity") * 2.5f);
-                meteorTrail = LevelMaterials.MakeSpark();
+                meteorTrail = materials.NewSpark();
                 meteorTrail.SetColor("_BaseColor", new Color(1.6f, 1.6f, 1.6f, 1f));
             }
             var glow = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -755,6 +764,7 @@ namespace SphereDescent
                 int n = GameInput.NumberPressed();
                 if (n >= 1 && n <= styles.Length) menuStyle = n - 1;
                 menuWorld = Mathf.Clamp(menuWorld + GameInput.MenuStep(), 1, Mathf.Max(1, maxMenuWorld));
+                if (GameInput.GraphicsPressed()) SetGraphics((GraphicsLevel)(((int)GraphicsQuality.Level + 1) % 3));
                 if (GameInput.ConfirmPressed()) StartWorld(menuStyle, menuWorld);
                 else if (GameInput.MenuPressed() || GameInput.UnlockCursorPressed()) CloseMenu();
             }
@@ -883,7 +893,7 @@ namespace SphereDescent
             Shadowed(new Rect(16, Screen.height - 36, 1000, 30), help, hudStyle);
 
             // Frame time and style, top right.
-            string perf = $"{frameMs:F1} ms ({(frameMs > 0f ? 1000f / frameMs : 0f):F0} fps)   ·   {(style != null ? style.name : "")}";
+            string perf = $"{frameMs:F1} ms ({(frameMs > 0f ? 1000f / frameMs : 0f):F0} fps)   ·   {GraphicsQuality.Name(GraphicsQuality.Level)}   ·   {(style != null ? style.name : "")}";
             Shadowed(new Rect(Screen.width - 416, 12, 400, 30), perf, rightStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.UpperRight });
 
             if (menuOpen)
@@ -1144,7 +1154,7 @@ namespace SphereDescent
         {
             const float w = 440f, row = 46f;
             int options = styles.Length;
-            float h = 64f + options * row + 40f + row + 16f + row + 16f;
+            float h = 64f + options * row + 40f + row + 16f + 34f + row + 16f + row + 16f;
             var box = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
             // Drawn twice for a darker panel behind the buttons.
             GUI.Box(box, "");
@@ -1176,12 +1186,25 @@ namespace SphereDescent
                 new GUIStyle(menuTitleStyle) { fontSize = 24 });
             if (GUI.Button(new Rect(box.xMax - 30 - bw, y, bw, row - 8), "+", menuButtonStyle))
                 menuWorld = Mathf.Min(Mathf.Max(1, maxMenuWorld), menuWorld + 1);
+            y += row + 8;
+
+            // Graphics quality: applies straight away, and is kept for next time.
+            Shadowed(new Rect(box.x, y, w, 32), "Graphics", new GUIStyle(menuTitleStyle) { fontSize = 22 });
+            y += 34;
+            float third = (w - 60f - 16f) / 3f;
+            for (int q = 0; q < 3; q++)
+            {
+                var level = (GraphicsLevel)q;
+                bool on = GUI.Toggle(new Rect(box.x + 30 + q * (third + 8f), y, third, row - 8), GraphicsQuality.Level == level,
+                    GraphicsQuality.Name(level), menuButtonStyle);
+                if (on) SetGraphics(level);
+            }
             y += row + 16;
 
             if (GUI.Button(new Rect(box.x + 30, y, w - 60, row - 4), "Start", menuButtonStyle)) StartWorld(menuStyle, menuWorld);
 
             Shadowed(new Rect(box.x - 60, box.yMax + 6, w + 120, 30),
-                $"1-{options} style   ·   ← → world   ·   Enter start   ·   Esc / M close", sectionStyle);
+                $"1-{options} style   ·   ← → world   ·   G graphics   ·   Enter start   ·   Esc / M close", sectionStyle);
         }
 
         /// <summary>A plain dark (or <paramref name="tint"/>) panel, see-through by <paramref name="alpha"/>.</summary>

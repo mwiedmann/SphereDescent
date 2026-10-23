@@ -33,6 +33,11 @@ namespace SphereDescent.EditorTools
                 beam = SaveMaterial("LightBeam", LevelMaterials.MakeBeam()),
                 spot = SaveMaterial("Spotlight", new Material(Shader.Find(LevelMaterials.SpotShaderName))),
                 acid = SaveMaterial("Acid", new Material(Shader.Find(LevelMaterials.AcidShaderName))),
+                softPuff = SaveMaterial("SoftPuff", LevelMaterials.MakeSoftPuff()),
+                spark = SaveMaterial("Spark", LevelMaterials.MakeSpark()),
+                glass = SaveMaterial("Glass", LevelMaterials.NewGlass()),
+                metal = SaveMaterial("Metal", LevelMaterials.NewMetal()),
+                black = SaveMaterial("Black", LevelMaterials.NewBlack()),
             };
 
             var sky = SaveMaterial("Sky", new Material(Shader.Find("SphereDescent/SynthwaveSky")));

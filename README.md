@@ -86,6 +86,8 @@ Cosmic Nebula: deep space. Glassy obsidian surfaces are etched with constellatio
 
 ![The same corridor in the Cosmic Nebula style, under swirling gas clouds](Docs/screenshots/nebula.png)
 
+**Graphics quality.** The menu has Low, Medium and High (the default), applied straight away and remembered between launches. Medium draws at 67% resolution and upscales it (AMD FSR), with no anti-aliasing and fewer shadow cascades; Low draws at 50% with no anti-aliasing, simpler shadows and bloom, fewer drifting specks, and lighter acid, lava and nebula effects. On a 2019 MacBook Pro (Radeon Pro 555X) full screen at 3360x2100, that's about 23, 39 and 60 fps for High, Medium and Low. The frame rate and level show in the top right.
+
 ## Controls
 
 | Action | Keyboard / mouse | Gamepad |
@@ -95,7 +97,8 @@ Cosmic Nebula: deep space. Glassy obsidian surfaces are etched with constellatio
 | Turn the camera | Mouse (click to capture), or Q / E | Right stick |
 | Respawn on the current layer | R | Select / View |
 | Release the mouse | Esc | |
-| Menu: style and world | M | Start |
+| Menu: style, world and graphics quality | M | Start |
+| Next graphics quality (in the menu) | G | |
 | Skip to the next world (testing) | N | |
 
 ## Running it

@@ -37,6 +37,8 @@ Shader "SphereDescent/Acid"
                 float _BubbleAmount;
             CBUFFER_END
 
+            float _GraphicsQuality; // 0 = low, 1 = medium, 2 = high (global, set by GraphicsQuality)
+
             struct Attributes { float4 positionOS : POSITION; };
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; float fogFactor : TEXCOORD1; };
 
@@ -118,9 +120,11 @@ Shader "SphereDescent/Acid"
                         + sin(p.y * 1.9 + sin(p.x * 1.2 + t * 0.95) * 1.8 + t * 0.7);
                 float churn = smoothstep(0.4, 2.6, w);
 
-                float popsBig, popsSmall;
+                float popsBig, popsSmall = 0.0, small = 0.0;
                 float big = Bubbles(i.positionWS, 1.2 * _BubbleSize, 0.18, 0.5 * _BubbleAmount, popsBig);
-                float small = Bubbles(i.positionWS + 17.3, 0.5 * _BubbleSize, 0.25, 0.3 * _BubbleAmount, popsSmall);
+                // The small bubbles are left out on low graphics quality: they cost as much as the big ones.
+                if (_GraphicsQuality > 0.5)
+                    small = Bubbles(i.positionWS + 17.3, 0.5 * _BubbleSize, 0.25, 0.3 * _BubbleAmount, popsSmall);
                 float bubbles = max(big, small * 0.8);
                 float pops = max(popsBig, popsSmall * 0.8);
 

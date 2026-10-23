@@ -53,6 +53,9 @@ namespace SphereDescent
         public static bool UnlockCursorPressed() => Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
         public static bool LockCursorPressed() => Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
 
+        /// <summary>G, in the menu: the next graphics quality level.</summary>
+        public static bool GraphicsPressed() => Keyboard.current != null && Keyboard.current.gKey.wasPressedThisFrame;
+
         public static bool MenuPressed() =>
             (Keyboard.current != null && Keyboard.current.mKey.wasPressedThisFrame) ||
             (Gamepad.current != null && Gamepad.current.startButton.wasPressedThisFrame);
@@ -125,6 +128,7 @@ namespace SphereDescent
         public static bool UnlockCursorPressed() => Input.GetKeyDown(KeyCode.Escape);
         public static bool LockCursorPressed() => Input.GetMouseButtonDown(0);
         public static bool MenuPressed() => Input.GetKeyDown(KeyCode.M);
+        public static bool GraphicsPressed() => Input.GetKeyDown(KeyCode.G);
 
         /// <summary>-1 / +1 when left / right was pressed this frame, else 0.</summary>
         public static int MenuStep() =>

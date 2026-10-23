@@ -49,6 +49,16 @@ swiftc -O sheet.swift -o sheet
 - `encode <frames dir> <out.mp4> [fps]` turns PNG or JPEG frames into an H.264 MP4.
 - `sheet <frames dir> <out.png> <every> <columns> [tile width]` makes a contact sheet.
 
+## Test builds
+
+`Editor/BuildProbe.cs` makes a macOS player build of `Main.unity` (for Intel, which this Mac is) at `BUILD_OUT`:
+
+```
+BUILD_OUT=<dir>/SphereDescent.app Unity -batchmode -quit -projectPath <copy> -executeMethod SphereDescent.EditorTools.BuildProbe.Build -logFile build.log
+```
+
+With `Runtime/BuildPerf.cs`, `Runtime/BuildSteam.cs` and `Runtime/BuildAudit.cs` in the copy, the build can test itself (with `-auditshots` and `AUDIT_DIR=<dir>` it saves pictures of an energy cube's glass faces, a security camera's metal, the core's see-through walls and a foggy Deep Sea corridor, the things that only go wrong in builds): launched with `-perfprobe` it measures the frame rate at each graphics level and quits; with `-steamshot` (and `STEAM_SHOT=<png>` in its environment) it saves a picture of an acid pool's steam and quits. Its log goes to `-logFile`, or `~/Library/Logs/DefaultCompany/SphereDescent/Player.log`.
+
 ## Others
 
 - `Editor/CoreShot.cs`: renders a world's core (`WORLD=n PREVIEW_DIR=<dir>`) from above, from the landing, at the walls and at two key pads, with every cable lit.

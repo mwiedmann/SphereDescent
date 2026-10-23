@@ -17,6 +17,19 @@ namespace SphereDescent
         public Material beam;
         public Material spot;
         public Material acid;
+        [Tooltip("Templates for particles: soft see-through puffs (steam) and glowing additive sparks (sparks, trails, " +
+                 "drifting specks). Saved as assets so builds keep these versions of the particle shader; the game " +
+                 "uses copies of them.")]
+        public Material softPuff;
+        public Material spark;
+        [Tooltip("Templates for the lit materials made in code: see-through glass, plain metal and matte black. Saved " +
+                 "as assets for the same reason; MakeGlass, MakeMetal and MakeBlack copy them.")]
+        public Material glass;
+        public Material metal;
+        public Material black;
+
+        // The templates in use (set from these slots), for the static makers.
+        static Material glassTemplate, metalTemplate, blackTemplate;
 
         public const string GridShaderName = "SphereDescent/TriplanarGrid";
         public const string LitShaderName = "Universal Render Pipeline/Lit";
@@ -37,6 +50,30 @@ namespace SphereDescent
             if (beam == null) beam = MakeBeam();
             if (spot == null) spot = new Material(Shader.Find(SpotShaderName));
             if (acid == null) acid = new Material(Shader.Find(AcidShaderName));
+            if (softPuff == null) softPuff = MakeSoftPuff();
+            if (spark == null) spark = MakeSpark();
+            if (glass == null) glass = NewGlass();
+            if (metal == null) metal = NewMetal();
+            if (black == null) black = NewBlack();
+            glassTemplate = glass;
+            metalTemplate = metal;
+            blackTemplate = black;
+        }
+
+        /// <summary>A new soft puff material (a copy of the template, with its round, fading blob).</summary>
+        public Material NewSoftPuff()
+        {
+            var m = new Material(softPuff);
+            m.SetTexture("_BaseMap", SoftDot);
+            return m;
+        }
+
+        /// <summary>A new glowing spark material (a copy of the template, with its round, fading blob).</summary>
+        public Material NewSpark()
+        {
+            var m = new Material(spark);
+            m.SetTexture("_BaseMap", SoftDot);
+            return m;
         }
 
         /// <summary>Light beam rising from holes and boost pads; LevelBuilder tints copies to match the rings.</summary>
@@ -70,7 +107,17 @@ namespace SphereDescent
         /// <summary>See-through and faintly glowing: a soft halo around something bright.</summary>
         public static Material MakeGlass(Color color, float alpha, float glow)
         {
-            var m = new Material(Shader.Find(LitShaderName)) { color = new Color(color.r, color.g, color.b, alpha) };
+            var m = glassTemplate != null ? new Material(glassTemplate) : NewGlass();
+            m.EnableKeyword("_EMISSION");
+            m.color = new Color(color.r, color.g, color.b, alpha);
+            m.SetColor("_EmissionColor", color * glow);
+            return m;
+        }
+
+        /// <summary>The glass template itself: transparent, alpha-blended, glowing.</summary>
+        public static Material NewGlass()
+        {
+            var m = new Material(Shader.Find(LitShaderName)) { color = new Color(1f, 1f, 1f, 0.1f) };
             m.SetFloat("_Surface", 1f); // transparent
             m.SetFloat("_Blend", 0f);   // alpha
             m.SetOverrideTag("RenderType", "Transparent");
@@ -80,20 +127,29 @@ namespace SphereDescent
             m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
             m.EnableKeyword("_EMISSION");
-            m.SetColor("_EmissionColor", color * glow);
+            m.SetColor("_EmissionColor", Color.white * 0.2f);
+            // Marks the glow as real, so saving the template keeps it (and builds keep the glowing version).
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
             return m;
         }
 
         public static Material MakeMetal(Color color, float metallic, float smoothness)
         {
-            var m = new Material(Shader.Find(LitShaderName)) { color = color };
+            var m = metalTemplate != null ? new Material(metalTemplate) : NewMetal();
+            m.color = color;
             m.SetFloat("_Metallic", metallic);
             m.SetFloat("_Smoothness", smoothness);
             return m;
         }
 
+        /// <summary>The metal template itself: plain opaque lit, no glow.</summary>
+        public static Material NewMetal() => new Material(Shader.Find(LitShaderName)) { color = Color.grey };
+
         /// <summary>Plain black with no shine, for the darkness at the bottom of holes.</summary>
-        public static Material MakeBlack()
+        public static Material MakeBlack() => blackTemplate != null ? new Material(blackTemplate) : NewBlack();
+
+        /// <summary>The matte black template itself.</summary>
+        public static Material NewBlack()
         {
             var m = new Material(Shader.Find(LitShaderName)) { color = Color.black };
             m.SetFloat("_Smoothness", 0f);
@@ -110,7 +166,7 @@ namespace SphereDescent
         /// </summary>
         public static Material MakeSoftPuff()
         {
-            var m = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
+            var m = new Material(ParticleShader);
             m.SetFloat("_Surface", 1f);
             m.SetFloat("_Blend", 0f);
             m.SetOverrideTag("RenderType", "Transparent");
@@ -134,6 +190,13 @@ namespace SphereDescent
             m.SetColor("_BaseColor", new Color(3f, 3f, 3f, 1f));
             return m;
         }
+
+        /// <summary>
+        /// URP's unlit particle shader (BuildShaders makes sure builds carry it), or the lit shader should it ever
+        /// be missing, so a missing shader dims an effect rather than stopping the world being built.
+        /// </summary>
+        public static Shader ParticleShader =>
+            Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find(LitShaderName);
 
         static Texture2D softDot;
 

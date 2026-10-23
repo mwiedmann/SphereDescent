@@ -1071,7 +1071,7 @@ namespace SphereDescent
             var metal = level.Own(LevelMaterials.MakeMetal(new Color(0.09f, 0.09f, 0.1f), 0.85f, 0.5f));
             var edgeMat = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.85f, 0.2f), 1.6f));
             var pitMat = level.Own(LevelMaterials.MakeBlack());
-            var steamMat = level.Own(LevelMaterials.MakeSoftPuff());
+            var steamMat = level.Own(mats.NewSoftPuff());
             float w = s.acidBridgeWidth;
             const float depth = 1.05f;
             foreach (var p in layout.AcidPools)
