@@ -61,6 +61,7 @@ Shader "SphereDescent/SynthwaveSky"
                 float4 _AuroraHigh;
             CBUFFER_END
 
+            float _GraphicsQuality; // 0 = low, 1 = medium, 2 = high (global, set by GraphicsQuality)
             float3 _PlayerUp;
             float3 _SkySunDir;
 
@@ -93,9 +94,16 @@ Shader "SphereDescent/SynthwaveSky"
 
             float Fbm (float3 p)
             {
-                float v = 0.0, a = 0.5;
-                for (int o = 0; o < 5; o++) { v += a * Noise(p); p = p * 2.03 + 17.1; a *= 0.5; }
-                return v;
+                // Fewer octaves on low graphics quality: the finest detail barely shows, and the nebula samples a lot.
+                // Scaled so the clouds come out about as dense either way.
+                float v = 0.0, a = 0.5, total = 0.0;
+                int octaves = _GraphicsQuality > 0.5 ? 5 : 3;
+                for (int o = 0; o < 5; o++)
+                {
+                    if (o >= octaves) break;
+                    v += a * Noise(p); total += a; p = p * 2.03 + 17.1; a *= 0.5;
+                }
+                return v / total * 0.96875;
             }
 
             half4 frag (Varyings i) : SV_Target
