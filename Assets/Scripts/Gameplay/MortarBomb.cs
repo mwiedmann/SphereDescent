@@ -37,7 +37,7 @@ namespace SphereDescent
             // The marker lies on the ground, as wide as the blast.
             bomb.markerMat = new Material(mortar.markerMaterial);
             bomb.markerIntensity = bomb.markerMat.GetFloat("_Intensity");
-            bomb.markerMesh = DrapedDisc(mortar, to, ground, mortar.blastRadius);
+            bomb.markerMesh = DrapedDisc(mortar.GroundHit, to, ground, mortar.blastRadius);
             bomb.marker = Piece(mortar.bombParent, "Bomb Marker", bomb.markerMesh, bomb.markerMat);
             bomb.marker.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             bomb.Tick(0f);
@@ -47,13 +47,16 @@ namespace SphereDescent
         /// <summary>Moves the bomb on by <paramref name="seconds"/> of its flight, for still renders.</summary>
         public void Advance(float seconds) => Tick(seconds);
 
+        /// <summary>Finds the solid ground straight down from a point, within a distance.</summary>
+        public delegate bool GroundProbe(Vector3 from, float length, out Vector3 point, out Vector3 normal);
+
         /// <summary>
         /// A disc of <paramref name="radius"/> around <paramref name="center"/>, each of its points dropped onto
-        /// the ground below and lifted just off it, in world space. Rays start a little above the landing spot,
+        /// the ground below (found by <paramref name="ground"/>) and lifted just off it, in world space. Rays start a little above the landing spot,
         /// below the wall tops, so where the disc runs into a wall it tucks under it (out of sight) rather than
         /// climbing it. UVs match a flat disc's, so the marker glows the same.
         /// </summary>
-        static Mesh DrapedDisc(Mortar mortar, Vector3 center, Vector3 normal, float radius)
+        public static Mesh DrapedDisc(GroundProbe ground, Vector3 center, Vector3 normal, float radius)
         {
             const int rings = 8, segments = 36;
             const float lift = 0.06f;
@@ -68,7 +71,7 @@ namespace SphereDescent
                     float a = j / (float)segments * Mathf.PI * 2f, f = i / (float)rings;
                     Vector3 flat = center + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * (radius * f);
                     Vector3 p = flat + normal * lift;
-                    if (mortar.GroundHit(flat + up * 2.2f, 5f, out Vector3 hit, out Vector3 hitNormal)) p = hit + hitNormal * lift;
+                    if (ground(flat + up * 2.2f, 5f, out Vector3 hit, out Vector3 hitNormal)) p = hit + hitNormal * lift;
                     verts.Add(p);
                     uvs.Add(new Vector2(0.5f + 0.5f * f * Mathf.Cos(a), 0.5f + 0.5f * f * Mathf.Sin(a)));
                 }

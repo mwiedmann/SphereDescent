@@ -11,6 +11,7 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | **Core** | The ball of lava at the center, with hilly wall-less paths over it: the boss battle that ends each world. | *core*, the last layer; `CoreLayout` |
 | **Energy ball** | The pulsing ball trapped in the middle of the core's walls. Rolling into it once the walls are down frees it and ends the world. | `EnergyOrb` |
 | **Core walls** | The six concentric glowing walls around the energy ball. Each key pad's cable breaks the outermost one still standing. | `CoreBarrier` |
+| **Lava rain** | Blobs of lava that drop onto the core every few seconds, aimed ahead of the ball, each with a dark shadow ringed in red where it will land. Stops once the energy ball is freed. | `LavaRain`, `LavaBlob` |
 | **Lava** | Everything on the core off the paths. Rolling into it blows the ball up, and it comes back where it landed. | `CoreArena` |
 | **Section** | The stretch of maze from where you arrive on a sphere (through a hole or off a pad) to the hole or pad that takes you to the next one. A world is a chain of them. | `MazeLayout.Section` |
 | **First half / second half** | The part of a section before or after its main (halfway) checkpoint. Cubes and major hazards are placed per half. | `cubesPerHalfSection`, `majorHazardsPerHalf` |
