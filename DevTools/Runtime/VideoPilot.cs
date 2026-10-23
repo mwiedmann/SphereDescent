@@ -80,6 +80,8 @@ namespace SphereDescent
         {
             yield return null;
             yield return null;
+            // Let the world's opening meteor arrival play out (it's in the video too).
+            while (GameManager.Instance != null && GameManager.Instance.Arriving) yield return null;
             level = FindAnyObjectByType<LevelInstance>();
             layout = level.Layout;
             s = level.Settings;

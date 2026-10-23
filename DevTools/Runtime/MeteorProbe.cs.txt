@@ -1,0 +1,46 @@
+using System.Collections;
+using System.IO;
+using UnityEngine;
+
+namespace SphereDescent
+{
+    public class PlayProbe : MonoBehaviour
+    {
+        public static bool Done;
+
+        void Start() => StartCoroutine(Run());
+
+        IEnumerator Run()
+        {
+            Application.runInBackground = true;
+            string dir = "/private/tmp/claude-501/-Users-markwiedmann-projects-unity-SphereDescent/5f53222f-5d81-448c-bc49-d11688c3665b/scratchpad/meteor";
+            Directory.CreateDirectory(dir);
+            var gm = GameManager.Instance;
+            var ball = FindAnyObjectByType<BallController>();
+            float t0 = Time.time;
+            int shot = 0;
+            float[] at = { 0.2f, 1.2f, 2.2f, 2.8f, 3.05f, 3.4f, 3.9f };
+            bool wasArriving = gm.Arriving;
+            while (gm.Arriving && Time.time - t0 < 10f)
+            {
+                if (shot < at.Length && Time.time - t0 >= at[shot])
+                {
+                    var cam = Camera.main;
+                    var rt = new RenderTexture(960, 540, 24);
+                    cam.targetTexture = rt; cam.Render();
+                    RenderTexture.active = rt;
+                    var tex = new Texture2D(960, 540, TextureFormat.RGB24, false);
+                    tex.ReadPixels(new Rect(0, 0, 960, 540), 0, 0); tex.Apply();
+                    File.WriteAllBytes(Path.Combine(dir, $"m{shot}_{at[shot]:F1}.png"), tex.EncodeToPNG());
+                    cam.targetTexture = null; RenderTexture.active = null;
+                    shot++;
+                }
+                yield return null;
+            }
+            float took = Time.time - t0;
+            yield return new WaitForSeconds(0.5f);
+            Debug.Log($"[Probe] arriving at start {wasArriving}, took {took:F2}s, ball {Vector3.Distance(ball.transform.position, FindAnyObjectByType<LevelInstance>().SpawnPosition):F2} from spawn, visible {ball.GetComponent<Renderer>().enabled}, orbit {Camera.main.GetComponent<OrbitCamera>().enabled}, meteors left {GameObject.Find("Meteor") != null}");
+            Done = true;
+        }
+    }
+}
