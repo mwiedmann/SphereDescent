@@ -3,10 +3,13 @@ using UnityEngine;
 
 namespace SphereDescent
 {
+    /// <summary>The four floor patterns a style's zones take turns through.</summary>
+    public enum PatternSet { Geometric, Organic }
+
     /// <summary>
     /// The look of a world: zone colors, how surfaces glow, the sky, the light and the air. Worlds take turns
-    /// through the GameManager's list of styles. Gameplay colors (hole rings, pads, beams, hazards, the gold
-    /// core) are the same in every style, so they always mean the same thing.
+    /// through the GameManager's list of styles. Gameplay colors (hole rings, pads, beams, hazards, the core's
+    /// lava) are the same in every style, so they always mean the same thing.
     /// </summary>
     [Serializable]
     public class VisualStyle
@@ -32,6 +35,9 @@ namespace SphereDescent
         public float glowIntensity = 1.8f;
         [Tooltip("Brightness of the per-zone line patterns (grid, diagonal, stripes, dots).")]
         [Range(0f, 1f)] public float patternStrength = 1f;
+        [Tooltip("Which four floor patterns the zones take turns through: the geometric set (square grid, diagonal " +
+                 "grid, stripes, dots) or the organic one (coral cells, sand ripples, polyp clusters, kelp veins).")]
+        public PatternSet patternSet = PatternSet.Geometric;
         [Tooltip("Shimmering caustic light rippling over the floors and walls, as under water. 0 = none.")]
         [Range(0f, 2f)] public float caustics = 0f;
         [Tooltip("Size of the caustic ripples in world units.")]
@@ -114,6 +120,7 @@ namespace SphereDescent
             wallZoneMix = 0.5f,
             glowIntensity = 1.3f,
             patternStrength = 0.35f,
+            patternSet = PatternSet.Organic,
             caustics = 1f,
             causticScale = 7f,
             skyTop = new Color(0.05f, 0.30f, 0.40f),

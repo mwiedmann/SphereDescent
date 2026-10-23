@@ -1486,6 +1486,7 @@ namespace SphereDescent
             if (m.HasProperty("_DarkColor")) m.SetColor("_DarkColor", style.darkColor);
             if (m.HasProperty("_GlowIntensity")) m.SetFloat("_GlowIntensity", style.glowIntensity);
             if (m.HasProperty("_PatternStrength")) m.SetFloat("_PatternStrength", style.patternStrength);
+            if (m.HasProperty("_PatternSet")) m.SetFloat("_PatternSet", (float)style.patternSet);
             if (m.HasProperty("_Caustics")) m.SetFloat("_Caustics", style.caustics);
             if (m.HasProperty("_CausticScale")) m.SetFloat("_CausticScale", style.causticScale);
             return m;
