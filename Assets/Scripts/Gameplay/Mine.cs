@@ -5,7 +5,7 @@ namespace SphereDescent
     /// <summary>
     /// A low toothed disc on the ground with a blinking red light that throws a red glow around it. Touching
     /// it blows the ball up and sends it back to its checkpoint (where it last arrived on this layer), and the
-    /// mine goes off too, gone for the rest of the world. Jump over it or roll around it.
+    /// mine goes off too, gone for the rest of the world. Roll around it.
     /// </summary>
     public class Mine : MonoBehaviour
     {

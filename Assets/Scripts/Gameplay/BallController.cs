@@ -6,7 +6,8 @@ namespace SphereDescent
     /// <summary>
     /// Physics-driven rolling ball on spherical worlds. Gravity always points at the world center, so the
     /// ball sticks to whichever shell surface it is on and falls inward through holes. Movement is relative
-    /// to the camera; the ball rolls via torque and gets limited steering in the air. Touching a boost pad
+    /// to the camera; the ball rolls via torque and gets limited steering in the air (it can't jump, but it
+    /// can be in the air after a drop, a launch or rolling fast over a hill). Touching a boost pad
     /// launches it straight up through the hole above and sets it down beside the hole.
     /// </summary>
     [RequireComponent(typeof(Rigidbody), typeof(SphereCollider))]
@@ -28,10 +29,7 @@ namespace SphereDescent
         [Tooltip("Slows the ball when there is no input on the ground.")]
         public float brake = 1.5f;
 
-        [Header("Jumping")]
-        public float jumpHeight = 2.2f;
-        public float coyoteTime = 0.12f;
-        public float jumpBuffer = 0.15f;
+        [Header("Boost pads")]
         [Tooltip("How far above the upper surface a boost-pad launch peaks.")]
         public float launchClearance = 2.5f;
 
@@ -61,8 +59,6 @@ namespace SphereDescent
 
         Rigidbody rb;
         Vector2 moveInput;
-        float jumpPressedAt = -10f;
-        float lastGroundedAt = -10f;
         bool touchingGround;
         BoostPad pad;
         float padSeenAt = -10f;
@@ -90,7 +86,6 @@ namespace SphereDescent
         {
             if (frozen) { moveInput = Vector2.zero; return; }
             moveInput = GameInput.Move();
-            if (GameInput.JumpPressed()) jumpPressedAt = Time.time;
             if (GameInput.RespawnPressed() && !exploding) RespawnAtCheckpoint();
         }
 
@@ -115,7 +110,6 @@ namespace SphereDescent
             if (IsGrounded)
             {
                 dropping = false;
-                lastGroundedAt = Time.time;
                 if (CurrentLayer != checkpointLayer)
                 {
                     checkpoint = pos;
@@ -125,7 +119,13 @@ namespace SphereDescent
             }
 
             rb.AddForce(-up * gravity, ForceMode.Acceleration);
-            if (frozen) return;
+            if (frozen)
+            {
+                // Held where it is (it may still settle onto the ground), not rolling on.
+                rb.linearVelocity = up * Mathf.Min(0f, Vector3.Dot(rb.linearVelocity, up));
+                rb.angularVelocity = Vector3.zero;
+                return;
+            }
 
             if (level != null && r > level.OuterRadius + 60f) { RespawnAtCheckpoint(); return; }
             if (launchPad != null) { GuideLaunch(pos, up, r); return; }
@@ -135,10 +135,9 @@ namespace SphereDescent
                 rb.angularVelocity = Vector3.zero;
                 return;
             }
-            // Touching a boost pad launches straight away, no jump needed.
+            // Touching a boost pad launches straight away.
             if (OnPad)
             {
-                jumpPressedAt = -10f;
                 StartLaunch(pad, up, r);
                 return;
             }
@@ -167,23 +166,13 @@ namespace SphereDescent
             }
             else if (move.sqrMagnitude > 0.0001f)
             {
-                // Same steering in the air, gentler, and never slowing a fast jump in the direction you're
+                // Same steering in the air, gentler, and never slowing a fast flight in the direction you're
                 // already pushing.
                 Vector3 dir = move.normalized;
                 Vector3 change = move * maxAirSpeed - tangentVel;
                 float along = Vector3.Dot(change, dir);
                 if (along < 0f) change -= dir * along;
                 rb.AddForce(Vector3.ClampMagnitude(change * airResponse, airAcceleration), ForceMode.Acceleration);
-            }
-
-            bool jumpQueued = Time.time - jumpPressedAt <= jumpBuffer;
-            bool canJump = Time.time - lastGroundedAt <= coyoteTime;
-            if (jumpQueued && canJump)
-            {
-                jumpPressedAt = -10f;
-                lastGroundedAt = -10f;
-                Vector3 v = rb.linearVelocity;
-                rb.linearVelocity = v - up * Vector3.Dot(v, up) + up * Mathf.Sqrt(2f * gravity * jumpHeight);
             }
         }
 
@@ -296,7 +285,7 @@ namespace SphereDescent
             Respawned?.Invoke();
         }
 
-        /// <summary>Blown up by a mine or lasers: vanish in a fireball, then reappear at the checkpoint.</summary>
+        /// <summary>Blown up by a mine or lasers: burst into pieces in a fireball, then reappear at the checkpoint.</summary>
         public void HitHazard()
         {
             if (exploding || frozen) return;
@@ -312,16 +301,40 @@ namespace SphereDescent
             rb.angularVelocity = Vector3.zero;
             rb.isKinematic = true;
             var gm = GameManager.Instance;
-            if (gm != null)
-            {
-                if (gm.materials.beam != null) Explosion.Spawn(transform.position, gm.materials.beam, new Color(1f, 0.45f, 0.1f));
-                gm.ShowMessage("Boom!", respawnDelay);
-            }
+            if (gm != null && gm.materials.beam != null) Explosion.Spawn(transform.position, gm.materials.beam, new Color(1f, 0.45f, 0.1f));
+            Shatter(look.sharedMaterial);
             yield return new WaitForSeconds(respawnDelay);
             rb.isKinematic = false;
             exploding = false;
             RespawnAtCheckpoint();
             look.enabled = true;
+        }
+
+        /// <summary>
+        /// The ball breaking apart: a dozen chunky pieces of its shell flung out every which way (mostly up and
+        /// away from the ground), tumbling as they fall back and shrink away.
+        /// </summary>
+        void Shatter(Material shell)
+        {
+            Vector3 center = transform.position, up = center.normalized;
+            int pieces = Random.Range(10, 14);
+            for (int i = 0; i < pieces; i++)
+            {
+                var piece = GameObject.CreatePrimitive(i % 3 == 0 ? PrimitiveType.Sphere : PrimitiveType.Cube);
+                Destroy(piece.GetComponent<Collider>());
+                piece.name = "Ball Piece";
+                var mr = piece.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = shell;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                Vector3 dir = Random.onUnitSphere;
+                if (Vector3.Dot(dir, up) < 0f) dir = Vector3.Reflect(dir, up);
+                piece.transform.SetPositionAndRotation(center + dir * Radius * 0.5f, Random.rotation);
+                piece.transform.localScale = new Vector3(Random.Range(0.18f, 0.38f), Random.Range(0.12f, 0.3f), Random.Range(0.18f, 0.38f)) * (Radius * 2f);
+                var debris = piece.AddComponent<Debris>();
+                debris.velocity = (dir + up * 0.6f).normalized * Random.Range(4f, 8f);
+                debris.spin = Random.insideUnitSphere * 720f;
+                debris.life = Random.Range(0.8f, 1.2f);
+            }
         }
 
         public void SetFrozen(bool value)

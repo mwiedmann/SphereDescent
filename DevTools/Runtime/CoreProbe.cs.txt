@@ -14,15 +14,15 @@ namespace SphereDescent
 
         static T Get<T>(object o, string f) => (T)o.GetType().GetField(f, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(o);
 
-        IEnumerator Press()
+        IEnumerator Press(Key key = Key.Space)
         {
             InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
             InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
             if (!Keyboard.current.enabled) InputSystem.EnableDevice(Keyboard.current);
-            InputSystem.QueueStateEvent(Keyboard.current, new KeyboardState(Key.Space));
+            InputSystem.QueueStateEvent(Keyboard.current, new KeyboardState(key));
             Debug.Log($"[Probe] after manual update: {Keyboard.current.spaceKey.isPressed} enabled {Keyboard.current.enabled} mode {InputSystem.settings.updateMode}");
             yield return null;
-            Debug.Log($"[Probe] space pressed {Keyboard.current.spaceKey.isPressed} any {GameInput.AnyPressed()}");
+            Debug.Log($"[Probe] space pressed {Keyboard.current.spaceKey.isPressed} any {GameInput.ContinuePressed()}");
             yield return null;
             InputSystem.QueueStateEvent(Keyboard.current, new KeyboardState());
             yield return null;
@@ -44,6 +44,39 @@ namespace SphereDescent
             var w = gm.Scores.Current;
             Debug.Log($"[Probe] landed: layer {ball.CurrentLayer} grounded {ball.IsGrounded} r {ball.transform.position.magnitude:F2} G {G:F2} section {Get<int>(gm, "section")} coreIndex {w.CoreIndex} possible {w.Possible[w.CoreIndex]}");
             Vector3 landedAt = ball.transform.position;
+            // No lava rain before the walls have been reached.
+            float quiet = Time.time;
+            bool early = false;
+            while (Time.time - quiet < 6f) { if (GameObject.Find("Blob Shadow") != null) early = true; yield return null; }
+            Debug.Log($"[Probe] rain before reaching the walls: {early}");
+            // Reaching the plaza: the energy ball's introduction plays, and a button only skips it after a second.
+            var arenaI = FindFirstObjectByType<CoreArena>();
+            Vector3 plazaDir = core.Paths[0][0];
+            rb.position = plazaDir * (G + 0.6f); rb.linearVelocity = Vector3.zero;
+            yield return new WaitForSeconds(0.4f);
+            Debug.Log($"[Probe] intro playing {Get<float>(gm, "introStartedAt") >= 0f}, caption '{Get<string>(gm, "caption")}', frozen {Get<bool>(ball, "frozen")}, orbit {Camera.main.GetComponent<OrbitCamera>().enabled}");
+            yield return new WaitForSeconds(2.2f);
+            Debug.Log($"[Probe] intro after 2.6s: caption '{Get<string>(gm, "caption")}', camera {Vector3.Distance(Camera.main.transform.position, arenaI.orb.body.position):F1} from the energy ball");
+            // Watch the whole introduction: the camera must stay above the ground the whole way.
+            float lowest = float.MaxValue, introT = Time.time;
+            string steps = "";
+            string lastCaption = null;
+            while (Get<float>(gm, "introStartedAt") >= 0f && Time.time - introT < 30f)
+            {
+                Vector3 c = Camera.main.transform.position;
+                lowest = Mathf.Min(lowest, c.magnitude - core.SurfaceRadius(c.normalized));
+                string cap = Get<string>(gm, "caption");
+                if (cap != lastCaption) { steps += $" [{Time.time - introT + 2.6f:F1}s] {cap}"; lastCaption = cap; }
+                yield return null;
+            }
+            Debug.Log($"[Probe] full intro {Time.time - introT + 2.6f:F1}s, camera lowest {lowest:F1} above the ground;{steps}");
+            Vector3 before = ball.transform.position;
+            yield return Press(Key.W);
+            yield return Press(Key.UpArrow);
+            yield return new WaitForSeconds(0.5f);
+            Debug.Log($"[Probe] steering keys during intro: still playing {Get<float>(gm, "introStartedAt") >= 0f}, ball moved {Vector3.Distance(before, ball.transform.position):F2}");
+            yield return Press();
+            Debug.Log($"[Probe] intro skipped: {Get<float>(gm, "introStartedAt") < 0f}, done {arenaI.IntroDone}, frozen {Get<bool>(ball, "frozen")}, orbit {Camera.main.GetComponent<OrbitCamera>().enabled}");
             // Sitting still on the core: a lava blob should land on the ball within a few seconds.
             float sat = Time.time;
             bool sawShadow = false;

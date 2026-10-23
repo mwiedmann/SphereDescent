@@ -96,6 +96,11 @@ namespace SphereDescent
         public float thanksMinSeconds = 3f;
         [Tooltip("Seconds the camera watches the freed energy ball fly away.")]
         public float flyAwaySeconds = 4f;
+        [Tooltip("Seconds into the energy ball's introduction before a button skips it (so steering doesn't).")]
+        public float introSkipDelay = 1f;
+        float introStartedAt = -1f; // while the introduction plays
+        bool introSkipped;
+        string caption;             // what the energy ball is saying
         [Tooltip("How much higher (and farther back) the camera hovers on the core, to see more of the path ahead.")]
         public float coreCameraLift = 2.5f;
 
@@ -350,7 +355,7 @@ namespace SphereDescent
 
             thanksShownAt = Time.time;
             yield return null;
-            while (Time.time - thanksShownAt < thanksMinSeconds || !GameInput.AnyPressed()) yield return null;
+            while (Time.time - thanksShownAt < thanksMinSeconds || !GameInput.ContinuePressed()) yield return null;
             thanksShownAt = -1f;
 
             // The camera stays put and turns to follow it up and away.
@@ -369,6 +374,95 @@ namespace SphereDescent
 
             scores.Finish(w.CoreIndex);
             yield return AdvanceWorld();
+        }
+
+        /// <summary>
+        /// The first time the ball reaches the walls on the core, everything stops for the energy ball to
+        /// introduce itself: the camera turns to it as it asks to be freed, flies out over the core to a key pad
+        /// and lingers there, then flies back to it as it warns of the falling lava, and cuts back to the ball.
+        /// Any button skips it, after a moment.
+        /// </summary>
+        public void PlayCoreIntro(CoreArena arena)
+        {
+            if (transitioning) { arena.IntroDone = true; return; }
+            StartCoroutine(CoreIntro(arena));
+        }
+
+        IEnumerator CoreIntro(CoreArena arena)
+        {
+            transitioning = true;
+            ball.SetFrozen(true);
+            orbit.enabled = false;
+            message = null;
+            introStartedAt = Time.time;
+            introSkipped = false;
+            // The energy ball, from just outside the walls on the ball's side.
+            Vector3 orb = arena.orb.body.position, cageUp = arena.cage;
+            Vector3 toBall = Vector3.ProjectOnPlane(ball.transform.position.normalized - cageUp, cageUp).normalized;
+            Vector3 orbEye = orb + cageUp * 6f + toBall * 14f;
+            caption = "Please, free me! Destroy the walls that hold me here.";
+            yield return MoveCamera(orbEye, orb, 1.2f, 3f);
+
+            // Out over the core to the key pad nearest the ball, seen from beyond it looking back toward the walls.
+            Transform pad = arena.pads.Length > 0 ? arena.pads[0] : null;
+            foreach (var p in arena.pads)
+                if (Vector3.Distance(p.position, ball.transform.position) < Vector3.Distance(pad.position, ball.transform.position)) pad = p;
+            if (pad != null && !introSkipped)
+            {
+                Vector3 padUp = pad.position.normalized;
+                Vector3 outward = Vector3.ProjectOnPlane(padUp - cageUp, padUp).normalized;
+                Vector3 padEye = pad.position + padUp * 5f + outward * 6f;
+                caption = "Roll over the key pads at the ends of the paths. Each one breaks a wall.";
+                yield return MoveCamera(padEye, pad.position, 2.2f, 4.5f);
+            }
+
+            // Back to the energy ball for its warning.
+            if (!introSkipped)
+            {
+                caption = "Watch out for the lava falling from above! Good luck!";
+                yield return MoveCamera(orbEye, orb, 2.2f, 3f);
+            }
+
+            // Then straight back behind the ball, facing the walls.
+            orbit.enabled = true;
+            FaceTheWayOn();
+            caption = null;
+            introStartedAt = -1f;
+            ball.SetFrozen(false);
+            transitioning = false;
+            arena.IntroDone = true;
+        }
+
+        /// <summary>
+        /// Flies the camera to <paramref name="position"/> over <paramref name="move"/> seconds, turning to look at
+        /// <paramref name="lookAt"/>, then holds there for <paramref name="hold"/>. It flies in an arc over the
+        /// core (round the sphere, rising higher the farther it goes) rather than straight through it. Any button
+        /// (after the first moment) skips the rest of the introduction.
+        /// </summary>
+        IEnumerator MoveCamera(Vector3 position, Vector3 lookAt, float move, float hold)
+        {
+            Transform view = cam.transform;
+            Vector3 fromPos = view.position;
+            Quaternion fromRot = view.rotation;
+            float fromR = fromPos.magnitude, toR = position.magnitude;
+            float lift = 3f + Vector3.Distance(fromPos, position) * 0.15f;
+            for (float t = 0f; t < move + hold; t += Time.deltaTime)
+            {
+                if (IntroSkipPressed()) yield break;
+                float k = move > 0f ? Mathf.SmoothStep(0f, 1f, t / move) : 1f;
+                Vector3 dir = Vector3.Slerp(fromPos.normalized, position.normalized, k).normalized;
+                Vector3 at = dir * (Mathf.Lerp(fromR, toR, k) + lift * Mathf.Sin(Mathf.PI * k));
+                Quaternion look = Quaternion.LookRotation(lookAt - at, dir);
+                view.SetPositionAndRotation(at, Quaternion.Slerp(fromRot, look, Mathf.SmoothStep(0f, 1f, Mathf.Min(1f, k * 3f))));
+                yield return null;
+            }
+        }
+
+        /// <summary>Any button (not steering), once the introduction has been on a moment, skips the rest of it.</summary>
+        bool IntroSkipPressed()
+        {
+            if (!introSkipped && Time.time - introStartedAt >= introSkipDelay && GameInput.ContinuePressed()) introSkipped = true;
+            return introSkipped;
         }
 
         void ShowPoints(Vector3 position, int points, bool super, Color color) =>
@@ -462,7 +556,7 @@ namespace SphereDescent
                 summaryPage = page;
                 summaryShownAt = Time.time;
                 yield return null;
-                while (Time.time - summaryShownAt < summaryMinSeconds || !GameInput.AnyPressed()) yield return null;
+                while (Time.time - summaryShownAt < summaryMinSeconds || !GameInput.ContinuePressed()) yield return null;
             }
             summaryPage = 0;
             world++;
@@ -581,10 +675,10 @@ namespace SphereDescent
             DrawScores();
 
             string help = GameInput.GamepadConnected
-                ? "Left stick / D-pad move · A jump · Right stick camera · Select respawn"
+                ? "Left stick / D-pad move · Right stick camera · Select respawn"
                 : Cursor.lockState == CursorLockMode.Locked
-                ? "WASD move · Space jump · Mouse/Q/E camera · R respawn · Esc free cursor · M menu"
-                : "Click to capture mouse · WASD move · Space jump · Q/E camera · R respawn · N skip world · M menu";
+                ? "WASD move · Mouse/Q/E camera · R respawn · Esc free cursor · M menu"
+                : "Click to capture mouse · WASD move · Q/E camera · R respawn · N skip world · M menu";
             Shadowed(new Rect(16, Screen.height - 36, 1000, 30), help, hudStyle);
 
             // Frame time and style, top right.
@@ -601,6 +695,24 @@ namespace SphereDescent
                 Shadowed(new Rect(0, Screen.height * 0.18f, Screen.width, 60), message, bannerStyle);
             if (tally != null) DrawTally();
             if (thanksShownAt >= 0f) DrawThanks();
+            if (introStartedAt >= 0f) DrawCaption();
+        }
+
+        /// <summary>What the energy ball is saying during its introduction, low in the middle of the screen.</summary>
+        void DrawCaption()
+        {
+            if (string.IsNullOrEmpty(caption)) return;
+            thanksStyle ??= new GUIStyle(bannerStyle) { fontSize = 40, wordWrap = true };
+            promptStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.MiddleCenter };
+            promptStyle.fontSize = 26;
+            float width = Mathf.Min(1300f, Screen.width * 0.94f), height = 190f;
+            var box = new Rect((Screen.width - width) * 0.5f, Screen.height * 0.68f, width, height);
+            Panel(box, 0.75f);
+            var speaker = new GUIStyle(promptStyle) { fontStyle = FontStyle.Bold, normal = { textColor = new Color(0.6f, 0.97f, 1f) } };
+            Shadowed(new Rect(box.x, box.y + 10f, width, 34f), "The energy ball", speaker);
+            Shadowed(new Rect(box.x + 30f, box.y + 46f, width - 60f, 100f), caption, thanksStyle);
+            if (Time.time - introStartedAt >= introSkipDelay)
+                Shadowed(new Rect(box.x, box.yMax - 40f, width, 32f), "Press any button to skip", promptStyle);
         }
 
         /// <summary>The freed energy ball's thanks, mid-screen, until a button is pressed.</summary>

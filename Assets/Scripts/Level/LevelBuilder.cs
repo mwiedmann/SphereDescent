@@ -483,7 +483,7 @@ namespace SphereDescent
 
         /// <summary>
         /// Laser gates: horizontal lasers stacked from near the ground to just under the wall tops (too close
-        /// together to slip between, too high to jump over), filling the doorway between its two walls. Each is
+        /// together to slip between, too high to get over), filling the doorway between its two walls. Each is
         /// a white-hot core inside a thin glow in the color opposite the local zone's, so it stands out from the
         /// neon floor and walls. A trigger across the doorway catches the ball. Their switch pads: a metal disc
         /// with a ring and a key symbol pulsing warning red, turning green once rolled over.
