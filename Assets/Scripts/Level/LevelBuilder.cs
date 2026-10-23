@@ -1018,6 +1018,7 @@ namespace SphereDescent
             var metal = level.Own(LevelMaterials.MakeMetal(new Color(0.09f, 0.09f, 0.1f), 0.85f, 0.5f));
             var edgeMat = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.85f, 0.2f), 1.6f));
             var pitMat = level.Own(LevelMaterials.MakeBlack());
+            var steamMat = level.Own(LevelMaterials.MakeSoftPuff());
             float w = s.acidBridgeWidth;
             const float depth = 1.05f;
             foreach (var p in layout.AcidPools)
@@ -1038,6 +1039,7 @@ namespace SphereDescent
                 pitBottom.transform.position = Vector3.zero;
                 var acid = CreateMeshObject(go.transform, "Acid", level.Own(CellCapMesh(c, corners, r - 0.55f, 8)), mats.acid, false, ShadowCastingMode.Off);
                 acid.transform.position = Vector3.zero;
+                CreateSteam(go.transform, c * (r - 0.5f), c, s.cellSpacing * 0.32f, steamMat);
                 // Walls lining the pit all the way round, so you can't see under the floor through the doorways.
                 CreateMeshObject(go.transform, "Pit Walls", level.Own(PitWallMesh(c, corners, r, r - 1f, 8)), metal, true, ShadowCastingMode.Off)
                     .transform.position = Vector3.zero;
@@ -1178,6 +1180,64 @@ namespace SphereDescent
             t.localRotation = Quaternion.FromToRotation(Vector3.up, b - a);
             t.localScale = new Vector3(radius * 2f, (b - a).magnitude * 0.5f, radius * 2f);
             return t;
+        }
+
+        /// <summary>
+        /// Steam off an acid pool: soft pale-green puffs rising from all over its surface, swelling, swaying and
+        /// fading as they go.
+        /// </summary>
+        static void CreateSteam(Transform parent, Vector3 position, Vector3 up, float radius, Material mat)
+        {
+            var go = new GameObject("Steam");
+            go.transform.SetParent(parent, false);
+            go.transform.SetPositionAndRotation(position, Quaternion.FromToRotation(Vector3.up, up));
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.loop = true;
+            main.prewarm = true;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 140;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(3f, 5f);
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(2f, 3.6f);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            main.startColor = new Color(0.75f, 1f, 0.7f, 1f);
+            var emission = ps.emission;
+            emission.rateOverTime = 24f;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Circle;
+            shape.radius = radius;
+            shape.rotation = new Vector3(90f, 0f, 0f); // the circle lies flat on the pool
+            var velocity = ps.velocityOverLifetime;
+            velocity.enabled = true;
+            velocity.space = ParticleSystemSimulationSpace.Local;
+            velocity.x = new ParticleSystem.MinMaxCurve(-0.15f, 0.15f);
+            velocity.y = new ParticleSystem.MinMaxCurve(0.7f, 1.4f);
+            velocity.z = new ParticleSystem.MinMaxCurve(-0.15f, 0.15f);
+            var color = ps.colorOverLifetime;
+            color.enabled = true;
+            var fade = new Gradient();
+            fade.SetKeys(
+                new[] { new GradientColorKey(new Color(0.8f, 1f, 0.6f), 0f), new GradientColorKey(new Color(0.9f, 1f, 0.9f), 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.38f, 0.15f), new GradientAlphaKey(0.2f, 0.6f), new GradientAlphaKey(0f, 1f) });
+            color.color = fade;
+            var size = ps.sizeOverLifetime;
+            size.enabled = true;
+            size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 1.7f));
+            var spin = ps.rotationOverLifetime;
+            spin.enabled = true;
+            spin.z = new ParticleSystem.MinMaxCurve(-0.4f, 0.4f);
+            var noise = ps.noise;
+            noise.enabled = true;
+            noise.strength = 0.35f;
+            noise.frequency = 0.35f;
+            noise.scrollSpeed = 0.25f;
+            var renderer = go.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = mat;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            ps.Play();
         }
 
         /// <summary>A cell's outline: the corners of its walls, in order around it.</summary>

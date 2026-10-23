@@ -104,6 +104,49 @@ namespace SphereDescent
             return m;
         }
 
+        /// <summary>
+        /// Soft see-through puffs for particles such as steam: a round blob that fades out to its edge (drawn
+        /// at startup rather than loaded), alpha-blended so it never darkens what's behind it much.
+        /// </summary>
+        public static Material MakeSoftPuff()
+        {
+            var m = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
+            m.SetFloat("_Surface", 1f);
+            m.SetFloat("_Blend", 0f);
+            m.SetOverrideTag("RenderType", "Transparent");
+            m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            m.SetInt("_ZWrite", 0);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            m.SetTexture("_BaseMap", SoftDot);
+            return m;
+        }
+
+        static Texture2D softDot;
+
+        /// <summary>A white disc whose alpha falls smoothly from the middle to nothing at the edge.</summary>
+        static Texture2D SoftDot
+        {
+            get
+            {
+                if (softDot != null) return softDot;
+                const int size = 64;
+                softDot = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, name = "Soft Dot" };
+                var px = new Color32[size * size];
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                    {
+                        float dx = (x + 0.5f) / size * 2f - 1f, dy = (y + 0.5f) / size * 2f - 1f;
+                        float a = Mathf.Clamp01(1f - Mathf.Sqrt(dx * dx + dy * dy));
+                        px[y * size + x] = new Color32(255, 255, 255, (byte)(a * a * (3f - 2f * a) * 255f));
+                    }
+                softDot.SetPixels32(px);
+                softDot.Apply();
+                return softDot;
+            }
+        }
+
         public static Material MakeEmissive(Color color, float intensity)
         {
             var m = new Material(Shader.Find(LitShaderName)) { color = color };
