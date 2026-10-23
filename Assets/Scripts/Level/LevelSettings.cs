@@ -147,6 +147,24 @@ namespace SphereDescent
         [Tooltip("Points for reaching a checkpoint.")]
         public int checkpointPoints = 5;
 
+        [Header("The core")]
+        [Tooltip("Width of the paths over the lava. A corridor on the first sphere is about Cell Spacing wide.")]
+        public float corePathWidth = 8f;
+        [Tooltip("How high the paths and plazas stand above the lava.")]
+        public float corePathHeight = 1.6f;
+        [Tooltip("How far the hills along the paths rise above (and dip below) that.")]
+        public float coreHillHeight = 1.1f;
+        [Tooltip("Key pads on the core, each breaking one of the walls around the trapped energy ball.")]
+        public int coreKeyPads = 6;
+        [Tooltip("Lone mines on each of the core's paths (the one from the landing and each key pad's).")]
+        public int coreMinesMin = 3;
+        public int coreMinesMax = 4;
+        [Tooltip("Energy cubes scattered along the core's paths.")]
+        public int coreCubes = 10;
+        [Tooltip("Points for each key pad, and for freeing the energy ball.")]
+        public int keyPadPoints = 10;
+        public int rescuePoints = 100;
+
         [Header("Arrows")]
         [Tooltip("An arrow on the floor on about every Nth cell along each section's route, pointing the way (plus " +
                  "one at each checkpoint). 0 = none.")]

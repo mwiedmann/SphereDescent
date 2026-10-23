@@ -10,7 +10,8 @@ namespace SphereDescent
     /// Each section is a winding band of cells on one shell: a main path plus side lanes that branch off and
     /// rejoin it. There are several routes but no dead ends, and every route ends at the same spot: a hole
     /// dropping to the next section on the shell below, or a boost pad launching you up through a hole into
-    /// the next section on the shell above. The last section drops into the core, which is the exit.
+    /// the next section on the shell above. The last section drops into the core, where the world ends in a
+    /// boss battle (see <see cref="CoreLayout"/>).
     /// Cells that belong to no section get a sealed-off filler maze so every shell still looks like a maze.
     ///
     /// Each shell has its own cell grid sized so corridors are equally wide on every layer. Since the grids
@@ -114,6 +115,7 @@ namespace SphereDescent
         public List<AcidPool> AcidPools = new List<AcidPool>();
         public List<Mortar> Mortars = new List<Mortar>();
         public List<PlacedHazard> MajorHazards = new List<PlacedHazard>();
+        public CoreLayout Core;    // the boss battle at the end, under the last section's hole
 
         public struct AcidPool
         {
@@ -231,6 +233,8 @@ namespace SphereDescent
             PlaceSingleMines(layout, s, new Random(seed * 19 + 13));
             PlaceCubes(layout, s, new Random(seed * 7 + 11));
             PlaceArrows(layout, s);
+            layout.Core = CoreLayout.Generate(s, layout.Holes[layout.Sections.Count - 1].Direction, new Random(seed * 13 + 5));
+            if (layout.Core == null) return null;
             return layout;
         }
 
@@ -850,10 +854,12 @@ namespace SphereDescent
 
         /// <summary>
         /// Which way the route goes on from a position: toward the next cell along its section's route after
-        /// the route cell nearest to it. Zero if the position isn't in a section.
+        /// the route cell nearest to it (on the core, toward the trapped energy ball). Zero if the position
+        /// isn't in a section.
         /// </summary>
         public Vector3 RouteDirectionAt(int shell, Vector3 position)
         {
+            if (shell >= ShellCount) return Core != null ? Core.FacingFrom(position) : Vector3.zero;
             int section = SectionAt(shell, position);
             if (section < 0) return Vector3.zero;
             var grid = Grids[shell];

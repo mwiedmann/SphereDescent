@@ -1,6 +1,6 @@
 # Sphere Descent
 
-A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. You steer a small ball across the outside of a planet covered in neon-lit maze walls. You drop through holes onto smaller spheres nested inside, and sometimes climb back up, until you reach the glowing core at the center.
+A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. You steer a small ball across the outside of a planet covered in neon-lit maze walls. You drop through holes onto smaller spheres nested inside, and sometimes climb back up, until you reach the core at the center: a ball of lava where each world ends in a boss battle.
 
 ![The synthwave sun over the maze](Docs/screenshots/horizon.png)
 
@@ -12,7 +12,7 @@ A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. 
 
 (The words used here, and what each is called in the code, are listed in the [glossary](Docs/GLOSSARY.md).)
 
-Each world is a set of nested spheres: a surface shell, three smaller shells inside it, and a solid core. Gravity always pulls toward the center, so you roll on the outside of whichever shell you're on.
+Each world is a set of nested spheres: a surface shell, three smaller shells inside it, and a core of lava. Gravity always pulls toward the center, so you roll on the outside of whichever shell you're on.
 
 ![A whole world seen from space](Docs/screenshots/planet.png)
 
@@ -27,14 +27,14 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Acid pools.** A doorway you have to pass through leads into a cell that's a pit of glowing green acid. A narrow metal bridge with bright yellow edges crosses it from one doorway to the other, nearly straight, sometimes veering a little in the middle. Roll across carefully: fall off and the acid destroys you.
 - **Mortars.** A cannon perched on top of a wall, gripping it with two clawed legs, that lobs a bomb at you every second and a half while you're nearby. It aims where you'll be when the bomb lands if you keep rolling the same way, and a flashing red circle on the ground marks the spot. Keep changing direction or speed until you're out of range: a bomb landing near you blows you up.
 - **Energy cubes.** Each half of a section, before and after its halfway checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for 10 points. The most hidden cube in each half is a larger magenta super cube worth 50.
-- **Scores.** Cubes and checkpoints (5 points each) score toward the section you're in, and the points float up from where you picked them up (a super cube's bigger and flashier). The top-left corner shows three scores, each as points out of what was possible, like "13 of 25 [52%]": **Section** counts up as you go, out of everything in the section. **World** and **Game** only count a section once you finish it, both its points and what it was worth, so they show how well you've done so far. When you drop or launch out of a section, its score shows mid-screen and the world total counts up to include it. Finishing a world brings up its score for each section, then, after the first world, each world's score and the game total. Each screen stays up a few seconds before any button moves on.
-- **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
+- **Scores.** Cubes and checkpoints (5 points each) score toward the section you're in (on the core, its key pads and freeing the energy ball do too), and the points float up from where you picked them up (a super cube's bigger and flashier). The top-left corner shows three scores, each as points out of what was possible, like "13 of 25 [52%]": **Section** counts up as you go, out of everything in the section. **World** and **Game** only count a section once you finish it, both its points and what it was worth, so they show how well you've done so far. When you drop or launch out of a section, its score shows mid-screen and the world total counts up to include it. Finishing a world brings up its score for each section and the core, then, after the first world, each world's score and the game total. Each screen stays up a few seconds before any button moves on.
+- **The core.** The last section drops you onto the core: a ball of boiling lava with hilly paths running over it, half as wide as a corridor on the first sphere and with no walls, so roll off the edge and you burn up and come back where you landed (or at the plaza, once you've reached it). On a round plaza across the core, an energy ball is trapped inside six concentric glowing walls. The paths branch out from the walls' plaza, each winding off to a key pad like the laser gates' at its end, with a few mines along the way; reaching the plaza makes it your checkpoint. Roll over a pad (10 points) and its cable lights up back along its path to the walls, and the outermost wall still standing bursts in a shower of sparks, so the walls fall away from the outside in. With all six walls down, roll into the energy ball (100 points). It thanks you for freeing it and tells you more of its kind are trapped in other worlds. Press any button and it flies away, then the score screens show and the next world starts with a new maze. The core also has 10 energy cubes.
 
 | Section end: a hole to drop through | Section end: a boost pad to climb |
 |---|---|
 | ![A hole at the end of a section](Docs/screenshots/drop_hole.png) | ![A boost pad under a hole in the shell above](Docs/screenshots/boost_pad.png) |
 
-![Landing on the gold core completes the world](Docs/screenshots/core.png)
+![The core: a path over the lava leading to the walls around the trapped energy ball](Docs/screenshots/core.png)
 
 ![A checkpoint pad lit up after rolling over it, with a floor arrow pointing on](Docs/screenshots/checkpoint.png)
 
@@ -58,7 +58,7 @@ To help you find your way, each sphere is split into 12 zones, each with its own
 
 ## Look
 
-Everything is drawn by shaders, with no image files. There are two styles: **Synthwave** (the default) and **Deep Sea**. Press M to open a menu where you can pick a style (or alternate them every world) and which world to play. Hole rings, pads, beams, hazards and the gold core look the same in both, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
+Everything is drawn by shaders, with no image files. There are two styles: **Synthwave** (the default) and **Deep Sea**. Press M to open a menu where you can pick a style (or alternate them every world) and which world to play. Hole rings, pads, beams, hazards and the core's lava look the same in both, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
 
 Synthwave:
 
@@ -121,6 +121,7 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Security cameras:** how many per run, and the spotlight's size, speed and reach.
 - **Acid pools:** the bridge's width, and how sharply it may turn in the middle.
 - **Mortars:** range, time between shots, how long a bomb is in the air, and the blast radius.
+- **The core:** path width, how high the paths stand over the lava and how hilly they are, key pads, mines per path, cubes, how much higher the camera hovers there, and the points for a key pad and for freeing the energy ball.
 - **Mines:** groups per section, mines per group (the ones beside the walls count too), whether lone mines are scattered too, size, the gap left beside walls, and how many of the smallest spheres get fewer.
 - **Shell radii**, **Cell Spacing** (corridor width), **wall height**, **hole size**, **beam height**, and the **Base Seed**.
 - **World Seeds** (on the Game Manager): hand-picked seeds for the first worlds, world 1 first. Worlds past the list get Base Seed + world × 7919.

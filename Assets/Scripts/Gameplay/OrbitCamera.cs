@@ -22,6 +22,9 @@ namespace SphereDescent
         public float collisionRadius = 0.3f;
         public LayerMask collisionMask = ~(1 << 2); // everything except Ignore Raycast (the ball)
         public float upSmoothing = 10f;
+        [Tooltip("Extra height to rise to (and as far again back), e.g. on the core, where the ground curves away " +
+                 "so fast that a low camera can hardly see the path ahead. Eased into and out of.")]
+        public float lift;
 
         [Header("Follow movement")]
         [Tooltip("Swing around behind the direction the ball is moving.")]
@@ -40,6 +43,7 @@ namespace SphereDescent
         Vector3 up = Vector3.up;
         Vector3 forward = Vector3.forward;
         float currentDistance;
+        float currentLift;
         Vector3 turnTo;     // heading being turned toward, while turnLeft > 0
         float turnLeft;
         bool holdUntilSteered; // after a turn, keep that heading until the player steers
@@ -113,13 +117,15 @@ namespace SphereDescent
             else if (followMovement) FollowMovement(dt);
             if (holdUntilSteered && targetBall != null && targetBall.Steering) holdUntilSteered = false;
             pitch = Mathf.Clamp(pitch - look.y, minPitch, maxPitch);
+            currentLift = Mathf.Lerp(currentLift, lift, 1f - Mathf.Exp(-2f * dt));
 
             Vector3 right = Vector3.Cross(up, forward);
             Vector3 lookDir = Quaternion.AngleAxis(pitch, right) * forward;
-            Vector3 focus = targetPos + up * focusHeight;
+            Vector3 focus = targetPos + up * (focusHeight + currentLift);
 
-            float wanted = distance;
-            if (Physics.SphereCast(focus, collisionRadius, -lookDir, out RaycastHit hit, distance,
+            float reach = distance + currentLift;
+            float wanted = reach;
+            if (Physics.SphereCast(focus, collisionRadius, -lookDir, out RaycastHit hit, reach,
                     collisionMask, QueryTriggerInteraction.Ignore))
             {
                 wanted = Mathf.Max(minDistance, hit.distance - 0.1f);
