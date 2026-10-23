@@ -114,8 +114,8 @@ namespace SphereDescent
                  "(the super cube is always hidden).")]
         [Range(0f, 1f)] public float hiddenCubeShare = 0.5f;
         [Tooltip("Points for a cube, and for each half's super cube.")]
-        public int cubePoints = 1;
-        public int superCubePoints = 5;
+        public int cubePoints = 10;
+        public int superCubePoints = 50;
         [Tooltip("Edge length of a cube's glowing outline (the ball is 1 across). The super cube is larger.")]
         public float cubeSize = 0.5f;
         [Tooltip("Size of the bright point glowing at the heart of each cube.")]
@@ -144,6 +144,8 @@ namespace SphereDescent
                  "way along. The halfway one still splits the section into halves.")]
         public int extraCheckpointSpheres = 2;
         public float checkpointRadius = 2.8f;
+        [Tooltip("Points for reaching a checkpoint.")]
+        public int checkpointPoints = 5;
 
         [Header("Arrows")]
         [Tooltip("An arrow on the floor on about every Nth cell along each section's route, pointing the way (plus " +

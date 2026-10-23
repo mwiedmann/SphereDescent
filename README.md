@@ -26,7 +26,8 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Security cameras.** A run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own quick, steady pattern (a figure-8, a loop, or a wobbling side-to-side sweep). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
 - **Acid pools.** A doorway you have to pass through leads into a cell that's a pit of glowing green acid. A narrow metal bridge with bright yellow edges crosses it from one doorway to the other, nearly straight, sometimes veering a little in the middle. Roll across carefully: fall off and the acid destroys you.
 - **Mortars.** A cannon perched on top of a wall, gripping it with two clawed legs, that lobs a bomb at you every second and a half while you're nearby. It aims where you'll be when the bomb lands if you keep rolling the same way, and a flashing red circle on the ground marks the spot. Keep changing direction or speed until you're out of range: a bomb landing near you blows you up.
-- **Energy cubes.** Each half of a section, before and after its checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for a point. The most hidden cube in each half is a larger magenta super cube worth 5. Your score is on the HUD.
+- **Energy cubes.** Each half of a section, before and after its checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for 10 points. The most hidden cube in each half is a larger magenta super cube worth 50.
+- **Scores.** Cubes and checkpoints (5 points each) score toward the section you're in, and the points float up from where you picked them up (a super cube's bigger and flashier). The top-left corner shows three scores, each as points out of what was possible, like "13 of 25 [52%]": **Section** counts up as you go, out of everything in the section. **World** and **Game** only count a section once you finish it, both its points and what it was worth, so they show how well you've done so far. When you drop or launch out of a section, its score shows mid-screen and the world total counts up to include it. Finishing a world brings up its score for each section, then, after the first world, each world's score and the game total. Each screen stays up a few seconds before any button moves on.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
 | Section end: a hole to drop through | Section end: a boost pad to climb |
@@ -110,6 +111,7 @@ Most settings live on the **Game Manager** object in the Inspector:
 - **Checkpoints:** on or off, the pad's size, and how many of the outer spheres get the extra quarter-way checkpoints.
 - **Arrows:** how often a floor arrow appears along the route.
 - **Energy cubes:** how many per half section, how many are hidden, points, and size.
+- **Checkpoint Points:** what reaching a checkpoint is worth.
 - **Major hazards:** how many per half section, how many of the innermost spheres get fewer (and how many they get), and switches to turn each kind on or off.
 - **Laser gates:** how many lasers each gate has.
 - **Security cameras:** how many per run, and the spotlight's size, speed and reach.

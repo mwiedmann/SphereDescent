@@ -747,6 +747,7 @@ namespace SphereDescent
                 cube.halo = glow.transform;
                 cube.isSuper = c.Super;
                 cube.points = c.Super ? s.superCubePoints : s.cubePoints;
+                cube.section = c.Section;
                 if (c.Super) cube.spinSpeed = 80f;
             }
         }
@@ -814,6 +815,8 @@ namespace SphereDescent
                 pad.pulseRing = ring.transform;
                 // Later along the world is higher, so reaching a skipped pad never moves you back.
                 pad.order = c.Section * 1000 + c.RouteIndex;
+                pad.section = c.Section;
+                pad.points = s.checkpointPoints;
             }
         }
 

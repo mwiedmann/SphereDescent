@@ -66,6 +66,17 @@ The words we use when talking about Sphere Descent, and what each is called in t
 
 | Term | Meaning | In the code |
 |---|---|---|
-| **Energy cube** | A glowing gold cube worth 1 point. | `EnergyCube` |
-| **Super cube** | The larger magenta cube in each half of a section, worth 5. | `Cube.Super` |
+| **Energy cube** | A glowing gold cube worth 10 points. | `EnergyCube` |
+| **Super cube** | The larger magenta cube in each half of a section, worth 50. | `Cube.Super` |
 | **Route cube / hidden cube** | A cube in the middle of the route, or one tucked away down a side lane. | `Cube.Hidden` |
+
+## Scores
+
+| Term | Meaning | In the code |
+|---|---|---|
+| **Section score** | Points from the cubes and checkpoints (5 each) of the section you're in, out of everything in it. Counts up live. | `Scoreboard.WorldScore.Earned` |
+| **Finishing a section** | Dropping through its hole, launching off its pad, or landing on the core: only then do its points count toward the world and game. | `Scoreboard.Finish` |
+| **World score** | Points from the world's finished sections, out of what those sections were worth: how well you've done so far. | `WorldScore.Banked`, `PossibleSoFar` |
+| **Game score** | The world scores of this run added up, the same way. Picking a world from the M menu starts a new run. | `Scoreboard.GameBanked`, `GamePossible` |
+| **Tally** | A finished section's score shown mid-screen, with the world score counting up to include it. | `GameManager.ShowTally` |
+| **Score screens** | After a world: its score for each section and the world total, then (from the second world on) each world's score and the game total. | `GameManager.DrawSummary` |

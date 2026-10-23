@@ -56,7 +56,38 @@ namespace SphereDescent
         float messageUntil;
         GUIStyle hudStyle, bannerStyle, rightStyle, menuTitleStyle, menuButtonStyle, menuHintStyle;
         int section;
-        int score;
+        readonly Scoreboard scores = new Scoreboard();
+        Tally tally;                // a finished section's score being shown mid-screen
+        int summaryPage;            // 0 = none, 1 = the world's sections, 2 = the run's worlds
+        float summaryShownAt;
+        GUIStyle scoreLabelStyle, scoreValueStyle, tallyTitleStyle, tallyBigStyle, tallyWorldStyle, summaryRowStyle,
+            summaryValueStyle, summaryTotalStyle, promptStyle;
+
+        // Points just scored, floating up from where they were picked up.
+        readonly System.Collections.Generic.List<Popup> popups = new System.Collections.Generic.List<Popup>();
+        GUIStyle popupStyle;
+
+        struct Popup
+        {
+            public Vector3 Position;
+            public int Points;
+            public float BornAt;
+            public bool Super;
+            public Color Color;
+        }
+
+        const float PopupLife = 1f;
+
+        class Tally
+        {
+            public int Section, Earned, Possible, WorldFrom, WorldTo, PossibleFrom, PossibleTo;
+            public float StartedAt;
+        }
+
+        // How the mid-screen tally plays out, in seconds.
+        const float TallyWorldAppears = 1.2f, TallyCountUp = 2f, TallyEnd = 5f, TallyFade = 0.6f;
+        [Tooltip("Seconds the end-of-world score screens stay up before any button moves on.")]
+        public float summaryMinSeconds = 3f;
         int climbingThrough = -1; // the hole a boost-pad launch is heading up through, until the ball lands
 
         public int World => world;
@@ -100,7 +131,9 @@ namespace SphereDescent
             styleChoice = styleIndex;
             menuOpen = false;
             world = Mathf.Max(1, worldNumber);
-            score = 0;
+            // A fresh start from the menu is a new run.
+            scores.Reset();
+            tally = null;
             BuildWorld();
             ball.SetFrozen(false);
         }
@@ -258,6 +291,7 @@ namespace SphereDescent
                       $"built in {(Time.realtimeSinceStartup - t0) * 1000f:F0} ms");
             section = 0;
             climbingThrough = -1;
+            scores.StartWorld(world, worldStyle.name, layout, settings);
 
             ball.level = level;
             ball.ForgetCheckpoints();
@@ -266,12 +300,49 @@ namespace SphereDescent
             ShowMessage(styles != null && styles.Length > 1 ? $"World {world}: {worldStyle.name}" : $"World {world}", 3f);
         }
 
-        public int Score => score;
+        public Scoreboard Scores => scores;
 
         public void CollectCube(EnergyCube cube)
         {
-            score += cube.points;
-            if (cube.isSuper) ShowMessage($"Super cube! +{cube.points}", 1.5f);
+            scores.Add(cube.section, cube.points);
+            ShowPoints(cube.transform.position, cube.points, cube.isSuper, new Color(1f, 0.85f, 0.25f));
+        }
+
+        public void CheckpointReached(CheckpointPad pad)
+        {
+            scores.Add(pad.section, pad.points);
+            ShowPoints(pad.transform.position + pad.transform.up * 0.8f, pad.points, false, new Color(0.4f, 1f, 0.3f));
+            ShowMessage("Checkpoint!", 1.6f);
+        }
+
+        void ShowPoints(Vector3 position, int points, bool super, Color color) =>
+            popups.Add(new Popup { Position = position, Points = points, BornAt = Time.time, Super = super, Color = color });
+
+        /// <summary>
+        /// Banks a section's points (once), and shows its score mid-screen with the world total counting up to
+        /// include it; the corner totals catch up when that's done.
+        /// </summary>
+        void FinishSection(int index)
+        {
+            if (scores.Finish(index)) StartCoroutine(ShowTally(index));
+        }
+
+        IEnumerator ShowTally(int index)
+        {
+            while (tally != null) yield return null;
+            // The section is already banked, so the world total counts up from what it was before it.
+            var w = scores.Current;
+            var mine = tally = new Tally
+            {
+                Section = index, Earned = w.Earned[index], Possible = w.Possible[index],
+                WorldFrom = w.Banked - w.Earned[index], WorldTo = w.Banked,
+                PossibleFrom = w.PossibleSoFar - w.Possible[index], PossibleTo = w.PossibleSoFar,
+                StartedAt = Time.time,
+            };
+            yield return new WaitForSeconds(TallyEnd);
+            // Unless a new run was started from the menu meanwhile.
+            if (tally != mine) yield break;
+            tally = null;
         }
 
         /// <summary>Points the camera the way the route goes on from where the ball is (at a world's start and on respawn).</summary>
@@ -304,6 +375,8 @@ namespace SphereDescent
                 if (angle < bestAngle) { bestAngle = angle; best = i; }
             }
             if (best >= 0) level.MarkUsed(false, best);
+            // Dropping out of a section through its hole finishes it (a climb's hole only leads back down).
+            if (best >= 0 && !holes[best].TwoWay) FinishSection(best);
         }
 
         void OnLaunched(BoostPad pad)
@@ -312,6 +385,8 @@ namespace SphereDescent
             var holes = level.Layout.Holes;
             for (int i = 0; i < holes.Count; i++)
                 if (holes[i].TwoWay && Vector3.Dot(holes[i].Direction, pad.Axis) > 0.9999f) climbingThrough = i;
+            // Launching off a section's pad finishes it.
+            if (climbingThrough >= 0) FinishSection(climbingThrough);
         }
 
         public void OnExitReached()
@@ -322,9 +397,18 @@ namespace SphereDescent
         IEnumerator AdvanceWorld()
         {
             transitioning = true;
+            // Let the last section's tally finish, then the score screens: the world's sections, then (after the
+            // first world) the run's worlds. Each stays up a moment before any button moves on.
             ball.SetFrozen(true);
-            ShowMessage($"World {world} complete!", worldTransitionDelay);
-            yield return new WaitForSeconds(worldTransitionDelay);
+            while (tally != null) yield return null;
+            for (int page = 1; page <= (scores.Worlds.Count > 1 ? 2 : 1); page++)
+            {
+                summaryPage = page;
+                summaryShownAt = Time.time;
+                yield return null;
+                while (Time.time - summaryShownAt < summaryMinSeconds || !GameInput.AnyPressed()) yield return null;
+            }
+            summaryPage = 0;
             world++;
             BuildWorld();
             ball.SetFrozen(false);
@@ -428,8 +512,14 @@ namespace SphereDescent
             int layer = Mathf.Clamp(ball.CurrentLayer, 0, level.LayerCount - 1);
             string zone = level.Zones.Names[level.Zones.ZoneAt(ball.transform.position)];
             string status = $"World {world}   ·   Section {section + 1}/{level.Layout.Sections.Count}   ·   " +
-                            $"{level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone   ·   Score {score}";
+                            $"{level.LayerName(layer)} ({layer + 1}/{level.LayerCount})   ·   {zone} zone";
             Shadowed(new Rect(16, 12, 900, 30), status, hudStyle);
+            if (summaryPage > 0)
+            {
+                DrawSummary();
+                return;
+            }
+            DrawScores();
 
             string help = GameInput.GamepadConnected
                 ? "Left stick / D-pad move · A jump · Right stick camera · Select respawn"
@@ -447,8 +537,213 @@ namespace SphereDescent
                 DrawMenu();
                 return;
             }
+            DrawPopups();
             if (Time.time < messageUntil && !string.IsNullOrEmpty(message))
-                Shadowed(new Rect(0, Screen.height * 0.25f, Screen.width, 60), message, bannerStyle);
+                Shadowed(new Rect(0, Screen.height * 0.18f, Screen.width, 60), message, bannerStyle);
+            if (tally != null) DrawTally();
+        }
+
+        /// <summary>
+        /// Points just scored: "+10" flashing as it floats up from where it was picked up and fades over a second.
+        /// A super cube's is bigger, swells and shrinks, and flickers through magenta, white and gold.
+        /// </summary>
+        void DrawPopups()
+        {
+            popups.RemoveAll(p => Time.time - p.BornAt > PopupLife);
+            if (popups.Count == 0 || cam == null) return;
+            popupStyle ??= new GUIStyle(bannerStyle) { alignment = TextAnchor.MiddleCenter };
+            foreach (var p in popups)
+            {
+                float age = (Time.time - p.BornAt) / PopupLife;
+                Vector3 up = p.Position.normalized;
+                Vector3 at = p.Position + up * ((p.Super ? 3.5f : 2.2f) * (1f - (1f - age) * (1f - age)));
+                Vector3 screen = cam.WorldToScreenPoint(at);
+                if (screen.z <= 0f) continue;
+                bool flash = Mathf.Repeat(age * (p.Super ? 14f : 9f), 1f) < 0.5f;
+                Color c = p.Color;
+                if (p.Super)
+                {
+                    int phase = Mathf.FloorToInt(age * 14f) % 3;
+                    c = phase == 0 ? new Color(1f, 0.2f, 0.85f) : phase == 1 ? Color.white : new Color(1f, 0.85f, 0.25f);
+                    popupStyle.fontSize = Mathf.RoundToInt(120f * (1f + 0.18f * Mathf.Sin(age * Mathf.PI * 6f)) * Mathf.Lerp(0.7f, 1f, Mathf.Clamp01(age * 5f)));
+                }
+                else
+                {
+                    if (flash) c = Color.Lerp(c, Color.white, 0.7f);
+                    popupStyle.fontSize = 72;
+                }
+                c.a = Mathf.Clamp01((1f - age) / 0.35f);
+                popupStyle.normal.textColor = c;
+                var old = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, c.a);
+                Shadowed(new Rect(screen.x - 220f, Screen.height - screen.y - 80f, 440f, 160f), $"+{p.Points}", popupStyle);
+                GUI.color = old;
+            }
+        }
+
+        /// <summary>The three score lines in the top-left corner: the game and world as banked, the section live.</summary>
+        void DrawScores()
+        {
+            scoreLabelStyle ??= new GUIStyle(hudStyle) { fontSize = 29, fontStyle = FontStyle.Bold };
+            scoreValueStyle ??= new GUIStyle(scoreLabelStyle) { alignment = TextAnchor.UpperRight, normal = { textColor = new Color(1f, 0.85f, 0.3f) } };
+            var w = scores.Current;
+            if (w == null) return;
+            int s = Mathf.Clamp(section, 0, w.Earned.Length - 1);
+            // While a finished section's tally plays, the world and game totals hold their old values; they catch
+            // up when it's done.
+            int worldGot = w.Banked, worldOf = w.PossibleSoFar, gameGot = scores.GameBanked, gameOf = scores.GamePossible;
+            if (tally != null)
+            {
+                gameGot -= worldGot - tally.WorldFrom;
+                gameOf -= worldOf - tally.PossibleFrom;
+                worldGot = tally.WorldFrom;
+                worldOf = tally.PossibleFrom;
+            }
+            var rows = new[]
+            {
+                ("Game", Scoreboard.Format(gameGot, gameOf)),
+                ("World", Scoreboard.Format(worldGot, worldOf)),
+                ("Section", Scoreboard.Format(w.Earned[s], w.Possible[s])),
+            };
+            const float rowH = 42f;
+            var box = new Rect(12, 46, 470, 20 + rows.Length * rowH);
+            Panel(box, 0.55f);
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var r = new Rect(box.x + 18, box.y + 10 + i * rowH, box.width - 36, rowH);
+                Shadowed(r, rows[i].Item1, scoreLabelStyle);
+                Shadowed(r, rows[i].Item2, scoreValueStyle);
+            }
+        }
+
+        /// <summary>A finished section's score mid-screen, then the world total counting up to include it.</summary>
+        void DrawTally()
+        {
+            tallyTitleStyle ??= new GUIStyle(bannerStyle) { fontSize = 52 };
+            tallyBigStyle ??= new GUIStyle(bannerStyle) { fontSize = 100, normal = { textColor = new Color(1f, 0.85f, 0.3f) } };
+            tallyWorldStyle ??= new GUIStyle(bannerStyle) { fontSize = 64 };
+            float t = Time.time - tally.StartedAt;
+            float alpha = Mathf.Clamp01(t / 0.3f) * Mathf.Clamp01((TallyEnd - t) / TallyFade);
+            var old = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, alpha);
+            float y = Screen.height * 0.26f;
+            Shadowed(new Rect(0, y, Screen.width, 72), $"Section {tally.Section + 1} complete", tallyTitleStyle);
+            Shadowed(new Rect(0, y + 72, Screen.width, 128), Scoreboard.Format(tally.Earned, tally.Possible), tallyBigStyle);
+            if (t >= TallyWorldAppears)
+            {
+                float u = Mathf.Clamp01((t - TallyWorldAppears - 0.3f) / TallyCountUp);
+                u = 1f - (1f - u) * (1f - u);
+                // The points and what was possible count up together, so the percentage moves smoothly from the old
+                // one to the new; from nothing (the first section), what was possible is simply the section's.
+                int shown = Mathf.RoundToInt(Mathf.Lerp(tally.WorldFrom, tally.WorldTo, u));
+                int possible = tally.PossibleFrom == 0 ? tally.PossibleTo : Mathf.RoundToInt(Mathf.Lerp(tally.PossibleFrom, tally.PossibleTo, u));
+                GUI.color = new Color(1f, 1f, 1f, alpha * Mathf.Clamp01((t - TallyWorldAppears) / 0.3f));
+                Shadowed(new Rect(0, y + 216, Screen.width, 88), $"World   {Scoreboard.Format(shown, possible)}", tallyWorldStyle);
+            }
+            GUI.color = old;
+        }
+
+        /// <summary>
+        /// The end-of-world screens, as bar graphs: each section's score (or, after the first world, each world's)
+        /// as a bar as long as its percentage, with the world (or game) total as a taller bar at the bottom. The bars
+        /// grow in one after another as the screen comes up.
+        /// </summary>
+        void DrawSummary()
+        {
+            var w = scores.Current;
+            string heading, totalLabel;
+            int totalGot, totalOf;
+            var rows = new System.Collections.Generic.List<(string label, int got, int of, bool done)>();
+            if (summaryPage == 1)
+            {
+                heading = $"World {w.World} complete";
+                for (int i = 0; i < w.Earned.Length; i++) rows.Add(($"Section {i + 1}", w.Earned[i], w.Possible[i], w.Finished[i]));
+                totalLabel = "World";
+                totalGot = w.Banked;
+                totalOf = w.PossibleSoFar;
+            }
+            else
+            {
+                heading = "Your run so far";
+                foreach (var ws in scores.Worlds) rows.Add(($"World {ws.World}", ws.Banked, ws.PossibleSoFar, true));
+                totalLabel = "Game";
+                totalGot = scores.GameBanked;
+                totalOf = scores.GamePossible;
+            }
+
+            // Laid out at full size, then scaled down to fit smaller screens.
+            float rowH = 60f, totalH = 84f, titleH = 110f, promptH = 70f, pad = 40f, width = 1300f;
+            float fullH = titleH + rows.Count * rowH + 24f + totalH + promptH + pad;
+            float k = Mathf.Min(1f, Screen.height * 0.94f / fullH, Screen.width * 0.94f / width);
+            rowH *= k; totalH *= k; titleH *= k; promptH *= k; pad *= k; width *= k;
+            float h = fullH * k;
+            var box = new Rect((Screen.width - width) * 0.5f, (Screen.height - h) * 0.5f, width, h);
+            Panel(box, 0.88f);
+
+            summaryRowStyle ??= new GUIStyle(hudStyle) { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
+            summaryValueStyle ??= new GUIStyle(summaryRowStyle);
+            summaryTotalStyle ??= new GUIStyle(bannerStyle);
+            promptStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.MiddleCenter };
+            summaryRowStyle.fontSize = Mathf.RoundToInt(36 * k);
+            summaryValueStyle.fontSize = Mathf.RoundToInt(32 * k);
+            summaryTotalStyle.fontSize = Mathf.RoundToInt(68 * k);
+            promptStyle.fontSize = Mathf.RoundToInt(32 * k);
+
+            float t = Time.time - summaryShownAt;
+            float y = box.y + pad * 0.5f;
+            Shadowed(new Rect(box.x, y, width, titleH * 0.8f), heading, summaryTotalStyle);
+            y += titleH;
+            float labelW = 260f * k, left = box.x + pad, trackX = left + labelW, trackW = box.xMax - pad - trackX;
+
+            // How far a bar has grown in: one after another, then the total.
+            float Grow(int index) => Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - 0.25f - index * 0.12f) / 0.7f));
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var (label, got, of, done) = rows[i];
+                var rr = new Rect(left, y, box.width, rowH);
+                var old = GUI.color;
+                if (!done) GUI.color = new Color(1f, 1f, 1f, 0.45f);
+                Shadowed(new Rect(left, y, labelW, rowH), label, summaryRowStyle);
+                var track = new Rect(trackX, y + rowH * 0.12f, trackW, rowH * 0.76f);
+                Bar(track, done ? (of > 0 ? (float)got / of : 0f) * Grow(i) : 0f, false);
+                string text = done ? Scoreboard.Format(got, of) : $"not finished   ({of} possible)";
+                Shadowed(new Rect(track.x + 14f * k, track.y, track.width, track.height), text, summaryValueStyle);
+                GUI.color = old;
+                y += rowH;
+            }
+            y += 24f * k;
+            // The total: taller, brighter, last to fill.
+            var tr = new Rect(trackX, y, trackW, totalH);
+            Shadowed(new Rect(left, y, labelW, totalH), totalLabel, new GUIStyle(summaryRowStyle) { fontSize = Mathf.RoundToInt(44 * k) });
+            Bar(tr, (totalOf > 0 ? (float)totalGot / totalOf : 0f) * Grow(rows.Count + 1), true);
+            Shadowed(new Rect(tr.x + 16f * k, tr.y, tr.width, tr.height), Scoreboard.Format(totalGot, totalOf),
+                new GUIStyle(summaryValueStyle) { fontSize = Mathf.RoundToInt(44 * k) });
+            y += totalH + 10f * k;
+
+            bool ready = t >= summaryMinSeconds;
+            if (ready && Mathf.Repeat(Time.time, 1.2f) < 0.85f)
+            {
+                bool more = summaryPage == 1 && scores.Worlds.Count > 1;
+                Shadowed(new Rect(box.x, y, width, promptH * 0.7f), more ? "Press any button to continue" : "Press any button to start the next world", promptStyle);
+            }
+        }
+
+        /// <summary>
+        /// A horizontal bar filled to <paramref name="fill"/> (0-1) of its track: red when low, gold in the middle,
+        /// green when high, with a lighter strip along its top. The total's bar glows a brighter gold.
+        /// </summary>
+        static void Bar(Rect track, float fill, bool total)
+        {
+            Panel(track, 0.55f, new Color(0.25f, 0.22f, 0.35f));
+            fill = Mathf.Clamp01(fill);
+            if (fill <= 0f) return;
+            Color c = fill < 0.5f
+                ? Color.Lerp(new Color(0.9f, 0.2f, 0.25f), new Color(1f, 0.75f, 0.15f), fill * 2f)
+                : Color.Lerp(new Color(1f, 0.75f, 0.15f), new Color(0.3f, 0.9f, 0.35f), (fill - 0.5f) * 2f);
+            if (total) c = Color.Lerp(c, new Color(1f, 0.85f, 0.3f), 0.35f);
+            var r = new Rect(track.x, track.y, track.width * fill, track.height);
+            Panel(r, total ? 0.95f : 0.85f, c);
+            Panel(new Rect(r.x, r.y, r.width, r.height * 0.22f), 0.35f, Color.white);
         }
 
         void DrawMenu()
@@ -493,6 +788,16 @@ namespace SphereDescent
 
             Shadowed(new Rect(box.x - 60, box.yMax + 6, w + 120, 30),
                 "1-3 style   ·   ← → world   ·   Enter start   ·   Esc / M close", sectionStyle);
+        }
+
+        /// <summary>A plain dark (or <paramref name="tint"/>) panel, see-through by <paramref name="alpha"/>.</summary>
+        static void Panel(Rect r, float alpha, Color? tint = null)
+        {
+            var old = GUI.color;
+            var c = tint ?? new Color(0.02f, 0.01f, 0.05f);
+            GUI.color = new Color(c.r, c.g, c.b, alpha * old.a);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = old;
         }
 
         static void Shadowed(Rect r, string text, GUIStyle style)

@@ -76,6 +76,18 @@ namespace SphereDescent
             (Keyboard.current != null && (Keyboard.current.enterKey.wasPressedThisFrame || Keyboard.current.numpadEnterKey.wasPressedThisFrame)) ||
             (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame);
 
+        /// <summary>Any key, mouse button or gamepad button pressed this frame.</summary>
+        public static bool AnyPressed()
+        {
+            if (Keyboard.current != null && Keyboard.current.anyKey.wasPressedThisFrame) return true;
+            var m = Mouse.current;
+            if (m != null && (m.leftButton.wasPressedThisFrame || m.rightButton.wasPressedThisFrame)) return true;
+            var g = Gamepad.current;
+            return g != null && (g.buttonSouth.wasPressedThisFrame || g.buttonEast.wasPressedThisFrame || g.buttonWest.wasPressedThisFrame ||
+                                 g.buttonNorth.wasPressedThisFrame || g.startButton.wasPressedThisFrame || g.selectButton.wasPressedThisFrame ||
+                                 g.leftShoulder.wasPressedThisFrame || g.rightShoulder.wasPressedThisFrame);
+        }
+
         /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
         public static int NumberPressed()
         {
@@ -113,6 +125,9 @@ namespace SphereDescent
             (Input.GetKeyDown(KeyCode.RightArrow) ? 1 : 0) - (Input.GetKeyDown(KeyCode.LeftArrow) ? 1 : 0);
 
         public static bool ConfirmPressed() => Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
+
+        /// <summary>Any key, mouse button or gamepad button pressed this frame.</summary>
+        public static bool AnyPressed() => Input.anyKeyDown;
 
         /// <summary>Which number key (1-9) was pressed this frame, or 0 for none.</summary>
         public static int NumberPressed()

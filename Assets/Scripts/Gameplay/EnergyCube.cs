@@ -11,8 +11,10 @@ namespace SphereDescent
         public Transform visual;
         [Tooltip("A flat glow that turns to face the camera.")]
         public Transform halo;
-        public int points = 1;
+        public int points = 10;
         public bool isSuper;
+        [Tooltip("The section it belongs to, which gets its points.")]
+        public int section;
         public float spinSpeed = 45f;
         public float bobHeight = 0.12f;
         public float bobSpeed = 1.6f;

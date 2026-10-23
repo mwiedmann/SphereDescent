@@ -462,8 +462,8 @@ MonoBehaviour:
     cameraPoleHeight: 3
     cubesPerHalfSection: 7
     hiddenCubeShare: 0.5
-    cubePoints: 1
-    superCubePoints: 5
+    cubePoints: 10
+    superCubePoints: 50
     cubeSize: 0.5
     cubeCoreSize: 0.08
     acidBridgeWidth: 2.275
@@ -475,6 +475,7 @@ MonoBehaviour:
     checkpoints: 1
     extraCheckpointSpheres: 2
     checkpointRadius: 2.8
+    checkpointPoints: 5
     arrowEvery: 4
     beamHeight: 100
     shellMeshSubdivisions: 6

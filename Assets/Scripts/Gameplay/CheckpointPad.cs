@@ -14,6 +14,9 @@ namespace SphereDescent
         public Transform pulseRing;
         [Tooltip("How far along the world it is; a pad only takes over from ones before it.")]
         public int order;
+        [Tooltip("The section it belongs to, which gets its points.")]
+        public int section;
+        public int points = 5;
 
         public bool Reached { get; private set; }
 
@@ -43,7 +46,7 @@ namespace SphereDescent
             Reached = true;
             foreach (var r in indicators) if (r != null) r.sharedMaterial = active;
             ball.SetCheckpoint(transform.position + transform.up * 0.5f, order);
-            if (GameManager.Instance != null) GameManager.Instance.ShowMessage("Checkpoint!", 1.6f);
+            if (GameManager.Instance != null) GameManager.Instance.CheckpointReached(this);
         }
     }
 }
