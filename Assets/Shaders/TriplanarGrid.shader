@@ -168,6 +168,17 @@ Shader "SphereDescent/TriplanarGrid"
                 return Pattern(p.yz, kind) * w.x + Pattern(p.xz, kind) * w.y + Pattern(p.xy, kind) * w.z;
             }
 
+            // A pattern projected straight down onto the sphere from one direction (a zone's center), so a zone
+            // shows a single copy of it. Triplanar blending shows two faint copies wherever the ground faces
+            // between two axes.
+            float2 PlaneCoords (float3 p, float3 axis)
+            {
+                float3 helper = abs(axis.y) < 0.9 ? float3(0, 1, 0) : float3(1, 0, 0);
+                float3 t1 = normalize(cross(axis, helper));
+                float3 t2 = cross(axis, t1);
+                return float2(dot(p, t1), dot(p, t2));
+            }
+
             // Rippling caustic light, as cast on a sea floor. The pattern is precomputed into a tiling texture
             // (CausticTexture); two copies drifting different ways, kept only where both are bright, make it
             // shimmer. Mipmaps soften it in the distance.
@@ -241,7 +252,9 @@ Shader "SphereDescent/TriplanarGrid"
 
                     float3 neon = _ZoneColors[zone].rgb;
                     albedo = _DarkColor.rgb * lerp(1.0, 0.4 + neon * 2.0, _ZoneMix) * _Color.rgb;
-                    float caustic = _Caustics > 0.0 ? TriplanarCaustic(i.positionWS, i.normalWS) * _Caustics : 0.0;
+                    float caustic = _Caustics > 0.0
+                        ? (_WallMode > 0.5 ? TriplanarCaustic(i.positionWS, i.normalWS) : Caustic(PlaneCoords(i.positionWS, _ZoneDirs[zone].xyz))) * _Caustics
+                        : 0.0;
                     float3 causticLight = lerp(neon, float3(0.6, 0.95, 1.0), 0.6) * caustic;
 
                     if (_WallMode > 0.5)
@@ -262,7 +275,8 @@ Shader "SphereDescent/TriplanarGrid"
                     }
                     else
                     {
-                        float m = saturate(Triplanar(i.gridPos, i.gridNormal, zone % 4)) * _PatternStrength;
+                        // Floors: the zone's pattern projected down from the zone's center, one copy only.
+                        float m = saturate(Pattern(PlaneCoords(i.gridPos, _ZoneDirs[zone].xyz), zone % 4)) * _PatternStrength;
                         float bw = fwidth(borderDist);
                         float border = 1.0 - smoothstep(_ZoneBorder - bw, _ZoneBorder + bw, borderDist);
                         emission = lerp(neon * m, neon * 1.5, border) + causticLight;
