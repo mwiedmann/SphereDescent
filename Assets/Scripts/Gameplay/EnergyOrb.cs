@@ -5,7 +5,7 @@ namespace SphereDescent
 {
     /// <summary>
     /// The energy ball trapped in the middle of the core's walls: a white-hot sphere in a soft glow, bobbing
-    /// and pulsing. Once every wall is down, rolling into it frees it; it thanks the player and then flies
+    /// and pulsing. Once every wall is down, rolling up to it frees it; it thanks the player and then flies
     /// away, spiralling up and out of the world with a glowing trail.
     /// </summary>
     public class EnergyOrb : MonoBehaviour
@@ -47,10 +47,16 @@ namespace SphereDescent
             }
         }
 
-        void OnTriggerEnter(Collider other)
+        [Tooltip("How near (in units, from the point on the ground under it) the ball has to come to free it, once the walls are down.")]
+        public float reach = 3f;
+
+        BallController ball;
+
+        void LateUpdate()
         {
             if (Freed || (arena != null && !arena.AllBroken)) return;
-            if (other.attachedRigidbody == null || !other.attachedRigidbody.TryGetComponent(out BallController ball) || ball.IsDestroyed) return;
+            if (ball == null) ball = FindAnyObjectByType<BallController>();
+            if (ball == null || ball.IsDestroyed || Vector3.Distance(ball.transform.position, transform.position) > reach) return;
             Freed = true;
             glowBoost = 1.6f;
             if (GameManager.Instance != null) GameManager.Instance.EnergyFreed(this);

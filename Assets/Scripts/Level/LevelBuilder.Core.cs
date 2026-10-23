@@ -9,7 +9,8 @@ namespace SphereDescent
         /// <summary>
         /// The core's boss battle (see <see cref="CoreLayout"/>): a ball of boiling lava, the ground standing up
         /// out of it as hilly paths and two round plazas (floored like the shells), the energy ball trapped in
-        /// rings of glowing walls on one plaza, a key pad per wall with its hidden cable, energy cubes and mines.
+        /// rings of glowing walls on one plaza, a key pad per wall with its hidden cable, energy cubes and mines,
+        /// and the lava rain.
         /// </summary>
         static void CreateCore(LevelInstance level, MazeLayout layout, LevelSettings s, Transform root, LevelMaterials mats, VisualStyle style)
         {
@@ -95,17 +96,13 @@ namespace SphereDescent
             orbGo.transform.SetPositionAndRotation(cageUp * G, Quaternion.FromToRotation(Vector3.up, cageUp));
             var orbMat = level.Own(LevelMaterials.MakeEmissive(Color.Lerp(orbColor, Color.white, 0.5f), 5f));
             var body = Part(orbGo.transform, PrimitiveType.Sphere, "Body", orbMat);
-            body.localPosition = new Vector3(0f, 1.7f, 0f);
+            // High enough that it never dips into the ground as it bobs.
+            body.localPosition = new Vector3(0f, 2.6f, 0f);
             var haloMat = level.Own(new Material(glowTemplate));
             haloMat.SetFloat("_Soft", 1f);
             haloMat.SetColor("_Color", orbColor);
             haloMat.SetFloat("_Intensity", 2.2f);
             var halo = CreateMeshObject(orbGo.transform, "Glow", level.Own(MeshBuilders.BuildDisc(0.5f, 32)), haloMat, false, ShadowCastingMode.Off);
-            var orbTrigger = orbGo.AddComponent<SphereCollider>();
-            orbTrigger.isTrigger = true;
-            orbTrigger.center = new Vector3(0f, 1.7f, 0f);
-            // Generous, so it's easy to reach once the walls are down.
-            orbTrigger.radius = 2.2f;
             var orb = orbGo.AddComponent<EnergyOrb>();
             orb.body = body;
             orb.halo = halo.transform;
@@ -144,6 +141,26 @@ namespace SphereDescent
             arena.orb = orb;
             arena.lavaRadius = core.LavaRadius;
             arena.layer = layer;
+
+            // Lava raining down on the ball until the energy ball is freed.
+            var rain = new GameObject("Lava Rain").AddComponent<LavaRain>();
+            rain.transform.SetParent(root, false);
+            rain.arena = arena;
+            rain.core = core;
+            rain.layer = layer;
+            rain.interval = new Vector2(s.lavaRainIntervalMin, s.lavaRainIntervalMax);
+            rain.fallTime = s.lavaBlobFallTime;
+            rain.splashRadius = s.lavaBlobSplashRadius;
+            var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            rain.blobMesh = sphere.GetComponent<MeshFilter>().sharedMesh;
+            Object.DestroyImmediate(sphere);
+            rain.blobMaterial = level.Own(LevelMaterials.MakeEmissive(new Color(1f, 0.32f, 0.03f), 3.5f));
+            rain.shadowMaterial = level.Own(LevelMaterials.MakeGlass(Color.black, 0.6f, 0f));
+            var rimMat = level.Own(new Material(mats.spot));
+            rimMat.SetColor("_Color", new Color(1f, 0.12f, 0.02f));
+            rimMat.SetFloat("_Intensity", 1.4f);
+            rain.rimMaterial = rimMat;
+            rain.glowMaterial = glowTemplate;
             arena.cage = core.Cage;
             arena.cageRadius = core.CageRadius;
             arena.groundRadius = G;

@@ -159,6 +159,13 @@ namespace SphereDescent
         [Tooltip("Lone mines on each of the core's paths (the one from the landing and each key pad's).")]
         public int coreMinesMin = 3;
         public int coreMinesMax = 4;
+        [Tooltip("Seconds between blobs of lava raining down on the ball on the core (a random time in this range).")]
+        public float lavaRainIntervalMin = 3f;
+        public float lavaRainIntervalMax = 4f;
+        [Tooltip("Seconds a lava blob takes to fall, aimed where the ball will be by then: how long its shadow shows.")]
+        public float lavaBlobFallTime = 1.4f;
+        [Tooltip("How near a lava blob has to land to the ball to burn it up (from the ball's edge). The ball is 1 across.")]
+        public float lavaBlobSplashRadius = 1.3f;
         [Tooltip("Energy cubes scattered along the core's paths.")]
         public int coreCubes = 10;
         [Tooltip("Points for each key pad, and for freeing the energy ball.")]

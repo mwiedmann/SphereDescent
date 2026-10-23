@@ -323,6 +323,49 @@ namespace SphereDescent
             return outside <= 0f ? top : Mathf.Lerp(top, bottom, Mathf.SmoothStep(0f, 1f, outside / SideWidth));
         }
 
+        /// <summary>
+        /// The nearest spot to <paramref name="target"/> (a direction) well onto solid ground (2 units in from
+        /// the edge, so a lava blob's whole splash lands on it), kept clear of a circle of
+        /// <paramref name="keepOut"/> units around the cage: the target itself if it's well onto a path or plaza,
+        /// otherwise the nearest point across the path nearest the ball (<paramref name="ball"/>), or the plaza's
+        /// edge just outside the keep-out circle.
+        /// </summary>
+        public Vector3 NearestGround(Vector3 target, Vector3 ball, float keepOut)
+        {
+            float R = GroundRadius;
+            target.Normalize();
+            float AngleTo(Vector3 a, Vector3 b) => Vector3.Angle(a, b) * Mathf.Deg2Rad * R;
+            // Inside the walls (or onto the energy ball): out to just beyond them, toward the ball.
+            if (AngleTo(target, Cage) < keepOut)
+            {
+                Vector3 away = Vector3.ProjectOnPlane(ball.normalized - Cage, Cage);
+                if (away.sqrMagnitude < 1e-8f) away = Vector3.ProjectOnPlane(Landing, Cage);
+                return (Cage * Mathf.Cos(keepOut / R) + away.normalized * Mathf.Sin(keepOut / R)).normalized;
+            }
+            if (OutsideGround(target) <= -2f) return target;
+            // The path the ball is on (the nearest to it), and the point on it nearest the target.
+            List<Vector3> path = Paths[0];
+            float best = float.MaxValue;
+            foreach (var p in Paths)
+                foreach (var d in p)
+                {
+                    float a = AngleTo(d, ball);
+                    if (a < best) { best = a; path = p; }
+                }
+            Vector3 center = path[0];
+            best = float.MaxValue;
+            foreach (var d in path)
+            {
+                float a = AngleTo(d, target);
+                if (a < best) { best = a; center = d; }
+            }
+            // Then across toward the target, but not out to the edge.
+            float across = Mathf.Min(best, PathHalfWidth - 2f);
+            Vector3 toward = Vector3.ProjectOnPlane(target - center, center);
+            var spot = toward.sqrMagnitude < 1e-10f ? center : (center + toward.normalized * (across / R)).normalized;
+            return AngleTo(spot, Cage) < keepOut ? NearestGround(spot, ball, keepOut) : spot;
+        }
+
         /// <summary>Which way is up on the ground here, from how it slopes.</summary>
         public Vector3 Normal(Vector3 dir)
         {

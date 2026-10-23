@@ -44,6 +44,77 @@ namespace SphereDescent
             var w = gm.Scores.Current;
             Debug.Log($"[Probe] landed: layer {ball.CurrentLayer} grounded {ball.IsGrounded} r {ball.transform.position.magnitude:F2} G {G:F2} section {Get<int>(gm, "section")} coreIndex {w.CoreIndex} possible {w.Possible[w.CoreIndex]}");
             Vector3 landedAt = ball.transform.position;
+            // Sitting still on the core: a lava blob should land on the ball within a few seconds.
+            float sat = Time.time;
+            bool sawShadow = false;
+            while (!ball.IsDestroyed && Time.time - sat < 7f)
+            {
+                if (GameObject.Find("Blob Shadow") != null) sawShadow = true;
+                yield return null;
+            }
+            Debug.Log($"[Probe] lava rain: hit {ball.IsDestroyed} after {Time.time - sat:F1}s, shadow seen {sawShadow}, orb height {FindFirstObjectByType<EnergyOrb>().body.localPosition.y:F1}");
+            while (ball.IsDestroyed) yield return null;
+            // Rolling steadily: the blob should be aimed ahead, where the ball is going.
+            float rolled = Time.time;
+            int deaths = 0;
+            Vector3 lastAim = Vector3.zero;
+            while (Time.time - rolled < 8f)
+            {
+                Vector3 up = ball.transform.position.normalized;
+                Vector3 dir = Vector3.ProjectOnPlane(core.Cage, up).normalized;
+                rb.linearVelocity = dir * 4f + up * Vector3.Dot(rb.linearVelocity, up);
+                var shadow = GameObject.Find("Blob Shadow");
+                if (shadow != null && lastAim == Vector3.zero)
+                {
+                    var bounds = shadow.GetComponent<MeshRenderer>().bounds.center;
+                    lastAim = bounds;
+                    Debug.Log($"[Probe] blob aimed {Vector3.Distance(bounds, ball.transform.position):F1} from the ball, ahead {Vector3.Dot(bounds - ball.transform.position, dir):F1}");
+                }
+                if (ball.IsDestroyed) { deaths++; while (ball.IsDestroyed) yield return null; }
+                yield return null;
+            }
+            Debug.Log($"[Probe] rolling at 4: hit {deaths} times in 8s");
+            // Aimed into the walls, and out over the lava: each blob must still come down on open path.
+            var arenaA = FindFirstObjectByType<CoreArena>();
+            for (int trial = 0; trial < 6; trial++)
+            {
+                while (ball.IsDestroyed) yield return null;
+                bool towardWalls = trial % 2 == 0;
+                Vector3 start, heading;
+                if (towardWalls)
+                {
+                    Vector3 side = Vector3.ProjectOnPlane(core.Landing, core.Cage).normalized;
+                    start = (core.Cage + side * ((core.RingRadii[core.RingRadii.Length - 1] + 2f) / G)).normalized;
+                    heading = Vector3.ProjectOnPlane(core.Cage - start, start).normalized;
+                }
+                else
+                {
+                    var path = core.Paths[1 + trial % (core.Paths.Count - 1)];
+                    start = path[path.Count / 2];
+                    Vector3 along = path[path.Count / 2 + 1] - start;
+                    heading = Vector3.Cross(start, along).normalized; // straight off the side of the path
+                }
+                rb.position = start * (core.SurfaceRadius(start) + 0.55f);
+                yield return new WaitForFixedUpdate();
+                foreach (var old2 in GameObject.FindObjectsByType<LavaBlob>(FindObjectsSortMode.None)) Destroy(old2.gameObject);
+                yield return null;
+                GameObject shadow = null;
+                float t1 = Time.time;
+                while (shadow == null && Time.time - t1 < 6f)
+                {
+                    Vector3 up = ball.transform.position.normalized;
+                    rb.position = start * (core.SurfaceRadius(start) + 0.55f);
+                    rb.linearVelocity = Vector3.ProjectOnPlane(heading, up).normalized * 7f;
+                    yield return new WaitForFixedUpdate();
+                    shadow = GameObject.Find("Blob Shadow");
+                }
+                if (shadow == null) { Debug.Log("[Probe] aim trial: no blob"); continue; }
+                Vector3 c = shadow.GetComponent<MeshFilter>().sharedMesh.vertices[0].normalized;
+                Debug.Log($"[Probe] aim trial {(towardWalls ? "walls" : "lava")}: lands {core.OutsideGround(c):F1} outside the ground (negative = on it), {Vector3.Angle(c, core.Cage) * Mathf.Deg2Rad * G:F1} from the middle, outer wall {core.RingRadii[core.RingRadii.Length - 1]}");
+                rb.linearVelocity = Vector3.zero;
+            }
+            ball.Teleport(landedAt);
+            yield return new WaitForFixedUpdate();
 
             // Find lava near the landing and drop in.
             Vector3 lava = Vector3.zero;
@@ -57,7 +128,7 @@ namespace SphereDescent
             rb.position = lava * (core.LavaRadius + 2f); rb.linearVelocity = Vector3.zero;
             float t0 = Time.time;
             while (!ball.IsDestroyed && Time.time - t0 < 3f) yield return null;
-            Debug.Log($"[Probe] lava: destroyed {ball.IsDestroyed} after {Time.time - t0:F2}s");
+            Debug.Log($"[Probe] lava: destroyed {ball.IsDestroyed} after {Time.time - t0:F2}s, r now {ball.transform.position.magnitude:F2}, lava {core.LavaRadius}, surface there {core.SurfaceRadius(lava):F2}, layer {ball.CurrentLayer}, kinematic {rb.isKinematic}");
             yield return new WaitForSeconds(1.6f);
             Debug.Log($"[Probe] respawned {Vector3.Distance(ball.transform.position, landedAt):F2} from landing, layer {ball.CurrentLayer}");
 
