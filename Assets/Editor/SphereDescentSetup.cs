@@ -867,6 +867,8 @@ namespace SphereDescent.EditorTools
             var settings = gm.settings;
             var layout = MazeLayout.Generate(settings, gm.SeedFor(1));
             var level = LevelBuilder.Build(layout, settings, gm.materials, 1);
+            // Particle effects (the steam off acid pools) don't run outside Play mode: run them on a few seconds.
+            foreach (var ps in level.GetComponentsInChildren<ParticleSystem>(true)) ps.Simulate(4f, true, true);
             var cam = Camera.main;
             var sun = gm.sun;
             var orbit = cam.GetComponent<OrbitCamera>();
