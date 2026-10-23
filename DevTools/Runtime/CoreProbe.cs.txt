@@ -34,6 +34,7 @@ namespace SphereDescent
             if (Keyboard.current == null) InputSystem.AddDevice<Keyboard>();
             yield return new WaitForSeconds(1f);
             var gm = GameManager.Instance;
+            while (gm.Arriving) yield return null; // the world's opening meteor arrival
             var ball = FindFirstObjectByType<BallController>();
             var rb = ball.GetComponent<Rigidbody>();
             var level = FindFirstObjectByType<LevelInstance>();

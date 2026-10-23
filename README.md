@@ -14,6 +14,8 @@ A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. 
 
 Each world is a set of nested spheres: a surface shell, three smaller shells inside it, and a core of lava. Gravity always pulls toward the center, so you roll on the outside of whichever shell you're on.
 
+Every world opens with your ball arriving like a meteor: a speck high in the sky streaks down trailing fire and slams into the start in a burst of flame, and about four seconds later you're rolling.
+
 ![A whole world seen from space](Docs/screenshots/planet.png)
 
 - **Sections.** A world is a chain of maze sections, each taking a couple of minutes. A section has a main path with side lanes that branch off and rejoin it. There are several routes but no dead ends, and every route leads to the same spot.

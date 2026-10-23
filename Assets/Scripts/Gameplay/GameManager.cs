@@ -149,7 +149,6 @@ namespace SphereDescent
             scores.Reset();
             tally = null;
             BuildWorld();
-            ball.SetFrozen(false);
         }
 
         /// <summary>Sets up the sky, light and air for a world's style (its surfaces are styled as the level is built).</summary>
@@ -312,6 +311,151 @@ namespace SphereDescent
             ball.Teleport(level.SpawnPosition);
             FaceTheWayOn();
             ShowMessage(styles != null && styles.Length > 1 ? $"World {world}: {worldStyle.name}" : $"World {world}", 3f);
+            StartCoroutine(Arrive());
+        }
+
+        /// <summary>True while the ball is arriving at the start of a world (it can't be steered yet).</summary>
+        public bool Arriving { get; private set; }
+
+        [Tooltip("Seconds the ball takes to fall from the sky into the start of a world, like a meteor.")]
+        public float arrivalFallSeconds = 3f;
+        [Tooltip("Seconds after it lands before play starts, while the camera settles.")]
+        public float arrivalSettleSeconds = 1f;
+        Material meteorGlow, meteorTrail, emberMaterial;
+
+        /// <summary>
+        /// Each world starts with the ball arriving like a meteor: the camera, in its usual place behind the
+        /// start, looks up at a speck high in the sky, which streaks down trailing fire and slams into the
+        /// start in a burst of flame and embers, shaking the camera. Then the camera settles back and play
+        /// begins. About four seconds, and it can't be skipped.
+        /// </summary>
+        IEnumerator Arrive()
+        {
+            Arriving = true;
+            transitioning = true;
+            ball.SetFrozen(true);
+            var look = ball.GetComponent<Renderer>();
+            look.enabled = false;
+            orbit.enabled = false;
+            Transform view = cam.transform;
+            Vector3 camPos = view.position;
+            Quaternion camRot = view.rotation;
+            Vector3 up = level.SpawnPosition.normalized;
+            Vector3 ground = up * (level.Settings.shellRadii[0] + ball.Radius);
+            Vector3 ahead = Vector3.ProjectOnPlane(view.forward, up).normalized;
+            Vector3 from = ground + up * 150f + ahead * 70f;
+
+            var meteor = CreateMeteor();
+            for (float t = 0f; t < arrivalFallSeconds; t += Time.deltaTime)
+            {
+                float k = t / arrivalFallSeconds;
+                // Faster and faster, the way something falling from that high would.
+                meteor.position = Vector3.Lerp(from, ground, k * k);
+                meteor.Rotate(0f, 720f * Time.deltaTime, 360f * Time.deltaTime, Space.Self);
+                view.SetPositionAndRotation(camPos, Quaternion.LookRotation(meteor.position - camPos, up));
+                yield return null;
+            }
+
+            // The impact: the meteor's trail fades on its own; the ball is there.
+            var trail = meteor.GetComponent<TrailRenderer>();
+            trail.emitting = false;
+            foreach (Transform child in trail.transform) Destroy(child.gameObject);
+            StartCoroutine(FadeTrail(trail, 0.2f));
+            Explosion.Spawn(ground, materials.beam, new Color(1f, 0.5f, 0.12f), 9f);
+            Embers(ground, up);
+            look.enabled = true;
+            ball.Teleport(level.SpawnPosition);
+
+            // The camera shakes, and settles back to where it normally sits.
+            Quaternion impactRot = view.rotation;
+            for (float t = 0f; t < arrivalSettleSeconds; t += Time.deltaTime)
+            {
+                float k = t / arrivalSettleSeconds;
+                Vector3 shake = Random.insideUnitSphere * (0.45f * (1f - k) * (1f - k));
+                view.SetPositionAndRotation(camPos + shake, Quaternion.Slerp(impactRot, camRot, Mathf.SmoothStep(0f, 1f, Mathf.Min(1f, k * 1.6f))));
+                yield return null;
+            }
+            view.SetPositionAndRotation(camPos, camRot);
+            orbit.enabled = true;
+            FaceTheWayOn();
+            ball.SetFrozen(false);
+            transitioning = false;
+            Arriving = false;
+        }
+
+        /// <summary>Shrinks a trail away to nothing over <paramref name="seconds"/>, then removes it.</summary>
+        IEnumerator FadeTrail(TrailRenderer trail, float seconds)
+        {
+            float start = trail.time;
+            for (float t = 0f; t < seconds && trail != null; t += Time.deltaTime)
+            {
+                trail.time = Mathf.Lerp(start, 0f, t / seconds);
+                yield return null;
+            }
+            if (trail != null) Destroy(trail.gameObject);
+        }
+
+        /// <summary>The falling ball: a copy of it inside a fiery glow, trailing a streak of fire.</summary>
+        Transform CreateMeteor()
+        {
+            var go = new GameObject("Meteor");
+            var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Destroy(body.GetComponent<Collider>());
+            body.name = "Ball";
+            body.transform.SetParent(go.transform, false);
+            body.transform.localScale = Vector3.one * (ball.Radius * 2f);
+            body.GetComponent<MeshRenderer>().sharedMaterial = materials.ball;
+            if (meteorGlow == null)
+            {
+                meteorGlow = new Material(materials.beam);
+                meteorGlow.SetColor("_Color", new Color(1f, 0.55f, 0.15f));
+                meteorGlow.SetFloat("_FadeStart", 1f);
+                meteorGlow.SetFloat("_Intensity", meteorGlow.GetFloat("_Intensity") * 2.5f);
+                meteorTrail = LevelMaterials.MakeSpark();
+                meteorTrail.SetColor("_BaseColor", new Color(1.6f, 1.6f, 1.6f, 1f));
+            }
+            var glow = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            Destroy(glow.GetComponent<Collider>());
+            glow.name = "Fire";
+            glow.transform.SetParent(go.transform, false);
+            glow.transform.localScale = Vector3.one * 3f;
+            var glowRenderer = glow.GetComponent<MeshRenderer>();
+            glowRenderer.sharedMaterial = meteorGlow;
+            glowRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            var trail = go.AddComponent<TrailRenderer>();
+            trail.time = 0.6f;
+            trail.minVertexDistance = 0.5f;
+            trail.widthCurve = AnimationCurve.EaseInOut(0f, 1.3f, 1f, 0f);
+            trail.colorGradient = new Gradient
+            {
+                colorKeys = new[] { new GradientColorKey(new Color(1f, 0.95f, 0.7f), 0f), new GradientColorKey(new Color(1f, 0.45f, 0.08f), 0.4f), new GradientColorKey(new Color(0.6f, 0.1f, 0.02f), 1f) },
+                alphaKeys = new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0.7f, 0.4f), new GradientAlphaKey(0f, 1f) },
+            };
+            trail.sharedMaterial = meteorTrail;
+            trail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            return go.transform;
+        }
+
+        /// <summary>Glowing embers thrown up and out from where the ball lands, falling back and dying away.</summary>
+        void Embers(Vector3 at, Vector3 up)
+        {
+            if (emberMaterial == null) emberMaterial = LevelMaterials.MakeEmissive(new Color(1f, 0.4f, 0.08f), 4f);
+            for (int i = 0; i < 18; i++)
+            {
+                var ember = GameObject.CreatePrimitive(i % 2 == 0 ? PrimitiveType.Cube : PrimitiveType.Sphere);
+                Destroy(ember.GetComponent<Collider>());
+                ember.name = "Ember";
+                var mr = ember.GetComponent<MeshRenderer>();
+                mr.sharedMaterial = emberMaterial;
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                Vector3 side = Vector3.ProjectOnPlane(Random.onUnitSphere, up).normalized;
+                ember.transform.SetPositionAndRotation(at + up * 0.3f, Random.rotation);
+                ember.transform.localScale = Vector3.one * Random.Range(0.12f, 0.3f);
+                var debris = ember.AddComponent<Debris>();
+                debris.velocity = side * Random.Range(3f, 9f) + up * Random.Range(4f, 10f);
+                debris.spin = Random.insideUnitSphere * 600f;
+                debris.life = Random.Range(0.8f, 1.4f);
+            }
         }
 
         public Scoreboard Scores => scores;
@@ -560,9 +704,8 @@ namespace SphereDescent
             }
             summaryPage = 0;
             world++;
+            // The new world's arrival lets the ball go and ends the transition.
             BuildWorld();
-            ball.SetFrozen(false);
-            transitioning = false;
         }
 
         void Update()
