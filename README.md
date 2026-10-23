@@ -6,7 +6,7 @@ A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. 
 
 ![Rolling through a maze corridor](Docs/screenshots/gameplay.png)
 
-> **Status:** early prototype. The core loop and three kinds of hazard work, but tuning, sound and a proper menu are still to come.
+> **Status:** early prototype. The core loop, mines, four major hazards and scoring work, but tuning, sound and a proper menu are still to come.
 
 ## How it plays
 
@@ -20,13 +20,13 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 - **Checkpoints.** Halfway along each section is a large checkpoint pad marked with a flag. Roll over it and it lights up green: if you're blown up after that, you come back there instead of at the start of the section. On the first two spheres there are two more, about a quarter and three quarters of the way along. You always come back to the furthest one you've reached.
 - **Dropping down.** Most sections end at a hole marked with a glowing ring. Roll into it to fall to the next section on the shell below.
 - **Climbing up.** Some sections end at a cyan boost pad. Roll onto it and it launches you up through the hole above into the next section on the shell above. Jumping alone is too low to reach the layer above, and the maze walls are too tall to jump over.
-- **Major hazards.** Laser gates, security cameras, acid pools and mortars are the major hazards. Each half of a section, before and after its checkpoint, has two of them on the first two spheres and one on the smaller inner spheres, never two of the same kind in one half. Every kind turns up about equally often across a world. They're spread out: there are always a couple of clear cells between two of them, and a mortar never has another major hazard or a checkpoint in range.
+- **Major hazards.** Laser gates, security cameras, acid pools and mortars are the major hazards. Each half of a section, before and after its halfway checkpoint, has two of them on the first two spheres and one on the smaller inner spheres, never two of the same kind in one half. Every kind turns up about equally often across a world. They're spread out: there are always a couple of clear cells between two of them, and a mortar never has another major hazard or a checkpoint in range.
 - **Mines.** Groups of blinking red mines lie along each section's route, with more beside the walls so you can't just hug a wall past them, and lone mines are scattered along the route and side lanes. Weave between them or jump over them: touching one blows you up and sends you back to your respawn point.
 - **Laser gates.** A gate of lasers across a doorway you can't get around. Find the pad marked with a key nearby on your side, usually down a short side path: it pulses red while the lasers are on and turns green when you roll over it. A glowing cable then lights up along the floor from the pad to the gate, about as fast as you roll, and the lasers switch off when it reaches them. Touching the lasers blows you up like a mine.
 - **Security cameras.** A run of three cameras on poles above the walls, on alternating sides of the passage. Each sweeps a spotlight across a doorway in its own quick, steady pattern (a figure-8, a loop, or a wobbling side-to-side sweep). Time your run through the gaps: if the light catches you, it locks on and the camera shoots you with a laser.
 - **Acid pools.** A doorway you have to pass through leads into a cell that's a pit of glowing green acid. A narrow metal bridge with bright yellow edges crosses it from one doorway to the other, nearly straight, sometimes veering a little in the middle. Roll across carefully: fall off and the acid destroys you.
 - **Mortars.** A cannon perched on top of a wall, gripping it with two clawed legs, that lobs a bomb at you every second and a half while you're nearby. It aims where you'll be when the bomb lands if you keep rolling the same way, and a flashing red circle on the ground marks the spot. Keep changing direction or speed until you're out of range: a bomb landing near you blows you up.
-- **Energy cubes.** Each half of a section, before and after its checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for 10 points. The most hidden cube in each half is a larger magenta super cube worth 50.
+- **Energy cubes.** Each half of a section, before and after its halfway checkpoint, has 7 glowing cubes to collect: some in the middle of the main route, the rest tucked away down side lanes and around corners, never in among mines. Roll through one for 10 points. The most hidden cube in each half is a larger magenta super cube worth 50.
 - **Scores.** Cubes and checkpoints (5 points each) score toward the section you're in, and the points float up from where you picked them up (a super cube's bigger and flashier). The top-left corner shows three scores, each as points out of what was possible, like "13 of 25 [52%]": **Section** counts up as you go, out of everything in the section. **World** and **Game** only count a section once you finish it, both its points and what it was worth, so they show how well you've done so far. When you drop or launch out of a section, its score shows mid-screen and the world total counts up to include it. Finishing a world brings up its score for each section, then, after the first world, each world's score and the game total. Each screen stays up a few seconds before any button moves on.
 - **Escaping.** The last section drops you onto the gold core. Touching down anywhere on it completes the world, and the next world starts with a new maze.
 
@@ -50,7 +50,11 @@ Each world is a set of nested spheres: a surface shell, three smaller shells ins
 |---|---|
 | ![A narrow bridge across a pit of glowing green acid](Docs/screenshots/acid_pool.png) | ![A mortar gripping a wall, its bomb falling toward a red circle on the ground](Docs/screenshots/mortar.png) |
 
-To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in.
+| Finishing a section: its score, and the world total counting up | Finishing a world |
+|---|---|
+| ![The corner scores, with a finished section's score and the world total mid-screen](Docs/screenshots/scores.png) | ![A bar graph of each section's score and the world total](Docs/screenshots/world_complete.png) |
+
+To help you find your way, each sphere is split into 12 zones, each with its own neon color and line pattern: square grid, diagonal grid, stripes or dots. The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in along the top, and your scores in the top-left corner.
 
 ## Look
 
@@ -128,14 +132,15 @@ The ball's speed, jump height and gravity are set on the `BallController`, and t
 ```
 Assets/
   Scripts/
-    Gameplay/   ball, camera, input, boost pads, game manager and HUD
+    Gameplay/   ball, camera, input, pads, hazards, pickups, scores, game manager and HUD
     Geometry/   icosphere, hex/pentagon sphere grid, mesh builders
     Level/      maze generation, level building, zones, settings
-  Shaders/      neon zone/grid shader and synthwave skybox (URP)
+  Shaders/      neon zone/grid, skybox, light beams, spotlights and acid (URP)
   Settings/     URP pipeline, renderer, global and post-processing settings
   Editor/       scene setup and test tools
   Scenes/       Main.unity
 Docs/screenshots/  images used in this README
+DevTools/       testing and video tools used during development (not part of the game)
 ```
 
-The **Sphere Descent** menu in the editor can rebuild the main scene, run a world-generation check, and re-render these screenshots (**Render README Screenshots**).
+The **Sphere Descent** menu in the editor can rebuild the main scene, run a world-generation check, and re-render these screenshots (**Render README Screenshots**). The two score screenshots show the HUD, which that tool can't capture, so they were taken in Play mode.

@@ -10,7 +10,7 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | **Sphere** | One walkable maze layer. There are four, from the **surface** inward. | *shell* (`shellRadii`); *layer* when the core is counted too |
 | **Core** | The gold sphere at the center. Landing anywhere on it finishes the world. | *core*, the last layer |
 | **Section** | The stretch of maze from where you arrive on a sphere (through a hole or off a pad) to the hole or pad that takes you to the next one. A world is a chain of them. | `MazeLayout.Section` |
-| **First half / second half** | The part of a section before or after its checkpoint. Cubes are placed per half. | `cubesPerHalfSection` |
+| **First half / second half** | The part of a section before or after its main (halfway) checkpoint. Cubes and major hazards are placed per half. | `cubesPerHalfSection`, `majorHazardsPerHalf` |
 
 ## Inside a section
 
