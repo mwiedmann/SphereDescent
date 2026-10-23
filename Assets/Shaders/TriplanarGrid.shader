@@ -1,8 +1,9 @@
 // Triplanar patterns for procedurally generated meshes that have no UVs.
 // Zone mode is the synthwave look for the world: dark surfaces with glowing, anti-aliased neon lines in
 // the color of the world zone (ZoneMap, set as global arrays) they face, one of four patterns per zone
-// (from the geometric set, grids, stripes and dots, or the organic one, coral cells, sand ripples, polyp
-// clusters and kelp veins), and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
+// (from the geometric set, grids, stripes and dots; the organic one, coral cells, sand ripples, polyp
+// clusters and kelp veins; or the crystal one, frost hexagons, cracked ice, snowflakes and wind-blown
+// drifts), and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
 // along the top edge, a dimmer one at the base, and faintly glowing panel lines on the sides. Ball mode
 // draws the player's ball: eight equal segments split by three great circles (so rolling is easy to
 // see), alternating glossy black and neon in the color of the zone the ball is in, fading across zone
@@ -33,7 +34,7 @@ Shader "SphereDescent/TriplanarGrid"
         [Toggle] _BallMode ("Ball Mode", Float) = 0
         _RimStrength ("Ball Rim Glow", Float) = 1.6
         _PatternStrength ("Zone Pattern Strength", Range(0, 1)) = 1
-        [Enum(Geometric,0,Organic,1)] _PatternSet ("Zone Pattern Set", Float) = 0
+        [Enum(Geometric,0,Organic,1,Crystal,2)] _PatternSet ("Zone Pattern Set", Float) = 0
         _Caustics ("Caustic Light", Range(0, 2)) = 0
         _CausticScale ("Caustic Size", Float) = 6
     }
@@ -231,6 +232,79 @@ Shader "SphereDescent/TriplanarGrid"
                 return max(a, b);
             }
 
+            // Distance to the nearest edge between Voronoi cells (approximately), for cells of 1 in g.
+            float CellEdge (float2 g)
+            {
+                float2 c = floor(g), f = frac(g);
+                float f1 = 8.0, f2 = 8.0;
+                for (int y = -1; y <= 1; y++)
+                for (int x = -1; x <= 1; x++)
+                {
+                    float2 o = float2(x, y);
+                    float d = length(o + 0.1 + 0.8 * Hash22(c + o) - f);
+                    if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) f2 = d;
+                }
+                return f2 - f1;
+            }
+
+            // The frozen patterns, sharp and crystalline:
+            // 0 = frost hexagons, 1 = cracked ice, 2 = snowflakes, 3 = wind-blown drifts.
+            float CrystalPattern (float2 p, int kind)
+            {
+                float2 q = p / _GridSize;
+                if (kind == 0)
+                {
+                    // A honeycomb of hexagonal frost cells.
+                    float2 g = q * 0.8, r = float2(1.0, 1.7320508), hr = r * 0.5;
+                    float2 a = g - r * floor(g / r) - hr;
+                    float2 b = (g - hr) - r * floor((g - hr) / r) - hr;
+                    float2 cell = dot(a, a) < dot(b, b) ? a : b;
+                    float2 ac = abs(cell);
+                    float edge = 0.5 - max(dot(ac, float2(0.5, 0.8660254)), ac.x);
+                    float w = fwidth(edge), width = _LineWidth * 0.8;
+                    return FadeOut(1.0 - smoothstep(width - w, width + w, edge), 0.08, g);
+                }
+                if (kind == 1)
+                {
+                    // Cracked ice: big plates split by bold cracks, crazed with finer ones.
+                    float2 g = q * 0.75, g2 = q * 2.1;
+                    float e1 = CellEdge(g), e2 = CellEdge(g2 + 31.7);
+                    float w1 = fwidth(e1), w2 = fwidth(e2);
+                    float bold = 1.0 - smoothstep(_LineWidth * 1.1 - w1, _LineWidth * 1.1 + w1, e1);
+                    float fine = 1.0 - smoothstep(_LineWidth * 0.55 - w2, _LineWidth * 0.55 + w2, e2);
+                    return max(FadeOut(bold, 0.1, g), FadeOut(fine, 0.05, g2) * 0.55);
+                }
+                if (kind == 2)
+                {
+                    // Six-armed snowflakes of every size, scattered and turned every which way.
+                    float2 g = q * 0.9, c = floor(g), f = frac(g);
+                    float flake = 0.0, aa = max(fwidth(g.x), fwidth(g.y)) * 1.2;
+                    for (int y = -1; y <= 1; y++)
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        float2 o = float2(x, y), cellId = c + o;
+                        float2 h = Hash22(cellId), h2 = Hash22(cellId + 9.31);
+                        if (h2.x > 0.6) continue;
+                        float2 v = o + 0.25 + 0.5 * h - f;
+                        float size = 0.18 + 0.2 * h2.y, len = length(v);
+                        if (len > size + aa) continue;
+                        // Distance from the nearest of the six arms (each a line out from the middle).
+                        float ang = atan2(v.y, v.x) + h.x * 6.2831853;
+                        float sector = (frac(ang / 1.0471976 + 0.5) - 0.5) * 1.0471976;
+                        float arm = len * abs(sin(sector));
+                        float thick = 0.025 + 0.012 * (1.0 - len / size);
+                        float body = (1.0 - smoothstep(thick - aa, thick + aa, arm)) * (1.0 - smoothstep(size - aa, size + aa, len));
+                        flake = max(flake, body);
+                    }
+                    return FadeOut(flake, 0.06, g);
+                }
+                // Drifts: long, gently curving streaks blown across the ice, broken into dashes.
+                float y = q.y * 0.9 + 0.6 * sin(q.x * 0.25 + 0.7 * sin(q.y * 0.4));
+                float row = floor(y);
+                float dash = smoothstep(0.15, 0.45, 0.5 + 0.5 * sin(q.x * 0.7 + Hash22(float2(row, 3.7)).x * 6.2831853));
+                return Lines1D(y, _LineWidth * 1.1) * lerp(0.3, 1.0, dash);
+            }
+
             float Triplanar (float3 p, float3 n, int kind)
             {
                 float3 w = pow(abs(normalize(n)), 12); // sharp blend so patterns don't ghost on curved ground
@@ -347,7 +421,8 @@ Shader "SphereDescent/TriplanarGrid"
                     {
                         // Floors: the zone's pattern projected down from the zone's center, one copy only.
                         float2 zp = PlaneCoords(i.gridPos, _ZoneDirs[zone].xyz);
-                        float m = saturate(_PatternSet > 0.5 ? OrganicPattern(zp, zone % 4) : Pattern(zp, zone % 4)) * _PatternStrength;
+                        int kind = zone % 4;
+                        float m = saturate(_PatternSet > 1.5 ? CrystalPattern(zp, kind) : _PatternSet > 0.5 ? OrganicPattern(zp, kind) : Pattern(zp, kind)) * _PatternStrength;
                         float bw = fwidth(borderDist);
                         float border = 1.0 - smoothstep(_ZoneBorder - bw, _ZoneBorder + bw, borderDist);
                         emission = lerp(neon * m, neon * 1.5, border) + causticLight;

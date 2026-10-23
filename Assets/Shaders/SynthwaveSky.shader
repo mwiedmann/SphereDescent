@@ -1,5 +1,6 @@
 // Synthwave skybox: a deep purple sky fading to a magenta horizon, a field of stars, and a striped retro
-// sun sitting on the horizon. On a planet "up" depends on where you stand, so the horizon follows the
+// sun sitting on the horizon. Styles recolor it, and can add light shafts from above (under water) or
+// rippling curtains of aurora (a polar night). On a planet "up" depends on where you stand, so the horizon follows the
 // global _PlayerUp and the sun the global _SkySunDir (both set by GameManager.UpdateSky).
 Shader "SphereDescent/SynthwaveSky"
 {
@@ -16,6 +17,9 @@ Shader "SphereDescent/SynthwaveSky"
         _StarDensity ("Star Density", Range(0, 0.02)) = 0.004
         _StarDrift ("Star Drift Speed", Float) = 0
         _RayStrength ("Light Shafts From Above", Range(0, 1)) = 0
+        _Aurora ("Aurora", Range(0, 2)) = 0
+        _AuroraLow ("Aurora Foot Color", Color) = (0.1,0.95,0.85,1)
+        _AuroraHigh ("Aurora Top Color", Color) = (0.7,0.3,1,1)
     }
     SubShader
     {
@@ -42,6 +46,9 @@ Shader "SphereDescent/SynthwaveSky"
                 float _StarDensity;
                 float _StarDrift;
                 float _RayStrength;
+                float _Aurora;
+                float4 _AuroraLow;
+                float4 _AuroraHigh;
             CBUFFER_END
 
             float3 _PlayerUp;
@@ -92,6 +99,29 @@ Shader "SphereDescent/SynthwaveSky"
                     float shafts = pow(saturate(0.5 + 0.5 * sin(around * 9.0 + sway + _Time.y * 0.05)), 6.0);
                     shafts *= 0.6 + 0.4 * sin(around * 3.0 - _Time.y * 0.1);
                     col += _TopColor.rgb * 1.6 * shafts * smoothstep(0.0, 0.9, h) * _RayStrength;
+                }
+
+                // Aurora: two wavy curtains across the sky, each a sheet of fine vertical rays hanging from a
+                // bright foot, fading upward from one color to the other, rippling slowly.
+                if (_Aurora > 0.0)
+                {
+                    float3 right = normalize(cross(up, abs(up.y) < 0.9 ? float3(0, 1, 0) : float3(1, 0, 0)));
+                    float3 fwd = cross(right, up);
+                    float around = atan2(dot(d, fwd), dot(d, right));
+                    float t = _Time.y;
+                    float3 aurora = 0;
+                    for (int c = 0; c < 2; c++)
+                    {
+                        float k = c;
+                        float foot = 0.22 + 0.15 * k + 0.07 * sin(around * 2.0 + k * 2.4 + t * 0.07) + 0.03 * sin(around * 5.0 - t * 0.13 + k);
+                        float above = h - foot;
+                        float sheet = smoothstep(-0.015, 0.01, above) * exp(-max(above, 0.0) * (6.0 + 2.0 * k));
+                        float rays = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(around * (55.0 + 20.0 * k) + 3.0 * sin(around * 6.0 + t * 0.25 + k)), 3.0);
+                        float wane = 0.55 + 0.45 * sin(around * 1.5 + t * 0.09 + k * 3.1);
+                        float3 tint = lerp(_AuroraLow.rgb, _AuroraHigh.rgb, saturate(above * 6.0));
+                        aurora += tint * sheet * rays * wane * (1.0 - 0.35 * k);
+                    }
+                    col += aurora * _Aurora * saturate(h * 8.0) * 1.4;
                 }
 
                 // Retro sun: disc on the horizon, yellow at the top to pink at the bottom, with horizontal

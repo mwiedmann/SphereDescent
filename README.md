@@ -56,11 +56,11 @@ Every world opens with your ball arriving like a meteor: a speck high in the sky
 |---|---|
 | ![The corner scores, with a finished section's score and the world total mid-screen](Docs/screenshots/scores.png) | ![A bar graph of each section's score and the world total](Docs/screenshots/world_complete.png) |
 
-To help you find your way, each sphere is split into 12 zones, each with its own neon color and floor pattern: square grid, diagonal grid, stripes or dots in Synthwave, and rounder shapes in Deep Sea (coral cells, sand ripples, clumps of polyps, or a net of kelp veins). The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in along the top, and your scores in the top-left corner.
+To help you find your way, each sphere is split into 12 zones, each with its own neon color and floor pattern: square grid, diagonal grid, stripes or dots in Synthwave, rounder shapes in Deep Sea (coral cells, sand ripples, clumps of polyps, or a net of kelp veins), and crystal shapes in Frozen (frost hexagons, cracked ice, snowflakes, or wind-blown drifts). The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in along the top, and your scores in the top-left corner.
 
 ## Look
 
-Everything is drawn by shaders, with no image files. There are two styles: **Synthwave** (the default) and **Deep Sea**. Press M to open a menu where you can pick a style (or alternate them every world) and which world to play. Hole rings, pads, beams, hazards and the core's lava look the same in both, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
+Everything is drawn by shaders, with no image files. There are three styles: **Synthwave** (the default), **Deep Sea** and **Frozen**. Press M to open a menu where you can pick a style (or alternate them every world) and which world to play. Hole rings, pads, beams, hazards and the core's lava look the same in every style, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
 
 Synthwave:
 
@@ -73,6 +73,10 @@ Synthwave:
 Deep Sea: dark blue-green surfaces glowing in softer bioluminescent zone colors, with caustic light rippling over floors and walls (a tiling pattern computed at startup). The sky is water, brightest overhead, with swaying shafts of light and drifting specks; a blue haze fills the distance and specks drift around the camera.
 
 ![The same corridor in the Deep Sea style, its floor rippled like sand](Docs/screenshots/deep_sea.png)
+
+Frozen: an arctic polar night. Frosted blue-grey surfaces are etched with crystal patterns (frost hexagons, cracked ice, snowflakes, wind-blown drifts) glowing in icy blues, violets and pinks. Curtains of aurora ripple across a starry sky, kept teal and violet so they never look like acid, snow falls around you wherever you are on the planet, and a pale frosty haze fills the distance.
+
+![The same corridor in the Frozen style, under the aurora](Docs/screenshots/frozen.png)
 
 ## Controls
 

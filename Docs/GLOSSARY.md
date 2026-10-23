@@ -48,7 +48,7 @@ The words we use when talking about Sphere Descent, and what each is called in t
 | **Zone** | One of the 12 named color regions on each sphere. They line up through every layer. | `ZoneMap` |
 | **Exit beam** | The column of light over the hole or pad that ends the section you're in. | light beams, `SetBeamSection` |
 | **Floor arrows** | Arrows on the floor every few cells pointing along the route. | `MazeLayout.Arrows` |
-| **Style** | The look of a world: Synthwave or Deep Sea. | `VisualStyle` |
+| **Style** | The look of a world: Synthwave, Deep Sea or Frozen. | `VisualStyle` |
 
 ## Hazards
 
