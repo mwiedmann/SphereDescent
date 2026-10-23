@@ -52,9 +52,10 @@ swiftc -O sheet.swift -o sheet
 ## Others
 
 - `Editor/CoreShot.cs`: renders a world's core (`WORLD=n PREVIEW_DIR=<dir>`) from above, from the landing, at the walls and at two key pads, with every cable lit.
+- `Runtime/StyleCycleProbe.cs.txt`: a `PlayProbe` body that skips through seven worlds and logs each one's style, to check they take turns in order.
 - `Runtime/MeteorProbe.cs.txt`: a `PlayProbe` body that captures frames of a world's opening meteor arrival and checks the ball ends up at the start, visible and steerable.
 - `Runtime/CoreProbe.cs.txt`: a `PlayProbe` body that plays out the core: lava, all six key pads, the cubes, freeing the energy ball and the score screens, logging each step. Batch mode starts with the keyboard disabled, so it enables it before simulating a press.
-- `Editor/FrozenShot.cs`: the same for the Frozen style's crystal patterns, under its aurora sky.
+- `Editor/StylePatternShot.cs`: the same for the Frozen, Ruins or Nebula style's own patterns, under its sky (`STYLE=Frozen|Ruins|Nebula`).
 - `Editor/PatternShot.cs`: renders Deep Sea floors in a zone of each of the four patterns, once with the geometric set and once with the organic set, for comparing.
 - `Editor/AcidShot.cs`: renders acid pools from several angles. A magenta background shows up see-through gaps.
 - `Editor/StyleShot.cs`: renders the visual styles.

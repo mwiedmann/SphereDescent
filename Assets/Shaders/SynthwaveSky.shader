@@ -1,6 +1,6 @@
 // Synthwave skybox: a deep purple sky fading to a magenta horizon, a field of stars, and a striped retro
-// sun sitting on the horizon. Styles recolor it, and can add light shafts from above (under water) or
-// rippling curtains of aurora (a polar night). On a planet "up" depends on where you stand, so the horizon follows the
+// sun sitting on the horizon. Styles recolor it, and can add light shafts from above (under water, or at
+// golden hour), rippling curtains of aurora (a polar night) or swirling nebula clouds (deep space). On a planet "up" depends on where you stand, so the horizon follows the
 // global _PlayerUp and the sun the global _SkySunDir (both set by GameManager.UpdateSky).
 Shader "SphereDescent/SynthwaveSky"
 {
@@ -17,6 +17,11 @@ Shader "SphereDescent/SynthwaveSky"
         _StarDensity ("Star Density", Range(0, 0.02)) = 0.004
         _StarDrift ("Star Drift Speed", Float) = 0
         _RayStrength ("Light Shafts From Above", Range(0, 1)) = 0
+        _RayColor ("Light Shaft Color (clear = top color)", Color) = (0,0,0,0)
+        [Toggle] _SunStripes ("Sun Stripes", Float) = 1
+        _Nebula ("Nebula", Range(0, 2)) = 0
+        _NebulaA ("Nebula Color A", Color) = (1,0.2,0.7,1)
+        _NebulaB ("Nebula Color B", Color) = (0.2,0.4,1,1)
         _Aurora ("Aurora", Range(0, 2)) = 0
         _AuroraLow ("Aurora Foot Color", Color) = (0.1,0.95,0.85,1)
         _AuroraHigh ("Aurora Top Color", Color) = (0.7,0.3,1,1)
@@ -46,6 +51,11 @@ Shader "SphereDescent/SynthwaveSky"
                 float _StarDensity;
                 float _StarDrift;
                 float _RayStrength;
+                float4 _RayColor;
+                float _SunStripes;
+                float _Nebula;
+                float4 _NebulaA;
+                float4 _NebulaB;
                 float _Aurora;
                 float4 _AuroraLow;
                 float4 _AuroraHigh;
@@ -70,6 +80,22 @@ Shader "SphereDescent/SynthwaveSky"
                 p = frac(p * 0.3183099 + 0.1);
                 p *= 17.0;
                 return frac(p.x * p.y * p.z * (p.x + p.y + p.z));
+            }
+
+            // Smooth 3D value noise, and a few octaves of it, for the nebula's clouds.
+            float Noise (float3 p)
+            {
+                float3 c = floor(p), f = frac(p);
+                f = f * f * (3.0 - 2.0 * f);
+                return lerp(lerp(lerp(Hash(c), Hash(c + float3(1, 0, 0)), f.x), lerp(Hash(c + float3(0, 1, 0)), Hash(c + float3(1, 1, 0)), f.x), f.y),
+                            lerp(lerp(Hash(c + float3(0, 0, 1)), Hash(c + float3(1, 0, 1)), f.x), lerp(Hash(c + float3(0, 1, 1)), Hash(c + float3(1, 1, 1)), f.x), f.y), f.z);
+            }
+
+            float Fbm (float3 p)
+            {
+                float v = 0.0, a = 0.5;
+                for (int o = 0; o < 5; o++) { v += a * Noise(p); p = p * 2.03 + 17.1; a *= 0.5; }
+                return v;
             }
 
             half4 frag (Varyings i) : SV_Target
@@ -98,7 +124,23 @@ Shader "SphereDescent/SynthwaveSky"
                     float sway = 1.7 * sin(around * 4.0 + _Time.y * 0.15);
                     float shafts = pow(saturate(0.5 + 0.5 * sin(around * 9.0 + sway + _Time.y * 0.05)), 6.0);
                     shafts *= 0.6 + 0.4 * sin(around * 3.0 - _Time.y * 0.1);
-                    col += _TopColor.rgb * 1.6 * shafts * smoothstep(0.0, 0.9, h) * _RayStrength;
+                    float3 rayTint = _RayColor.a > 0.0 ? _RayColor.rgb : _TopColor.rgb;
+                    col += rayTint * 1.6 * shafts * smoothstep(0.0, 0.9, h) * _RayStrength;
+                }
+
+                // Nebula: swirling clouds of glowing gas, warped so they billow and streak, blending two colors,
+                // with brighter knots where they're thickest. Fixed in the sky (not to the player's up), drifting
+                // very slowly.
+                if (_Nebula > 0.0)
+                {
+                    float3 p = d * 2.2 + float3(0.0, _Time.y * 0.004, 0.0);
+                    float3 warp = float3(Fbm(p + 3.1), Fbm(p + 7.7), Fbm(p + 12.3));
+                    float gas = Fbm(p + warp * 1.6);
+                    float mixAB = Fbm(p * 0.7 + warp + 30.0);
+                    float cloud = smoothstep(0.42, 0.78, gas);
+                    float3 tint = lerp(_NebulaA.rgb, _NebulaB.rgb, smoothstep(0.35, 0.65, mixAB));
+                    col += tint * cloud * 0.9 * _Nebula + float3(1.0, 0.9, 1.0) * pow(cloud, 4.0) * 0.5 * _Nebula;
+                    col *= 1.0 - 0.35 * smoothstep(0.55, 0.75, Fbm(p * 1.7 + 50.0)) * _Nebula; // dark dust lanes
                 }
 
                 // Aurora: two wavy curtains across the sky, each a sheet of fine vertical rays hanging from a
@@ -133,7 +175,7 @@ Shader "SphereDescent/SynthwaveSky"
                     float sunUp = dot(sunDir, up);
                     float rel = (h - sunUp) / _SunSize; // -1 at the bottom of the disc, 1 at the top
                     float3 sunCol = lerp(_SunBottomColor.rgb, _SunTopColor.rgb, saturate(rel * 0.5 + 0.5)) * _SunGlow;
-                    float gap = rel < 0.1 ? step(frac(rel * 6.0), saturate(0.15 - rel * 0.35)) : 0.0;
+                    float gap = _SunStripes > 0.5 && rel < 0.1 ? step(frac(rel * 6.0), saturate(0.15 - rel * 0.35)) : 0.0;
                     float edge = smoothstep(_SunSize, _SunSize * 0.97, sunAngle);
                     col = lerp(col, sunCol, edge * (1.0 - gap));
                 }

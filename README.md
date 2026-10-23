@@ -6,7 +6,7 @@ A 3D rolling-ball maze game made in Unity, with a synthwave (or deep-sea) look. 
 
 ![Rolling through a maze corridor](Docs/screenshots/gameplay.png)
 
-> **Status:** early prototype. The core loop, mines, four major hazards and scoring work, but tuning, sound and a proper menu are still to come.
+> **Status:** early prototype. The core loop, mines, four major hazards, the core boss battle, five visual styles and scoring work, but tuning, sound and a proper menu are still to come.
 
 ## How it plays
 
@@ -56,11 +56,11 @@ Every world opens with your ball arriving like a meteor: a speck high in the sky
 |---|---|
 | ![The corner scores, with a finished section's score and the world total mid-screen](Docs/screenshots/scores.png) | ![A bar graph of each section's score and the world total](Docs/screenshots/world_complete.png) |
 
-To help you find your way, each sphere is split into 12 zones, each with its own neon color and floor pattern: square grid, diagonal grid, stripes or dots in Synthwave, rounder shapes in Deep Sea (coral cells, sand ripples, clumps of polyps, or a net of kelp veins), and crystal shapes in Frozen (frost hexagons, cracked ice, snowflakes, or wind-blown drifts). The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in along the top, and your scores in the top-left corner.
+To help you find your way, each sphere is split into 12 zones, each with its own neon color and floor pattern: square grid, diagonal grid, stripes or dots in Synthwave, rounder shapes in Deep Sea (coral cells, sand ripples, clumps of polyps, or a net of kelp veins), crystal shapes in Frozen (frost hexagons, cracked ice, snowflakes, or wind-blown drifts), carvings in Overgrown Ruins (temple meanders, cobbles, spiral vines, or leaf veins), and the night sky in Cosmic Nebula (constellations, orbit rings, spiral galaxies, or starbursts). The zones line up through every layer. A beam of light rises from where the section you're in ends, orange over a hole to drop through or cyan over a boost pad to climb from, so you can spot it over the maze walls. Glowing arrows on the floor every few cells point along the route, and whenever a world starts, you land on a new sphere, or you respawn, the camera turns to face the way on. The HUD shows the world, section, layer and zone you're in along the top, and your scores in the top-left corner.
 
 ## Look
 
-Everything is drawn by shaders, with no image files. There are three styles: **Synthwave** (the default), **Deep Sea** and **Frozen**. Press M to open a menu where you can pick a style (or alternate them every world) and which world to play. Hole rings, pads, beams, hazards and the core's lava look the same in every style, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
+Everything is drawn by shaders, with no image files. There are five styles: **Synthwave**, **Deep Sea**, **Frozen**, **Overgrown Ruins** and **Cosmic Nebula**. A run starts in Synthwave and each new world moves on to the next style, wrapping round. Press M to open a menu where you can pick the style to start in (the worlds after it carry on from there) and which world to play. Hole rings, pads, beams, hazards and the core's lava look the same in every style, so they always mean the same thing. The HUD shows the frame time and style in the top right. Styles are defined in `Assets/Scripts/Level/VisualStyle.cs` and listed on the GameManager, where they can be tuned or added to.
 
 Synthwave:
 
@@ -77,6 +77,14 @@ Deep Sea: dark blue-green surfaces glowing in softer bioluminescent zone colors,
 Frozen: an arctic polar night. Frosted blue-grey surfaces are etched with crystal patterns (frost hexagons, cracked ice, snowflakes, wind-blown drifts) glowing in icy blues, violets and pinks. Curtains of aurora ripple across a starry sky, kept teal and violet so they never look like acid, snow falls around you wherever you are on the planet, and a pale frosty haze fills the distance.
 
 ![The same corridor in the Frozen style, under the aurora](Docs/screenshots/frozen.png)
+
+Overgrown Ruins: a lost temple at golden hour. Weathered stone is carved with temple meanders, cobbles, spiral vines and leaf veins, glowing in warm golds, rose, turquoise and violet. A low, soft sun sits in a hazy dusk sky with warm shafts of light, fireflies rise and blink around you, and a warm haze fills the distance.
+
+![The same corridor in the Overgrown Ruins style, at golden hour](Docs/screenshots/ruins.png)
+
+Cosmic Nebula: deep space. Glassy obsidian surfaces are etched with constellations, orbit rings (their planets slowly circling), spiral galaxies and starbursts in nebula colors. Swirling clouds of pink and blue gas, with dark dust lanes, drift across a sky thick with stars, and stardust twinkles in the air.
+
+![The same corridor in the Cosmic Nebula style, under swirling gas clouds](Docs/screenshots/nebula.png)
 
 ## Controls
 

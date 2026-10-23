@@ -1217,17 +1217,16 @@ namespace SphereDescent.EditorTools
                 GameView("deep_sea", 0, rolling, g0.CellCenters[route0[at + 1]], orbit.pitch - 16f);
             }
 
-            // And in the Frozen style.
+            // And in the other styles, low enough to see each one's sky over the walls.
+            foreach (var (other, file) in new[] { (VisualStyle.Frozen(), "frozen"), (VisualStyle.Ruins(), "ruins"), (VisualStyle.Nebula(), "nebula") })
             {
-                var frozen = VisualStyle.Frozen();
                 Object.DestroyImmediate(level.gameObject);
-                level = LevelBuilder.Build(layout, settings, gm.materials, 1, frozen);
+                level = LevelBuilder.Build(layout, settings, gm.materials, 1, other);
                 Physics.SyncTransforms();
-                GameManager.ApplyAtmosphere(frozen, RenderSettings.skybox, sun);
-                innerBackground = frozen.innerBackground;
+                GameManager.ApplyAtmosphere(other, RenderSettings.skybox, sun);
+                innerBackground = other.innerBackground;
                 level.SetBeamSection(0);
-                // Low enough to see the aurora over the walls.
-                GameView("frozen", 0, rolling, g0.CellCenters[route0[at + 1]], orbit.pitch - 20f);
+                GameView(file, 0, rolling, g0.CellCenters[route0[at + 1]], orbit.pitch - 20f);
             }
 
             Object.DestroyImmediate(ball);

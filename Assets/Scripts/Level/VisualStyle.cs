@@ -4,7 +4,7 @@ using UnityEngine;
 namespace SphereDescent
 {
     /// <summary>The four floor patterns a style's zones take turns through.</summary>
-    public enum PatternSet { Geometric, Organic, Crystal }
+    public enum PatternSet { Geometric, Organic, Crystal, Carved, Cosmic }
 
     /// <summary>
     /// The look of a world: zone colors, how surfaces glow, the sky, the light and the air. Worlds take turns
@@ -36,8 +36,9 @@ namespace SphereDescent
         [Tooltip("Brightness of the per-zone line patterns (grid, diagonal, stripes, dots).")]
         [Range(0f, 1f)] public float patternStrength = 1f;
         [Tooltip("Which four floor patterns the zones take turns through: the geometric set (square grid, diagonal " +
-                 "grid, stripes, dots), the organic one (coral cells, sand ripples, polyp clusters, kelp veins), or the " +
-                 "crystal one (frost hexagons, cracked ice, snowflakes, wind-blown drifts).")]
+                 "grid, stripes, dots), organic (coral cells, sand ripples, polyp clusters, kelp veins), crystal (frost " +
+                 "hexagons, cracked ice, snowflakes, wind-blown drifts), carved (temple meander, cobbles, spiral vines, " +
+                 "leaf veins) or cosmic (constellations, orbit rings, spiral galaxies, starbursts).")]
         public PatternSet patternSet = PatternSet.Geometric;
         [Tooltip("Shimmering caustic light rippling over the floors and walls, as under water. 0 = none.")]
         [Range(0f, 2f)] public float caustics = 0f;
@@ -54,16 +55,24 @@ namespace SphereDescent
         public float sunGlow = 1.6f;
         public Color sunTop = new Color(1f, 0.85f, 0.25f);
         public Color sunBottom = new Color(1f, 0.2f, 0.6f);
+        [Tooltip("Retro stripes cut across the bottom of the sun.")]
+        public bool sunStripes = true;
         [Range(0f, 0.02f)] public float starDensity = 0.004f;
         [Tooltip("How fast the stars drift (0 = still).")]
         public float starDrift = 0f;
         [Tooltip("Shafts of light fanning down from overhead. 0 = none.")]
         [Range(0f, 1f)] public float lightRays = 0f;
+        [Tooltip("The light shafts' color. Fully transparent = the sky's top color.")]
+        public Color rayColor = Color.clear;
         [Tooltip("Rippling curtains of aurora across the sky, from the first color at their foot to the second at " +
                  "their top. 0 = none.")]
         [Range(0f, 2f)] public float aurora = 0f;
         public Color auroraLow = new Color(0.1f, 0.95f, 0.85f);
         public Color auroraHigh = new Color(0.7f, 0.3f, 1f);
+        [Tooltip("Swirling clouds of glowing gas across the sky, blending the two colors. 0 = none.")]
+        [Range(0f, 2f)] public float nebula = 0f;
+        public Color nebulaA = new Color(1f, 0.2f, 0.7f);
+        public Color nebulaB = new Color(0.2f, 0.4f, 1f);
         [Tooltip("Background below the surface, where the layers above are hidden.")]
         public Color innerBackground = Color.black;
 
@@ -81,6 +90,8 @@ namespace SphereDescent
         public float speckFall = 0f;
         [Tooltip("Size of the specks.")]
         public Vector2 speckSize = new Vector2(0.03f, 0.09f);
+        [Tooltip("Specks blink on and off as they drift, like fireflies or twinkling stardust.")]
+        public bool speckTwinkle = false;
 
         public static VisualStyle Synthwave() => new VisualStyle
         {
@@ -208,6 +219,117 @@ namespace SphereDescent
             speckColor = new Color(0.92f, 0.96f, 1f, 0.85f),
             speckFall = 1.3f,
             speckSize = new Vector2(0.05f, 0.12f),
+        };
+
+        /// <summary>
+        /// Overgrown ruins: a lost temple at golden hour. Weathered stone with a muted moss tint, carved with
+        /// meanders, cobbles, vines and leaves glowing in warm golds, rose, teal and violet; a hazy dusk sky with
+        /// a low soft sun and warm shafts of light; fireflies rising and blinking; a warm haze in the distance.
+        /// The moss stays olive and the jade pale, never acid green.
+        /// </summary>
+        public static VisualStyle Ruins() => new VisualStyle
+        {
+            name = "Overgrown Ruins",
+            zones = new[]
+            {
+                new Zone { name = "Sunstone",   color = new Color(1.00f, 0.80f, 0.30f) },
+                new Zone { name = "Turquoise",  color = new Color(0.15f, 0.85f, 0.80f) },
+                new Zone { name = "Rosewood",   color = new Color(1.00f, 0.55f, 0.55f) },
+                new Zone { name = "Amethyst",   color = new Color(0.65f, 0.45f, 1.00f) },
+                new Zone { name = "Jade",       color = new Color(0.50f, 0.90f, 0.70f) },
+                new Zone { name = "Honey",      color = new Color(1.00f, 0.90f, 0.55f) },
+                new Zone { name = "Lotus",      color = new Color(1.00f, 0.50f, 0.80f) },
+                new Zone { name = "Lagoon",     color = new Color(0.30f, 0.70f, 1.00f) },
+                new Zone { name = "Sage",       color = new Color(0.70f, 0.85f, 0.60f) },
+                new Zone { name = "Firefly",    color = new Color(0.95f, 1.00f, 0.60f) },
+                new Zone { name = "Orchid",     color = new Color(0.85f, 0.55f, 1.00f) },
+                new Zone { name = "Moonflower", color = new Color(0.85f, 0.85f, 1.00f) },
+            },
+            darkColor = new Color(0.17f, 0.145f, 0.10f),
+            groundZoneMix = 0.3f,
+            wallZoneMix = 0.4f,
+            glowIntensity = 1.35f,
+            patternStrength = 0.6f,
+            patternSet = PatternSet.Carved,
+            caustics = 0f,
+            skyTop = new Color(0.10f, 0.14f, 0.28f),
+            skyMid = new Color(0.45f, 0.33f, 0.38f),
+            skyHorizon = new Color(1.00f, 0.66f, 0.32f),
+            skyBelow = new Color(0.14f, 0.10f, 0.07f),
+            sunSize = 0.11f,
+            sunGlow = 1.3f,
+            sunTop = new Color(1f, 0.93f, 0.7f),
+            sunBottom = new Color(1f, 0.62f, 0.3f),
+            sunStripes = false,
+            starDensity = 0.0008f,
+            starDrift = 0f,
+            lightRays = 0.45f,
+            rayColor = new Color(1f, 0.75f, 0.4f, 1f),
+            innerBackground = new Color(0.03f, 0.02f, 0.015f),
+            sunLight = new Color(1f, 0.85f, 0.62f),
+            sunLightIntensity = 1.05f,
+            ambientLight = new Color(0.30f, 0.25f, 0.20f),
+            fogDensity = 0.007f,
+            fogColor = new Color(0.50f, 0.38f, 0.26f),
+            floatingSpecks = 220,
+            speckColor = new Color(1f, 0.9f, 0.4f, 0.95f),
+            speckFall = -0.35f,
+            speckSize = new Vector2(0.06f, 0.14f),
+            speckTwinkle = true,
+        };
+
+        /// <summary>
+        /// Cosmic nebula: glassy obsidian surfaces etched with constellations, orbit rings, spiral galaxies and
+        /// starbursts in nebula colors; swirling clouds of glowing gas across a deep, star-thick sky; twinkling
+        /// stardust drifting about.
+        /// </summary>
+        public static VisualStyle Nebula() => new VisualStyle
+        {
+            name = "Cosmic Nebula",
+            zones = new[]
+            {
+                new Zone { name = "Andromeda", color = new Color(1.00f, 0.30f, 0.80f) },
+                new Zone { name = "Sirius",    color = new Color(0.55f, 0.80f, 1.00f) },
+                new Zone { name = "Nova",      color = new Color(1.00f, 0.85f, 0.45f) },
+                new Zone { name = "Lyra",      color = new Color(0.55f, 0.40f, 1.00f) },
+                new Zone { name = "Quasar",    color = new Color(0.20f, 0.95f, 1.00f) },
+                new Zone { name = "Vega",      color = new Color(1.00f, 0.55f, 0.65f) },
+                new Zone { name = "Halo",      color = new Color(0.90f, 0.90f, 1.00f) },
+                new Zone { name = "Orion",     color = new Color(0.30f, 0.45f, 1.00f) },
+                new Zone { name = "Pulsar",    color = new Color(0.85f, 0.40f, 1.00f) },
+                new Zone { name = "Comet",     color = new Color(0.60f, 1.00f, 0.95f) },
+                new Zone { name = "Eclipse",   color = new Color(1.00f, 0.70f, 0.90f) },
+                new Zone { name = "Nebula",    color = new Color(0.70f, 0.55f, 1.00f) },
+            },
+            darkColor = new Color(0.03f, 0.025f, 0.05f),
+            groundZoneMix = 0.4f,
+            wallZoneMix = 0.6f,
+            glowIntensity = 1.6f,
+            patternStrength = 0.8f,
+            patternSet = PatternSet.Cosmic,
+            caustics = 0f,
+            skyTop = new Color(0.01f, 0.005f, 0.03f),
+            skyMid = new Color(0.03f, 0.015f, 0.07f),
+            skyHorizon = new Color(0.10f, 0.05f, 0.18f),
+            skyBelow = new Color(0.02f, 0.01f, 0.04f),
+            sunSize = 0f,
+            sunGlow = 0f,
+            starDensity = 0.012f,
+            starDrift = 0f,
+            lightRays = 0f,
+            nebula = 1f,
+            nebulaA = new Color(1f, 0.25f, 0.7f),
+            nebulaB = new Color(0.2f, 0.45f, 1f),
+            innerBackground = new Color(0.01f, 0.005f, 0.02f),
+            sunLight = new Color(0.85f, 0.8f, 1f),
+            sunLightIntensity = 0.9f,
+            ambientLight = new Color(0.18f, 0.14f, 0.28f),
+            fogDensity = 0f,
+            floatingSpecks = 300,
+            speckColor = new Color(0.9f, 0.85f, 1f, 0.8f),
+            speckFall = 0f,
+            speckSize = new Vector2(0.03f, 0.08f),
+            speckTwinkle = true,
         };
     }
 }
