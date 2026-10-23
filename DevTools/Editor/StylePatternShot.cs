@@ -5,7 +5,7 @@ using UnityEngine;
 namespace SphereDescent.EditorTools
 {
     /// <summary>Renders Deep Sea floors in one zone of each pattern, with the geometric and the organic set.</summary>
-    public static class FrozenShot
+    public static class StylePatternShot
     {
         public static void Run()
         {
@@ -17,10 +17,10 @@ namespace SphereDescent.EditorTools
             var layout = MazeLayout.Generate(gm.settings, gm.SeedFor(2));
             var cam = Camera.main;
             cam.farClipPlane = 1000f;
-            foreach (var set in new[] { PatternSet.Crystal })
+            string which = System.Environment.GetEnvironmentVariable("STYLE") ?? "Frozen";
             {
-                var style = VisualStyle.Frozen();
-                style.patternSet = set;
+                var style = which == "Ruins" ? VisualStyle.Ruins() : which == "Nebula" ? VisualStyle.Nebula() : VisualStyle.Frozen();
+                var set = style.patternSet;
                 var level = LevelBuilder.Build(layout, gm.settings, gm.materials, 2, style);
                 var sky = new Material(RenderSettings.skybox); RenderSettings.skybox = sky; GameManager.ApplyAtmosphere(style, sky, gm.sun);
                 level.SetVisibleLayers(0); level.SetShadowLayer(0);

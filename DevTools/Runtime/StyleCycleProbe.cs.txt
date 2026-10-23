@@ -1,0 +1,55 @@
+using System.Collections;
+using System.Reflection;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+
+namespace SphereDescent
+{
+    public class PlayProbe : MonoBehaviour
+    {
+        public static bool Done;
+
+        void Start() => StartCoroutine(Run());
+
+        static T Get<T>(object o, string f) => (T)o.GetType().GetField(f, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(o);
+
+        IEnumerator Press()
+        {
+            InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+            InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            if (!Keyboard.current.enabled) InputSystem.EnableDevice(Keyboard.current);
+            InputSystem.QueueStateEvent(Keyboard.current, new KeyboardState(Key.Space));
+            yield return null; yield return null;
+            InputSystem.QueueStateEvent(Keyboard.current, new KeyboardState());
+            yield return null;
+        }
+
+        IEnumerator Run()
+        {
+            Application.runInBackground = true;
+            if (Keyboard.current == null) InputSystem.AddDevice<Keyboard>();
+            var gm = GameManager.Instance;
+            string order = "";
+            for (int k = 0; k < 7; k++)
+            {
+                yield return null;
+                while (gm.Arriving) yield return null;
+                order += $" w{gm.World}:{Get<VisualStyle>(gm, "style").name}";
+                if (k == 6) break;
+                gm.OnExitReached();
+                yield return new WaitForSeconds(0.5f);
+                for (int page = 0; page < 3 && gm.World == gm.World; page++)
+                {
+                    int w = gm.World;
+                    yield return new WaitForSeconds(3.3f);
+                    yield return Press();
+                    yield return new WaitForSeconds(0.3f);
+                    if (gm.World != w) break;
+                }
+            }
+            Debug.Log($"[Probe] styles by world:{order}");
+            Done = true;
+        }
+    }
+}

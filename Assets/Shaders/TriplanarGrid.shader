@@ -2,8 +2,9 @@
 // Zone mode is the synthwave look for the world: dark surfaces with glowing, anti-aliased neon lines in
 // the color of the world zone (ZoneMap, set as global arrays) they face, one of four patterns per zone
 // (from the geometric set, grids, stripes and dots; the organic one, coral cells, sand ripples, polyp
-// clusters and kelp veins; or the crystal one, frost hexagons, cracked ice, snowflakes and wind-blown
-// drifts), and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
+// clusters and kelp veins; the crystal one, frost hexagons, cracked ice, snowflakes and wind-blown
+// drifts; the carved one, temple meanders, cobbles, spiral vines and leaf veins; or the cosmic one,
+// constellations, orbit rings, spiral galaxies and starbursts), and a bright seam along zone borders. Wall mode instead draws dark panels with a neon strip
 // along the top edge, a dimmer one at the base, and faintly glowing panel lines on the sides. Ball mode
 // draws the player's ball: eight equal segments split by three great circles (so rolling is easy to
 // see), alternating glossy black and neon in the color of the zone the ball is in, fading across zone
@@ -34,7 +35,7 @@ Shader "SphereDescent/TriplanarGrid"
         [Toggle] _BallMode ("Ball Mode", Float) = 0
         _RimStrength ("Ball Rim Glow", Float) = 1.6
         _PatternStrength ("Zone Pattern Strength", Range(0, 1)) = 1
-        [Enum(Geometric,0,Organic,1,Crystal,2)] _PatternSet ("Zone Pattern Set", Float) = 0
+        [Enum(Geometric,0,Organic,1,Crystal,2,Carved,3,Cosmic,4)] _PatternSet ("Zone Pattern Set", Float) = 0
         _Caustics ("Caustic Light", Range(0, 2)) = 0
         _CausticScale ("Caustic Size", Float) = 6
     }
@@ -305,6 +306,153 @@ Shader "SphereDescent/TriplanarGrid"
                 return Lines1D(y, _LineWidth * 1.1) * lerp(0.3, 1.0, dash);
             }
 
+            // Distance from p to the segment a-b.
+            float Segment (float2 p, float2 a, float2 b)
+            {
+                float2 pa = p - a, ba = b - a;
+                return length(pa - ba * saturate(dot(pa, ba) / dot(ba, ba)));
+            }
+
+            // A line of half-width w along distance d (in the cell units of g), anti-aliased by how fast g changes
+            // across a pixel: d itself jumps at cell edges, and its own derivative would draw seams there.
+            float Stroke (float d, float w, float2 g)
+            {
+                float aa = max(fwidth(g.x), fwidth(g.y)) * 0.7;
+                return 1.0 - smoothstep(w - aa, w + aa, d);
+            }
+
+            // The ruins' patterns, carved into the stone:
+            // 0 = temple meander (Greek key), 1 = cobbles, 2 = spiral vines, 3 = leaf veins.
+            float CarvedPattern (float2 p, int kind)
+            {
+                float2 q = p / _GridSize;
+                if (kind == 0)
+                {
+                    // A running key: from each cell's corner up, across, down and curling in, joined along the bottom.
+                    float2 g = q * 0.6, f = frac(g);
+                    float d = Segment(f, float2(0.0, 0.0), float2(1.0, 0.0));
+                    d = min(d, Segment(f, float2(0.0, 0.0), float2(0.0, 0.8)));
+                    d = min(d, Segment(f, float2(0.0, 0.8), float2(0.8, 0.8)));
+                    d = min(d, Segment(f, float2(0.8, 0.8), float2(0.8, 0.35)));
+                    d = min(d, Segment(f, float2(0.8, 0.35), float2(0.35, 0.35)));
+                    d = min(d, Segment(f, float2(0.35, 0.35), float2(0.35, 0.55)));
+                    // The wrap-around neighbours' strokes along the cell's edges.
+                    d = min(d, Segment(f, float2(0.0, 1.0), float2(1.0, 1.0)));
+                    d = min(d, Segment(f, float2(1.0, 0.0), float2(1.0, 0.8)));
+                    return FadeOut(Stroke(d, _LineWidth * 0.8, g), 0.1, g);
+                }
+                if (kind == 1)
+                {
+                    // Cobbles: rows of rounded stones, each row shifted, each outlined in a fine glow.
+                    float2 g = q * float2(0.75, 1.3);
+                    float row = floor(g.y);
+                    g.x += row * 0.5 + 0.3 * Hash22(float2(row, 5.1)).x;
+                    float2 cell = floor(g), f = frac(g) - 0.5;
+                    float2 size = float2(0.43, 0.38) - 0.04 * Hash22(cell);
+                    float2 e = abs(f) - size + 0.15;
+                    float box = length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - 0.15; // rounded box, < 0 inside
+                    return FadeOut(Stroke(abs(box), _LineWidth * 0.7, g), 0.12, g);
+                }
+                if (kind == 2)
+                {
+                    // Vines curling into spirals here and there.
+                    float2 g = q * 0.6, c = floor(g), f = frac(g);
+                    float vine = 0.0;
+                    for (int y = -1; y <= 1; y++)
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        float2 o = float2(x, y), cellId = c + o;
+                        float2 h = Hash22(cellId), h2 = Hash22(cellId + 4.7);
+                        if (h2.x > 0.7) continue;
+                        float2 v = f - (o + 0.3 + 0.4 * h);
+                        float r = length(v), size = 0.3 + 0.15 * h2.y;
+                        if (r > size) continue;
+                        float turn = (atan2(v.y, v.x) + h.x * 6.2831853) / 6.2831853;
+                        float coil = r / 0.11 - turn * (h2.y > 0.5 ? 1.0 : -1.0); // an Archimedean spiral, either way
+                        float d = abs(frac(coil) - 0.5) * 0.11;
+                        vine = max(vine, Stroke(d, _LineWidth * 0.55, g) * smoothstep(size, size * 0.8, r));
+                    }
+                    return FadeOut(vine, 0.1, g);
+                }
+                // Leaves: long wavy stems with veins slanting off both sides.
+                float2 g = q * 0.8;
+                float y = g.y + 0.35 * sin(g.x * 0.6);
+                float side = frac(y) - 0.5;
+                float stem = Lines1D(y, _LineWidth * 1.2);
+                float veins = Lines1D(g.x * 2.0 + abs(side) * 1.8, _LineWidth * 0.8) * step(abs(side), 0.38);
+                return max(stem, veins * 0.8);
+            }
+
+            // The nebula's patterns, the night sky on the ground:
+            // 0 = constellations, 1 = orbit rings, 2 = spiral galaxies, 3 = starbursts.
+            float CosmicPattern (float2 p, int kind)
+            {
+                float2 q = p / _GridSize;
+                if (kind == 0)
+                {
+                    // Stars, each joined by a fine line to the star of the next cell over (and the one below).
+                    float2 g = q * 0.7, c = floor(g), f = frac(g);
+                    float stars = 0.0, lines = 0.0, aa = max(fwidth(g.x), fwidth(g.y));
+                    for (int y = -1; y <= 1; y++)
+                    for (int x = -1; x <= 1; x++)
+                    {
+                        float2 o = float2(x, y), cellId = c + o;
+                        float2 s0 = o + 0.2 + 0.6 * Hash22(cellId);
+                        float r = 0.04 + 0.05 * Hash22(cellId + 2.2).x;
+                        stars = max(stars, 1.0 - smoothstep(r - aa, r + aa, length(f - s0)));
+                        float2 s1 = o + float2(1.0, 0.0) + 0.2 + 0.6 * Hash22(cellId + float2(1.0, 0.0));
+                        float2 s2 = o + float2(0.0, 1.0) + 0.2 + 0.6 * Hash22(cellId + float2(0.0, 1.0));
+                        if (Hash22(cellId + 8.8).x < 0.6) lines = max(lines, Stroke(Segment(f, s0, s1), _LineWidth * 0.35, g));
+                        if (Hash22(cellId + 9.9).y < 0.4) lines = max(lines, Stroke(Segment(f, s0, s2), _LineWidth * 0.35, g));
+                    }
+                    return FadeOut(max(stars, lines * 0.6), 0.06, g);
+                }
+                if (kind == 1)
+                {
+                    // Planets on their orbits: rings around a bright point, a small planet on each ring.
+                    float2 g = q * 0.35, c = floor(g), f = frac(g) - 0.5;
+                    float2 h = Hash22(c);
+                    float r = length(f);
+                    float ring = abs(frac(r * 6.0 - 0.5) - 0.5) / 6.0;
+                    float rings = Stroke(ring, _LineWidth * 0.25, g) * step(r, 0.47) * step(0.08, r);
+                    float ang = atan2(f.y, f.x);
+                    float band = floor(r * 6.0 - 0.5);
+                    float planetAng = (Hash22(c + band).x + _Time.y * 0.02 * (1.0 + band)) * 6.2831853;
+                    float2 planet = float2(cos(planetAng), sin(planetAng)) * (band + 1.0) / 6.0;
+                    float aa = max(fwidth(g.x), fwidth(g.y));
+                    float planets = (1.0 - smoothstep(0.025 - aa, 0.025 + aa, length(f - planet))) * step(r, 0.47);
+                    float sun = 1.0 - smoothstep(0.05 - aa, 0.05 + aa, r);
+                    return FadeOut(max(max(rings * 0.7, planets), sun), 0.08, g);
+                }
+                if (kind == 2)
+                {
+                    // Spiral galaxies: two glowing arms winding out from a bright core.
+                    float2 g = q * 0.45, c = floor(g), f = frac(g) - 0.5;
+                    float2 h = Hash22(c);
+                    float r = length(f);
+                    float ang = atan2(f.y, f.x) + h.x * 6.2831853;
+                    float arms = 0.5 + 0.5 * cos(2.0 * (ang - log(max(r, 0.01)) * 2.2));
+                    float glow = pow(arms, 4.0) * smoothstep(0.45, 0.1, r) + smoothstep(0.08, 0.0, r);
+                    return FadeOut(saturate(glow), 0.12, g);
+                }
+                // Starbursts: four-pointed sparkles of every size.
+                float2 g = q * 1.1, c = floor(g), f = frac(g);
+                float burst = 0.0;
+                for (int y = -1; y <= 1; y++)
+                for (int x = -1; x <= 1; x++)
+                {
+                    float2 o = float2(x, y), cellId = c + o;
+                    float2 h = Hash22(cellId), h2 = Hash22(cellId + 6.6);
+                    if (h2.x > 0.75) continue;
+                    float2 v = abs(f - (o + 0.2 + 0.6 * h));
+                    float size = 0.18 + 0.25 * h2.y;
+                    float star = max(1.0 - v.x * v.y * 400.0 / size, 0.0) * smoothstep(size, 0.0, max(v.x, v.y))
+                                 + smoothstep(0.05, 0.0, length(v)); // a bright heart
+                    burst = max(burst, saturate(star));
+                }
+                return FadeOut(burst, 0.05, g);
+            }
+
             float Triplanar (float3 p, float3 n, int kind)
             {
                 float3 w = pow(abs(normalize(n)), 12); // sharp blend so patterns don't ghost on curved ground
@@ -422,7 +570,9 @@ Shader "SphereDescent/TriplanarGrid"
                         // Floors: the zone's pattern projected down from the zone's center, one copy only.
                         float2 zp = PlaneCoords(i.gridPos, _ZoneDirs[zone].xyz);
                         int kind = zone % 4;
-                        float m = saturate(_PatternSet > 1.5 ? CrystalPattern(zp, kind) : _PatternSet > 0.5 ? OrganicPattern(zp, kind) : Pattern(zp, kind)) * _PatternStrength;
+                        float m = _PatternSet > 3.5 ? CosmicPattern(zp, kind) : _PatternSet > 2.5 ? CarvedPattern(zp, kind)
+                            : _PatternSet > 1.5 ? CrystalPattern(zp, kind) : _PatternSet > 0.5 ? OrganicPattern(zp, kind) : Pattern(zp, kind);
+                        m = saturate(m) * _PatternStrength;
                         float bw = fwidth(borderDist);
                         float border = 1.0 - smoothstep(_ZoneBorder - bw, _ZoneBorder + bw, borderDist);
                         emission = lerp(neon * m, neon * 1.5, border) + causticLight;

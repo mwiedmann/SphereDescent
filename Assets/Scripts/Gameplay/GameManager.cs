@@ -32,8 +32,9 @@ namespace SphereDescent
         public int startWorld = 1;
         public float worldTransitionDelay = 2.5f;
         public Light sun;
-        [Tooltip("Looks the worlds take turns through: world 1 uses the first, world 2 the second, and so on, wrapping around.")]
-        public VisualStyle[] styles = { VisualStyle.Synthwave(), VisualStyle.DeepSea(), VisualStyle.Frozen() };
+        [Tooltip("Looks the worlds take turns through: a run starts on the first (or the one picked in the menu), and each " +
+                 "new world moves on to the next, wrapping around.")]
+        public VisualStyle[] styles = { VisualStyle.Synthwave(), VisualStyle.DeepSea(), VisualStyle.Frozen(), VisualStyle.Ruins(), VisualStyle.Nebula() };
         [Tooltip("M (or Start on a gamepad) opens a menu to pick the style and the world to play.")]
         public bool styleMenu = true;
         [Tooltip("Highest world the menu lets you pick.")]
@@ -45,7 +46,8 @@ namespace SphereDescent
         Camera cam;
         CameraClearFlags surfaceClearFlags;
         VisualStyle style;
-        int styleChoice;      // index into styles, or -1 to take turns world by world
+        int startStyle;       // the style this run started on; each world after takes the next
+        int runStartWorld = 1; // the world this run started on
         bool menuOpen;
         int menuStyle, menuWorld; // what the menu has selected, applied on Start
         float frameMs;
@@ -115,18 +117,25 @@ namespace SphereDescent
             if (RenderSettings.skybox != null) RenderSettings.skybox = skyMaterial = new Material(RenderSettings.skybox);
         }
 
-        VisualStyle StyleFor(int w)
+        /// <summary>
+        /// Worlds take turns through the styles, starting from the one the run started on (the first, unless
+        /// another was picked in the menu): each new world moves on to the next, wrapping round.
+        /// </summary>
+        int StyleIndexFor(int w)
         {
-            if (styles == null || styles.Length == 0) return VisualStyle.Synthwave();
-            return styleChoice >= 0 && styleChoice < styles.Length ? styles[styleChoice] : styles[(w - 1) % styles.Length];
+            int n = styles != null ? styles.Length : 0;
+            return n == 0 ? 0 : (((startStyle + w - runStartWorld) % n) + n) % n;
         }
+
+        VisualStyle StyleFor(int w) =>
+            styles == null || styles.Length == 0 ? VisualStyle.Synthwave() : styles[StyleIndexFor(w)];
 
         /// <summary>Pauses on the menu (the world stays in view behind it), with the current style and world selected.</summary>
         void OpenMenu()
         {
             if (transitioning) return;
             menuOpen = true;
-            menuStyle = styleChoice;
+            menuStyle = StyleIndexFor(world);
             menuWorld = world;
             ball.SetFrozen(true);
             Cursor.lockState = CursorLockMode.None;
@@ -139,12 +148,16 @@ namespace SphereDescent
             ball.SetFrozen(false);
         }
 
-        /// <summary>Starts a world over in a style (-1 = take turns each world), with the score reset.</summary>
+        /// <summary>
+        /// Starts a new run from a world in a style, with the score reset; the worlds after it take the styles
+        /// after that one in turn.
+        /// </summary>
         void StartWorld(int styleIndex, int worldNumber)
         {
-            styleChoice = styleIndex;
             menuOpen = false;
             world = Mathf.Max(1, worldNumber);
+            startStyle = styleIndex;
+            runStartWorld = world;
             // A fresh start from the menu is a new run.
             scores.Reset();
             tally = null;
@@ -156,7 +169,7 @@ namespace SphereDescent
         {
             style = s;
             ApplyAtmosphere(s, skyMaterial, sun);
-            SetSpecks(s.floatingSpecks, s.speckColor, s.speckSize);
+            SetSpecks(s.floatingSpecks, s.speckColor, s.speckSize, s.speckTwinkle);
         }
 
         /// <summary>A style's sky, light and fog. Static so editor tools can preview a style too.</summary>
@@ -175,6 +188,11 @@ namespace SphereDescent
                 skyMaterial.SetFloat("_StarDensity", s.starDensity);
                 skyMaterial.SetFloat("_StarDrift", s.starDrift);
                 skyMaterial.SetFloat("_RayStrength", s.lightRays);
+                skyMaterial.SetFloat("_SunStripes", s.sunStripes ? 1f : 0f);
+                skyMaterial.SetColor("_RayColor", s.rayColor);
+                skyMaterial.SetFloat("_Nebula", s.nebula);
+                skyMaterial.SetColor("_NebulaA", s.nebulaA);
+                skyMaterial.SetColor("_NebulaB", s.nebulaB);
                 skyMaterial.SetFloat("_Aurora", s.aurora);
                 skyMaterial.SetColor("_AuroraLow", s.auroraLow);
                 skyMaterial.SetColor("_AuroraHigh", s.auroraHigh);
@@ -195,7 +213,7 @@ namespace SphereDescent
         /// Tiny specks drifting around the camera: marine snow under water, or falling snow (see
         /// <see cref="FallSpecks"/>). Zero turns them off.
         /// </summary>
-        void SetSpecks(int count, Color color, Vector2 size)
+        void SetSpecks(int count, Color color, Vector2 size, bool twinkle)
         {
             if (count <= 0)
             {
@@ -240,12 +258,25 @@ namespace SphereDescent
             main.startColor = color;
             var emission = specks.emission;
             emission.rateOverTime = count / 8f;
+            // Twinkling: each speck blinks on and off a few times over its life (fireflies, stardust).
+            var fade = specks.colorOverLifetime;
+            fade.enabled = twinkle;
+            if (twinkle)
+            {
+                var blink = new Gradient();
+                blink.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                    new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.12f), new GradientAlphaKey(0.1f, 0.28f),
+                            new GradientAlphaKey(1f, 0.45f), new GradientAlphaKey(0.05f, 0.6f), new GradientAlphaKey(1f, 0.78f),
+                            new GradientAlphaKey(0f, 1f) });
+                fade.color = blink;
+            }
             specks.Play();
         }
 
         void Start()
         {
             world = Mathf.Max(1, startWorld);
+            runStartWorld = world;
             CreatePlayer();
             BuildWorld();
         }
@@ -723,7 +754,6 @@ namespace SphereDescent
             {
                 int n = GameInput.NumberPressed();
                 if (n >= 1 && n <= styles.Length) menuStyle = n - 1;
-                else if (n == styles.Length + 1) menuStyle = -1;
                 menuWorld = Mathf.Clamp(menuWorld + GameInput.MenuStep(), 1, Mathf.Max(1, maxMenuWorld));
                 if (GameInput.ConfirmPressed()) StartWorld(menuStyle, menuWorld);
                 else if (GameInput.MenuPressed() || GameInput.UnlockCursorPressed()) CloseMenu();
@@ -785,14 +815,15 @@ namespace SphereDescent
         }
 
         /// <summary>
-        /// Makes the specks fall toward the ground, as snow, at the style's speck fall speed. "Down" depends on
-        /// where the player is on the planet, so it's set afresh every frame.
+        /// Makes the specks fall toward the ground, as snow, at the style's speck fall speed (or rise, like
+        /// fireflies, when it's negative). "Down" depends on where the player is on the planet, so it's set
+        /// afresh every frame.
         /// </summary>
         void FallSpecks(Vector3 up)
         {
             if (specks == null || !specks.gameObject.activeSelf || style == null) return;
             var velocity = specks.velocityOverLifetime;
-            velocity.enabled = style.speckFall > 0f;
+            velocity.enabled = style.speckFall != 0f;
             if (!velocity.enabled) return;
             velocity.space = ParticleSystemSimulationSpace.World;
             Vector3 fall = -up * style.speckFall;
@@ -1112,7 +1143,7 @@ namespace SphereDescent
         void DrawMenu()
         {
             const float w = 440f, row = 46f;
-            int options = styles.Length + 1;
+            int options = styles.Length;
             float h = 64f + options * row + 40f + row + 16f + row + 16f;
             var box = new Rect((Screen.width - w) * 0.5f, (Screen.height - h) * 0.5f, w, h);
             // Drawn twice for a darker panel behind the buttons.
@@ -1123,12 +1154,12 @@ namespace SphereDescent
             var sectionStyle = menuHintStyle ??= new GUIStyle(hudStyle) { alignment = TextAnchor.UpperCenter, fontSize = 15 };
 
             float y = box.y + 12;
-            Shadowed(new Rect(box.x, y, w, 40), "Style", menuTitleStyle);
+            Shadowed(new Rect(box.x, y, w, 40), "Start in style", menuTitleStyle);
             y += 52;
             for (int i = 0; i < options; i++)
             {
-                int value = i < styles.Length ? i : -1;
-                string label = i < styles.Length ? styles[i].name : "Alternate every world";
+                int value = i;
+                string label = styles[i].name;
                 // The selected style is marked, and its button stays pressed.
                 bool chosen = GUI.Toggle(new Rect(box.x + 30, y, w - 60, row - 8), menuStyle == value,
                     $"{i + 1}.  {label}{(menuStyle == value ? "   (selected)" : "")}", menuButtonStyle);
