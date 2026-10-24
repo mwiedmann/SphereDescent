@@ -109,6 +109,8 @@ Cosmic Nebula: deep space. Glassy obsidian surfaces are etched with constellatio
 
 The project uses the Universal Render Pipeline (URP) and the Input System package, both included with Unity.
 
+To make a Windows build (from a Mac too), add **Windows Build Support (Mono)** to the Unity version in Unity Hub, then use **Sphere Descent → Build Windows (zip)**. It builds into `Builds/Windows/` and zips it to `Builds/SphereDescent-Windows.zip`: unzip that anywhere on the Windows machine and run `SphereDescent.exe`.
+
 ## How worlds are generated
 
 Every world is generated in code from a seed (`Assets/Scripts/Level/MazeLayout.cs`):
